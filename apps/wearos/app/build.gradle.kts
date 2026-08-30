@@ -4,7 +4,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 val localConfig = Properties().apply {
@@ -54,10 +53,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     testOptions {
         unitTests.all {
             it.systemProperty("spb.repo.root", rootProject.projectDir.resolve("../..").canonicalPath)
@@ -66,6 +61,6 @@ android {
 }
 
 dependencies {
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.gms:play-services-location:21.4.0")
     testImplementation("junit:junit:4.13.2")
 }
