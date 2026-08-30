@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tobomobo/smart-panic-button/protocol/alert-v1.schema.json",
+  "title": "Smart Panic Button TEST event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "event_id",
+    "incident_id",
+    "device_id",
+    "kind",
+    "sequence",
+    "created_at",
+    "expires_at",
+    "payload"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$"
+    },
+    "incident_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$"
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$"
+    },
+    "kind": { "const": "test.triggered" },
+    "sequence": { "const": 0 },
+    "created_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147482747
+    },
+    "expires_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Relay validation additionally requires expires_at == created_at + 900."
+    },
+    "payload": { "type": "null" }
+  }
+}

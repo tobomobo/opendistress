@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+    <iq:application
+        id="64f9e95a-12ca-4a5a-b8d2-44df912aa1ad"
+        type="watch-app"
+        name="@Strings.AppName"
+        entry="PanicApp"
+        launcherIcon="@Drawables.LauncherIcon"
+        minApiLevel="6.0.0">
+        <iq:products>
+            <iq:product id="fenix847mm" />
+        </iq:products>
+        <iq:permissions>
+            <iq:uses-permission id="Communications" />
+            <iq:uses-permission id="Cryptography" />
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+        <iq:barrels />
+    </iq:application>
+</iq:manifest>

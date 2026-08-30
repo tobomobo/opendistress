@@ -1,0 +1,5 @@
+<properties>
+    <property id="relayUrl" type="string"></property>
+    <property id="deviceId" type="string"></property>
+    <property id="hmacKeyHex" type="string"></property>
+</properties>

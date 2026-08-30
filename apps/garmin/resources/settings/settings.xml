@@ -1,0 +1,11 @@
+<settings>
+    <setting propertyKey="@Properties.relayUrl" title="@Strings.RelayUrlTitle" prompt="@Strings.RelayUrlPrompt">
+        <settingConfig type="url" required="true" />
+    </setting>
+    <setting propertyKey="@Properties.deviceId" title="@Strings.DeviceIdTitle" prompt="@Strings.DeviceIdPrompt">
+        <settingConfig type="password" required="true" maxLength="22" />
+    </setting>
+    <setting propertyKey="@Properties.hmacKeyHex" title="@Strings.HmacKeyTitle" prompt="@Strings.HmacKeyPrompt">
+        <settingConfig type="password" required="true" maxLength="64" />
+    </setting>
+</settings>

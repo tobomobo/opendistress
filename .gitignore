@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.coverage
+.pytest_cache/
+.env
+devices.json
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.der
+*.key
+*.prg
+*.debug.xml
+bin/
