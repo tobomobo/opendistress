@@ -53,11 +53,25 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           archive
       - name: Test watchOS
-        run: >-
-          xcodebuild
-          -project apps/watchos/PanicWatch.xcodeproj
-          -scheme PanicWatch
-          -configuration Debug
-          -destination 'platform=watchOS Simulator,name=Apple Watch Series 11 (46mm),OS=26.5'
-          -enableAddressSanitizer YES
-          test
+        run: |
+          watch_id="$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          matches = [
+              device["udid"]
+              for runtime, entries in devices.items()
+              if runtime.endswith("watchOS-26-5")
+              for device in entries
+              if device["name"] == "Apple Watch Series 11 (46mm)"
+          ]
+          if len(matches) != 1:
+              raise SystemExit(f"expected one watchOS simulator, found {len(matches)}")
+          print(matches[0])
+          ')"
+          xcodebuild \
+            -project apps/watchos/PanicWatch.xcodeproj \
+            -scheme PanicWatch \
+            -configuration Debug \
+            -destination "platform=watchOS Simulator,id=${watch_id}" \
+            -enableAddressSanitizer YES \
+            test

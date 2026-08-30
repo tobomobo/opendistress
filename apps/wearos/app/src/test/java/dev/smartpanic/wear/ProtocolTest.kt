@@ -387,7 +387,10 @@ class ProtocolTest {
 
     private fun readFixture(name: String): String {
         val root = Path.of(requireNotNull(System.getProperty("spb.repo.root")))
-        return Files.readString(root.resolve("protocol/fixtures/$name")).trimEnd()
+        return String(
+            Files.readAllBytes(root.resolve("protocol/fixtures/$name")),
+            Charsets.UTF_8,
+        ).trimEnd()
     }
 
     private fun readVector(name: String): Map<String, String> {
