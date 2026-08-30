@@ -4,8 +4,8 @@ An MIT-licensed, Garmin-first panic-notification prototype with independent
 Wear OS and watchOS clients.
 
 > **Not an emergency-ready product.** The source slices are implemented, but
-> Garmin/native compiler runs, provider trials, simulators, and the physical
-> reliability matrix are still explicit release gates.
+> Garmin SDK/device validation, provider trials, native enrollment hardening,
+> and the physical reliability matrix are still explicit release gates.
 
 ```text
 Garmin / Wear OS / watchOS
@@ -45,7 +45,7 @@ Python 3.11+ and Node 22 are the host requirements:
 make ci
 ```
 
-Native build commands and their unrun gates are documented in
+Native build commands and their remaining gates are documented in
 [`apps/garmin/README.md`](apps/garmin/README.md),
 [`apps/wearos/README.md`](apps/wearos/README.md), and
 [`apps/watchos/README.md`](apps/watchos/README.md).

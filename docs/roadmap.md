@@ -14,7 +14,7 @@ provider-tested, and physically proven are different states.
 | 6. Location | Post-trigger encrypted snapshot, fresh callback, persisted foreground cadence, quality/movement/battery backoff, signed incident-status stop | Indoor/outdoor, lifecycle, battery, and resolution-stop tests |
 | 7. Wi-Fi | Garmin reports current Wi-Fi/phone availability without selecting a route | Phone-off saved-network matrix; Wi-Fi remains opportunistic |
 | 8. More transports | Direct Pushover and authenticated private-topic ntfy implementations | ntfy device/deduplication matrix; SMS/voice remain unclaimed without companion/SIM/provider hardware |
-| 9. Native watches | Independent Wear OS Kotlin and watchOS Swift clients with durable queues, v2 crypto, location, feedback, and native CI | Hosted builds, simulators, enrollment hardening, and physical watches |
+| 9. Native watches | Independent Wear OS Kotlin and watchOS Swift clients with durable queues, v2 crypto, location, feedback, and passing hosted builds/simulator tests | Enrollment hardening and physical watches |
 
 The conditional Garmin launcher face remains intentionally absent: the plan
 requires stock-route measurements to justify it. Direct Android SMS likewise
