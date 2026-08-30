@@ -1,5 +1,10 @@
 <properties>
-    <property id="relayUrl" type="string"></property>
+    <property id="relayBaseUrl" type="string"></property>
     <property id="deviceId" type="string"></property>
     <property id="hmacKeyHex" type="string"></property>
+    <property id="liveAuthKeyHex" type="string"></property>
+    <property id="liveEncKeyHex" type="string"></property>
+    <property id="liveMacKeyHex" type="string"></property>
+    <property id="liveTemplateIdHex" type="string"></property>
+    <property id="liveKeyVersion" type="number">0</property>
 </properties>

@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tobomobo/smart-panic-button/protocol/incident-v2.schema.json",
+  "title": "Smart Panic Button encrypted incident event v2",
+  "description": "Token-level integer checks and cross-field equality/order rules in protocol/README.md are additionally mandatory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "event_id",
+    "incident_id",
+    "device_id",
+    "kind",
+    "sequence",
+    "created_at",
+    "expires_at",
+    "payload"
+  ],
+  "properties": {
+    "v": {
+      "type": "integer",
+      "const": 2
+    },
+    "event_id": {
+      "$ref": "#/$defs/id"
+    },
+    "incident_id": {
+      "$ref": "#/$defs/id"
+    },
+    "device_id": {
+      "$ref": "#/$defs/id"
+    },
+    "kind": {
+      "enum": [
+        "live.triggered",
+        "location.updated"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "created_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "expires_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Protocol validation additionally requires 1 <= expires_at - created_at <= 86400."
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key_version",
+        "iv",
+        "ciphertext",
+        "tag"
+      ],
+      "properties": {
+        "key_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "iv": {
+          "$ref": "#/$defs/block"
+        },
+        "ciphertext": {
+          "$ref": "#/$defs/block"
+        },
+        "tag": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "live.triggered"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sequence": {
+            "const": 0
+          }
+        },
+        "description": "Protocol validation additionally requires incident_id == event_id."
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "location.updated"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sequence": {
+            "minimum": 1
+          }
+        },
+        "description": "A location update keeps its incident ID and expiry and uses a fresh event ID."
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$",
+      "description": "Canonical unpadded base64url encoding of exactly 16 bytes."
+    },
+    "block": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$",
+      "description": "Canonical unpadded base64url encoding of exactly 16 bytes."
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
+      "description": "Canonical unpadded base64url encoding of exactly 32 bytes."
+    }
+  }
+}

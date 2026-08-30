@@ -1,5 +1,5 @@
 <settings>
-    <setting propertyKey="@Properties.relayUrl" title="@Strings.RelayUrlTitle" prompt="@Strings.RelayUrlPrompt">
+    <setting propertyKey="@Properties.relayBaseUrl" title="@Strings.RelayUrlTitle" prompt="@Strings.RelayUrlPrompt">
         <settingConfig type="url" required="true" />
     </setting>
     <setting propertyKey="@Properties.deviceId" title="@Strings.DeviceIdTitle" prompt="@Strings.DeviceIdPrompt">

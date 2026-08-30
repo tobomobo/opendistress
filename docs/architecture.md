@@ -1,78 +1,87 @@
 # Architecture
 
 ```text
-foreground Garmin app
-    -> direct event JSON + canonical semantic HMAC
+Garmin / Wear OS / watchOS
+    -> canonical HMAC + immutable event JSON
 reference relay
-    -> fixed Pushover request
-trusted contact
+    -> SQLite event + snapshotted recipient-route outbox
+    -> Pushover and ntfy workers
+trusted recipients
+    -> authenticate/decrypt v2 content locally
+    -> deliberate acknowledgement
 ```
 
-The Garmin app persists an event before transmission, signs the protocol's
-canonical semantic text, and passes the event `Dictionary` to Garmin for JSON
-serialization. The relay bounds and strictly parses that JSON, reconstructs
-the same canonical text, authenticates the device, and checks the TEST-v1
-clock and expiry rules.
+The wire protocol is the shared seam. UI, lifecycle, permissions, persistence,
+location, and networking remain native to Monkey C, Kotlin, and Swift.
 
-Before contacting Pushover, the relay commits a minimal SQLite attempt record
-keyed by device and event. An accepted result survives restart. An attempt left
-in `started` by interruption, or one with an ambiguous provider outcome,
-becomes `result_unknown` and is never automatically resubmitted. A definite
-provider rejection releases the claim for a deliberate retry. Phase 1 has no
-delivery worker or transactional outbox.
+## Events and intake
 
-The protocol is the only shared platform seam. A future Wear OS app remains
-Kotlin and a future watchOS app remains Swift; neither shares UI, lifecycle,
-permissions, or networking code with Monkey C.
+V1 carries only `test.triggered` with opaque IDs. V2 carries encrypted
+`live.triggered` and `location.updated`; the relay can authenticate the outer
+envelope but never receives content keys. Garmin supplies a `Dictionary` and
+controls JSON serialization, so every runtime signs the protocol's fixed
+semantic grammar rather than raw wire bytes.
 
-## Incident model
+Each client persists the complete immutable event before its first network
+attempt. In one `BEGIN IMMEDIATE` SQLite transaction, the relay authenticates
+the event, enforces ID/expiry/sequence rules, stores the canonical digest and
+opaque envelope, snapshots the configured recipient routes and their
+domain-separated provider-configuration fingerprints, inserts delivery rows,
+and commits. Only then does it return an event-bound signed HTTP 202
+`durably_accepted` response.
 
-An incident is an append-only stream of authenticated events:
+## Delivery and evidence
 
-```text
-test.triggered / live.triggered
-location.updated
-responder.acknowledged
-wearer.cancelled
-incident.resolved
-```
+Workers claim due rows with committed random leases, call one concrete
+transport, and fence completion with the lease token. Transient and ambiguous
+outcomes retry with bounded backoff until expiry. This is at-least-once across
+an external provider boundary: a crash after provider acceptance can produce a
+duplicate notification.
 
-`event_id` identifies one immutable logical event, `incident_id` groups its
-updates, and `sequence` orders them. Retransmission keeps all original semantic
-values; JSON member order and insignificant whitespace are not identity.
-Cancellation and resolution append events rather than rewriting history. The
-phase-1 TEST event expires exactly 900 seconds after creation, and every LIVE
-incident will also have an explicit expiry.
+Pushover and ntfy are implemented directly. Pushover emergency receipts record
+per-recipient acknowledgement; ntfy supplies provider acceptance but no
+acknowledgement or cancellation evidence in this implementation. Group
+membership and concrete provider configuration are snapshotted when the trigger
+is accepted; location updates inherit that route snapshot. A process whose
+destination or credentials no longer match cannot claim its work.
+Acknowledgement is append-only coordination evidence, not
+incident resolution. Resolution is a separate deliberate state change and
+cancels remaining work where a provider supports cancellation.
 
-## Evidence
-
-These states are never collapsed into a `delivered` boolean:
+These facts are never collapsed into `delivered`:
 
 ```text
 watch recognized
 relay durably accepted
 provider accepted
-recipient device delivered
-human acknowledged
+transport delivered (when reported)
+recipient acknowledged
 incident resolved
 ```
 
-Phase 1 durably records provider-attempt state for idempotency, but does not
-claim durable acceptance for eventual delivery. That evidence state begins
-with the transactional-outbox phase. A success response is tied to the pending
-event with a canonical response HMAC before the watch displays provider
-acceptance.
+## Location
+
+The trigger is persisted and submission starts before any location request.
+Clients append encrypted cached, fresh, and materially changed foreground fixes
+under the same incident ID and monotonically increasing sequence. No fix is a
+valid result. Acquisition stops at local expiry or after an exact signed
+`/v2/status` result reports relay-side resolution or expiry; acknowledgement
+alone does not stop it.
 
 ## Trust boundaries
 
-- The watch holds a per-device HMAC key and, later, separate content keys.
-- Phase 1 trusts Garmin Connect, Connect IQ, and Garmin Express app settings
-  with the TEST HMAC key and therefore with TEST result evidence. The paired
-  network path does not receive future LIVE plaintext, and LIVE requires an
-  authentication key provisioned independently of that settings channel.
-- The relay authenticates devices and holds provider credentials.
-- Pushover is trusted only to report its own acceptance accurately. Phase 1
-  uses a dedicated account with exactly one active Android device because
-  Pushover device-name targeting can fan out when the name is invalid.
+- Each sender has a per-device request HMAC key. V2 additionally uses separate
+  encryption and content-MAC keys shared only with trusted recipients.
+- Garmin's ordinary settings path is trusted only for non-sensitive TEST.
+  LIVE credentials are supplied only in a private personal build.
+- The relay sees timing, opaque device/incident/route identifiers, event kind,
+  sequence, expiry, ciphertext size, and provider metadata, but not v2 content.
+- Pushover and ntfy see the notification timing and opaque encrypted envelope.
+  They are trusted only for evidence they originate; neither is evidence that a
+  person is safe.
+- Public source builds contain unusable placeholder credentials. Personal
+  native builds currently embed their locally supplied keys; hardware-backed
+  enrollment is a production gate.
 
-See [`threat-model.md`](threat-model.md) and [`privacy.md`](privacy.md).
+See [`threat-model.md`](threat-model.md), [`privacy.md`](privacy.md), and the
+normative [`../protocol/README.md`](../protocol/README.md).

@@ -1,0 +1,12 @@
+{
+  "device_id": "replace-with-22-character-device-id",
+  "keys": {
+    "1": {
+      "enc_key_hex": "replace-with-64-lowercase-hex-characters",
+      "mac_key_hex": "replace-with-a-different-64-character-key"
+    }
+  },
+  "templates": {
+    "replace-with-32-lowercase-hex-template-id": "Replace with the trusted recipient instructions."
+  }
+}
