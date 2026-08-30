@@ -2,30 +2,42 @@
 
 ## Assets and boundaries
 
-Phase 1 protects the ability to send notifications, the per-watch HMAC key,
-Pushover credentials, event integrity, and honest evidence. It intentionally
-contains no identity, instructions, contacts, or location. The watch-to-relay,
-relay-to-provider, configuration-file, and operator/logging boundaries are in
-scope; physical compromise of an unlocked watch or relay host is not solved by
-the protocol.
+The system protects notification authority, honest evidence, per-device
+authentication keys, v2 content keys, provider credentials, encrypted incident
+content, and location. Watch-to-relay,
+relay-to-provider, recipient decryption, local configuration, persistence, and
+logging boundaries are in scope. A physically compromised unlocked device or
+relay host is not solved here.
 
 ## Threats and controls
 
-| Threat | Current control | Residual risk |
+| Threat | Control | Residual risk |
 |---|---|---|
-| Forged event | Unique 256-bit HMAC key and constant-time verification | A compromised watch key authorizes that device until disabled |
-| Compromised Garmin settings or paired-phone path | Explicitly trusted for non-sensitive phase-1 TEST provisioning only | It can learn/replace the TEST HMAC key and forge TEST events or results; LIVE requires independent authentication-key provisioning |
-| Body tampering/canonicalization | HMAC covers every accepted field in one fixed semantic grammar; extra fields are rejected | JSON order and whitespace are intentionally unauthenticated because they have no semantics |
-| Replay or duplicate provider send | Timestamp/expiry checks plus a durable device/event attempt ledger | A compromised device key can create fresh events until disabled or rate-limited |
-| Event-ID reuse with different semantics | Persist and compare SHA-256 of the canonical request bytes under the unique device/event key | The relay retains this detection only for the 24-hour TEST window |
-| Server clock rollback after retention cleanup | Persist a clock high-water mark and fail closed for unseen events after a large rollback | Operators must restore trustworthy time before new TEST events resume |
-| Parser/resource abuse | Fixed route, five-second connection timeout, content type, content length, 1 KiB body limit, exact schema | Aggregate connection limits belong at the HTTPS proxy |
-| Device enumeration | Unknown, disabled, and bad-signature requests return the same result | Timing differences are reduced, not formally eliminated |
-| Credential leakage | Environment/file configuration, ignore rules, redacted logs | Host administrators can read process configuration |
-| False success or delivery claim | Event-bound response HMAC and evidence-specific result names | Pushover acceptance still does not prove device delivery |
-| Provider ambiguity | Commit `started` before the call; ambiguity is terminal `result_unknown` with no automatic resubmit | At-most-one relay attempt can still be accepted without the relay learning the result |
-| Pushover device-name fan-out | Dedicated account with exactly one active Android device | Account configuration drift must be checked operationally |
+| Forged event or intake result | Per-device HMAC-SHA256, domain-separated request/result grammars, constant-time comparison | A stolen key authorizes that device until disabled |
+| Forged or stale incident status | Fresh request ID, exact incident/device/expiry binding, checked-time window, separate request/result HMAC domains | A stolen live authentication key can forge a stop result |
+| Garmin/paired-phone plaintext access | TEST only through app settings; v2 content encrypted before networking with separate AES and MAC keys | Timing, outer metadata, size, and ciphertext remain visible |
+| Body ambiguity or tampering | Strict duplicate-key JSON parser, exact key sets/types, canonical base64url, semantic HMAC, published cross-runtime vectors | Wire whitespace/order is intentionally unauthenticated |
+| Replay or ID reuse | Clock/expiry checks, durable `(device_id,event_id)` digest, incident sequence constraint, one active incident per device | A compromised device can mint fresh events; edge rate limits are still operational |
+| Lost provider response or relay crash | Committed lease/attempt and fenced recovery | Provider has no idempotency key; a recovered attempt can create a duplicate notification |
+| Clock rollback after cleanup | SQLite clock high-water mark checked inside the write transaction | New intake fails closed until trustworthy time catches up or is repaired |
+| Parser, slow-client, or response abuse | 1 KiB body, strict media/length/encoding, five-second socket timeout, bounded provider responses, no redirects | Aggregate connection/rate limits belong at the HTTPS edge |
+| Device enumeration | Unknown, disabled, missing-key, and bad-signature paths use dummy-key work and one external 401 | Timing is reduced, not formally constant across the entire HTTP stack |
+| Secret/config leakage | 0600 device/route/database files, environment provider token, ignored local build config, no secret logging | Host administrators and locally built client binaries can recover provisioned keys |
+| Provider URL logging | Inbound URLs carry no credentials; relay logging omits outbound requests | Pushover requires its application token in the HTTPS receipt-query URL, so an egress proxy must also suppress URL logs |
+| Public fixture used in production | Enabled loaders reject every published role key | Operators can still modify the source and remove the check |
+| Ciphertext malleability or oracle | Encrypt-then-MAC; recipient verifies full tag before no-padding AES-CBC decrypt | Compromise of recipient content keys reveals retained envelopes for that key version |
+| False delivery claim | Evidence-specific states and signed intake response | Provider acceptance is not device delivery or human acknowledgement |
+| Forged acknowledgement | Per-recipient Pushover emergency receipt tied to its snapshotted route | Pushover can manufacture the evidence it originates; ntfy acknowledgement is unsupported |
+| Group/config drift | Recipient membership and a provider destination/credential fingerprint are snapshotted transactionally; mismatched workers cannot claim old work | Provider-account changes behind unchanged credentials can still reroute a recipient |
+| Emergency repeats after resolution | Resolution is separate from acknowledgement; durable provider cancellation where supported | Cancellation can itself be ambiguous until provider evidence is recorded |
+| Location before consent/trigger | Trigger persisted and submission started before location permission/API; only foreground follow-ups | Firmware/lifecycle behavior still requires physical verification |
 
-Before LIVE events, application-layer encryption and separate content keys are
-mandatory. The phase-1 ledger prevents duplicate provider attempts; automatic
-durable retries remain blocked until the transactional outbox phase.
+## Explicit production gates
+
+- Garmin Connect IQ compilation/type checking and every hardware matrix row.
+- Wear OS/watchOS hosted builds, simulator tests, and device tests.
+- Hardware-backed Keystore/Keychain enrollment for distributable native builds;
+  current personal builds embed locally supplied keys.
+- Physical verification that signed incident-status polling stops each watch's
+  foreground location cadence after relay-side resolution.
+- HTTPS edge connection/rate limits and log-retention verification.

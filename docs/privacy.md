@@ -1,32 +1,40 @@
 # Privacy
 
-The application performs no network request and collects no data before a
-deliberate trigger. Phase-1 TEST events contain only opaque IDs, an event kind,
-sequence, creation time, and expiry. The relay has no analytics and persists
-only the minimal attempt ledger needed to prevent duplicate provider submits:
-opaque IDs, SHA-256 of the canonical request bytes, classified state,
-timestamps, and the required provider request identifier. TEST ledger rows
-expire after 24 hours.
+No client requests location or performs a network request before deliberate
+activation. V1 TEST contains only opaque IDs, kind, sequence, creation, and
+expiry. V2 encrypts its fixed LIVE template or binary location record before
+Garmin, Google/Apple networking, the relay, or a notification provider sees it.
 
-The relay must not log raw bodies, signatures, credentials, location, or client
-IP addresses. A deployment's HTTPS proxy must be configured to match; its
-defaults are outside this repository's control. Pushover necessarily receives
-the fixed TEST message, event ID, recipient key, and request timing. Phase 1
-uses a dedicated Pushover account with exactly one active Android device;
-provider and device retention remain outside the relay's retention promise.
+The relay necessarily observes timing, source endpoint, opaque device and route
+IDs, kind, sequence, expiry, ciphertext size, provider-configuration
+fingerprints, provider references, and delivery state. Pushover and ntfy receive
+the compact encrypted envelope and notification timing. A trusted recipient
+resolves a provisioned template or decrypts location only after verifying the
+content MAC.
 
-Future persistence uses these maximum defaults:
+The relay has no analytics. It must not log bodies, signature or authorization
+headers, credentials, location, or client IP addresses. The public HTTPS proxy
+must be configured the same way. ntfy must use a private authenticated topic and
+receives its bearer credential in an Authorization header, never a URL.
+Pushover's receipt API requires its application token in an outbound HTTPS query;
+the relay does not log that URL, and any egress proxy must suppress it too.
+Provider-held notification copies follow the configured provider's own retention;
+for example, ntfy commonly caches messages for offline subscribers. Use a private
+self-hosted instance when that boundary is unacceptable.
 
-| Data | Default retention |
+Maximum defaults are:
+
+| Data | Maximum retention |
 |---|---:|
-| TEST incidents | 24 hours |
-| Active encrypted alert | expiry/resolution + 24 hours |
-| Encrypted location | one hour after resolution, at most 24 hours |
-| Delivery metadata and classified attempts | 7 days |
-| Raw request bodies | never logged |
-| Provider responses beyond required identifiers | not retained |
+| TEST incident | expiry + 24 hours |
+| Encrypted LIVE body | earlier of resolution + 24 hours or expiry + 24 hours |
+| Encrypted location body | resolution or event expiry, and always creation + 24 hours |
+| Event, classified delivery, and attempt metadata | event expiry + 24 hours |
+| Raw bodies in logs | never |
+| Provider response content beyond required IDs/evidence | not retained |
 | IP addresses and analytics | not persisted / none |
 | Backups | 7 days |
 
-Contacts and coordinates never belong in URLs. Longer retention, if added,
-must be an explicit local export rather than a changed server default.
+Contacts and coordinates never belong in URLs, logs, acknowledgements, or bug
+reports. Public fixtures contain only generated test material. Longer retention
+requires an explicit local export rather than changing server defaults.

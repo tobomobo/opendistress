@@ -1,47 +1,82 @@
 # Reliability and evidence
 
-The watch displays exactly one of four phase-1 outcomes:
+A client records an event as durably accepted only after HTTP 202, an exact
+matching event ID and result, and a valid response HMAC. Timeouts, malformed
+bodies, redirects, signature failures, stale callbacks, and exceptions remain
+pending or unknown; none becomes success.
 
-| Result | Meaning | Safe next action |
-|---|---|---|
-| `provider_accepted` | Pushover accepted the submission | Do not call it delivered or acknowledged |
-| `retryable_failure` | The relay proved no notification was accepted | Retry the same semantic event and ID while unexpired |
-| `configuration_failure` | Local, authentication, schema, or provider configuration is invalid | Fix configuration, then retry the same event while unexpired |
-| `result_unknown` | A provider attempt may have occurred but its outcome is ambiguous | Show ambiguity; repeating the event only reads this terminal state |
+`durably_accepted` proves the relay transaction committed. Delivery then has
+independent per-recipient states:
 
-No response, timeout, parse error, stale callback, mismatched event ID, invalid
-response signature, or exception becomes success. `provider_accepted` means
-Pushover received and queued the request; it does not mean device delivery.
+```text
+pending -> attempting -> provider_accepted
+                    \-> retry_wait -> ...
+                    \-> configuration_failure | result_unknown | expired
+provider_accepted -> transport evidence -> human_acknowledged
+incident: active -> acknowledged (evidence only) -> resolved | expired
+```
 
-## Phase-1 retry boundary
+## Retry boundary
 
-The TEST event uses canonical 22-character base64url IDs and
-`expires_at == created_at + 900`. Retries retain every semantic value. The
-relay commits `started` before its one Pushover call and `accepted` before its
-success response. Accepted duplicates return the stored result after restart;
-started or ambiguous duplicates return `result_unknown` and never invoke the
-provider again. When the provider definitively rejects a request, the relay
-removes the attempt claim; a deliberate retry may use the same immutable event
-through its signed expiry. MENU can explicitly abandon a pending TEST to create
-a new ID; this never reclassifies the old outcome. No retry is automatic. A full transactional outbox
-waits for phase 2.
+An immutable retry retains every semantic value, including ID, timestamps,
+ciphertext, content tag, and request signature. Exact duplicates return the
+stored intake result. Reusing an ID for different semantics is a conflict.
 
-The fixed recipient is a dedicated Pushover account with exactly one active
-Android device. Device-name targeting alone is not accepted as evidence of a
-single-device route because Pushover can fan out when that name becomes stale.
+The relay commits a lease and attempt row before provider I/O. A transient
+failure retries with bounded exponential backoff. If a lease expires after an
+interruption, a new worker may retry while the incident remains active. That
+preserves eventual delivery but cannot provide exactly once: the provider may
+have accepted the interrupted attempt. Attempt rows preserve that ambiguity and
+stale workers cannot overwrite the newer claim.
+
+Resolution stops pending work but never rewrites a possibly accepted delivery
+as resolved. Such a row remains `result_unknown`; an ambiguous Pushover
+emergency with no receipt also retains unknown cancellation state because the
+relay has no provider handle with which to stop repeats. ntfy cancellation
+remains explicitly unsupported.
+
+Recipient membership and the concrete provider destination/credentials are
+snapshotted as a one-way fingerprint at trigger intake. Changing a route does
+not redirect accepted work: mismatched workers skip it, and the original
+configuration must drain or the incident must be resolved/expire.
+
+Pushover acceptance requires HTTP 200, numeric JSON `status: 1`, and a bounded
+provider request ID. Every Pushover 4xx or valid `status: 0` is a definite
+configuration rejection. Network errors, 5xx, malformed success, and a missing
+request ID are ambiguous. Emergency receipts are polled no faster than the
+provider permits and each recipient's acknowledgement is retained. ntfy uses a
+stable sequence ID to reduce duplicate visible notifications, but relay retries
+remain at-least-once.
+
+## Client recovery
+
+The watch queue is bounded and persisted before networking. Automatic retries
+are bounded; a manual retry reuses the queue head. An unexpired LIVE event cannot
+be abandoned. After signed expiry, the user may explicitly archive it as
+`result unknown` and start a new incident; expiry is never silently treated as
+failure or success. Changing authentication keys while an immutable queue or
+active incident exists is unsupported.
+
+While an incident is active in the foreground, the client uses the existing
+location cadence to issue a signed, read-only status query. Only a strictly
+verified matching `resolved` or `expired` response stops acquisition;
+`acknowledged`, timeouts, malformed data, and invalid signatures do not.
+That terminal evidence may archive same-incident v2 retransmission entries as
+unroutable, but never relabels them as accepted and never removes unrelated
+pending work.
 
 ## Physical acceptance record
 
-First record one successful physical fēnix 8-to-phone-to-relay-to-Pushover
-notification with matching event IDs. Then record 100 deliberate attempts in
-`tests/end-to-end/results/` using a CSV with timestamp, conditions, watch
-result, provider observation, latency, and notes.
+All physical rows live in [`../tests/end-to-end/physical-matrix.csv`](../tests/end-to-end/physical-matrix.csv).
+They are currently `NOT_RUN` unless that file says otherwise. Required evidence
+includes:
 
-The attempts must cover Android locked/screen off, Garmin Connect backgrounded,
-watch Wi-Fi disabled, phone and watch reboots, temporary Bluetooth and mobile
-data loss, relay timeout, and provider error. Do not summarize an unrecorded
-attempt as passing.
+- one physical Garmin-to-phone-to-relay-to-provider TEST with matching ID;
+- 100 recorded failure-matrix attempts;
+- 200 deliberate activations per Garmin route plus seven days of false-trigger
+  wear;
+- encrypted LIVE/decryption, group acknowledgement, location, phone-off Wi-Fi,
+  ntfy, Wear OS, and watchOS rows.
 
-Activation-route experiments require 200 deliberate activations per route and
-seven days of normal wear for false triggers. Re-run relevant physical tests
-after Garmin SDK, firmware, or networking changes.
+Re-run affected rows after Garmin SDK, firmware, radio, provider, or networking
+changes. Host tests and simulators cannot convert a physical row to PASS.

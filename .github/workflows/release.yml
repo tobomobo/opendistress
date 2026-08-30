@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: MIT
+name: Release source
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+
+permissions:
+  checks: read
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Require a signed tag on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq .object.type)" = tag
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" --jq .object.sha)"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .verification.verified)" = true
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .tag)" = "$GITHUB_REF_NAME"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .object.type)" = commit
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .object.sha)" = "$(git rev-parse HEAD)"
+          git merge-base --is-ancestor HEAD origin/main
+          commit_sha="$(git rev-parse HEAD)"
+          for check in "test (3.11)" "test (3.13)" wearos watchos; do
+            actual="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${commit_sha}/check-runs" \
+              -f check_name="$check" -f filter=latest -f per_page=100 \
+              --jq '.check_runs[] | select(.app.id == 15368 and .status == "completed" and .conclusion == "success") | .name')"
+            test "$actual" = "$check"
+          done
+      - run: make ci
+      - name: Build source evidence
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          mkdir dist
+          git archive --format=tar --prefix="smart-panic-button-${version}/" HEAD | gzip -n > "dist/smart-panic-button-${version}.tar.gz"
+          python3 scripts/source_sbom.py "$version" dist/source-sbom.spdx.json
+          cd dist
+          sha256sum "smart-panic-button-${version}.tar.gz" source-sbom.spdx.json > SHA256SUMS
+      - name: Publish source release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes

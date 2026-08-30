@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: MIT
+
+// Public, deliberately invalid defaults. Local.xcconfig is ignored.
+SPB_ENDPOINT = https:/$()/invalid.example/v2/events
+SPB_DEVICE_ID = INVALID
+SPB_AUTH_KEY_HEX = INVALID
+SPB_ENC_KEY_HEX = INVALID
+SPB_MAC_KEY_HEX = INVALID
+SPB_KEY_VERSION = 0
+SPB_TEMPLATE_ID_HEX = INVALID
+SPB_TTL_SECONDS = 3600
+
+#include? "Local.xcconfig"

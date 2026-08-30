@@ -1,74 +1,105 @@
 # Smart Panic Button
 
-An MIT-licensed, Garmin-first panic notification system. Its first milestone is
-deliberately narrow: one foreground fēnix 8 action sends one authenticated,
-non-sensitive TEST notification through the paired Android phone and Garmin
-Connect to a small relay and Pushover.
+An MIT-licensed, Garmin-first panic-notification prototype with independent
+Wear OS and watchOS clients.
 
-> **Status:** software prototype, not a proven emergency path. The repository
-> has not passed the required physical-watch reliability matrix yet.
+> **Not an emergency-ready product.** The source slices are implemented, but
+> Garmin/native compiler runs, provider trials, simulators, and the physical
+> reliability matrix are still explicit release gates.
 
 ```text
-Garmin app -> signed incident event -> reference relay -> Pushover -> contact
+Garmin / Wear OS / watchOS
+    -> authenticated TEST or encrypted LIVE/location event
+Python relay -> durable SQLite outbox -> Pushover + ntfy
+trusted recipient CLI -> authenticate and decrypt v2 content locally
 ```
 
-The stable seam is the event protocol, not cross-platform application code.
-No data is sent before a deliberate activation. TEST events contain opaque IDs
-only; LIVE identity, instructions, and location are blocked until
-application-layer encryption is implemented.
+The relay never receives v2 content keys. A signed HTTP 202 proves only that an
+event was durably recorded; provider acceptance, device delivery, recipient
+acknowledgement, and incident resolution remain separate evidence.
 
-## Run the relay locally
+## What is here
 
-Python 3.11+ and `make` are the only host requirements.
+- A Garmin Connect IQ app in Monkey C with durable TEST/LIVE queues, encrypted
+  foreground location updates, app-list/glance/complication launch surfaces,
+  and Wi-Fi/phone diagnostics.
+- A stdlib-only Python relay with strict HMAC intake, SQLite leases and retry,
+  recipient routes bound to their provider configuration, Pushover emergency
+  receipts/cancellation, and authenticated ntfy publishing.
+- A Node 22 trusted-recipient CLI that authenticates and decrypts v2 events.
+- Standalone Kotlin Wear OS and Swift watchOS apps using their native crypto,
+  persistence, HTTPS, location, feedback, and accessibility APIs.
+- Frozen v1/v2 schemas and cross-runtime public vectors in
+  [`protocol/`](protocol/).
 
-```sh
-cp relay/devices.example.json /tmp/smart-panic-devices.json
-# Replace the public disabled fixture entry with a fresh device ID/key, enable it,
-# and restrict the file before use.
-python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(16)).decode().rstrip("=")); print(secrets.token_hex(32))'
-chmod 600 /tmp/smart-panic-devices.json
-export PUSHOVER_APP_TOKEN='replace-me'
-export PUSHOVER_USER_KEY='replace-me'
-python3 -m relay --devices /tmp/smart-panic-devices.json \
-  --database /tmp/smart-panic-relay.sqlite3
-```
+The conditional Garmin launcher face was not added because the stock launch
+routes have not yet been physically measured. Direct SMS/voice is also
+unclaimed: it needs a companion or provider plus real permission, SIM, carrier,
+and hardware testing.
 
-The development listener is plain HTTP. Put it behind a trusted HTTPS reverse
-proxy for a watch-facing deployment and ensure that proxy does not retain
-bodies, headers, or client IP addresses.
+## Run host checks
 
-Use a dedicated Pushover account with exactly one active Android device for
-this milestone. Pushover may fan out to every active account device when a
-configured device name is missing, stale, or invalid.
-
-Phase 1 also trusts Garmin's app-settings channel with the TEST HMAC key. A
-compromised settings or paired-phone path can therefore forge TEST evidence;
-independent authentication-key provisioning is a gate for LIVE alerts.
-
-Run all host-side checks with:
+Python 3.11+ and Node 22 are the host requirements:
 
 ```sh
 make ci
 ```
 
-The Garmin project and SDK instructions are in
-[`apps/garmin/README.md`](apps/garmin/README.md). Protocol details and a public
-HMAC test key live in [`protocol/README.md`](protocol/README.md).
+Native build commands and their unrun gates are documented in
+[`apps/garmin/README.md`](apps/garmin/README.md),
+[`apps/wearos/README.md`](apps/wearos/README.md), and
+[`apps/watchos/README.md`](apps/watchos/README.md).
 
-## Scope
+## Run the relay locally
 
-The current milestone ends when one physical watch produces one unmistakable
-TEST notification with a matching event ID and an honest result. Durable
-retry/outbox delivery, acknowledgement, encrypted LIVE alerts, location,
-additional transports, Wear OS, and watchOS are gated in
-[`docs/roadmap.md`](docs/roadmap.md).
+Copy both private configuration files outside the repository, replace every
+public/example value, and restrict their permissions:
 
-Phase 1 does use a minimal SQLite attempt ledger: it prevents a retry or relay
-restart from submitting the same TEST event twice, but it does not provide a
-delivery worker or automatic retry.
+```sh
+cp relay/devices.example.json /tmp/smart-panic-devices.json
+cp relay/routes.example.json /tmp/smart-panic-routes.json
+chmod 600 /tmp/smart-panic-devices.json /tmp/smart-panic-routes.json
+python3 -c 'import base64,secrets; print("device_id="+base64.urlsafe_b64encode(secrets.token_bytes(16)).decode().rstrip("=")); print("test_key="+secrets.token_hex(32)); print("live_key="+secrets.token_hex(32))'
+```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md), and the
-[`docs/`](docs/) directory for implementation and test constraints.
+Set each device's private keys, group, recipients, and routes. Pushover user
+keys belong in the route file; its application token stays in the environment:
+
+```sh
+export PUSHOVER_APP_TOKEN='replace-me'
+python3 -m relay \
+  --devices /tmp/smart-panic-devices.json \
+  --routes /tmp/smart-panic-routes.json \
+  --database /tmp/smart-panic-relay.sqlite3
+```
+
+The development listener is loopback plain HTTP. Put it behind one trusted HTTPS
+terminator, disable request/header/IP logging there, and never expose the Python
+listener directly. Provider recovery is intentionally at-least-once; a crash
+after an external provider accepts can produce a duplicate.
+
+Resolve an incident directly in its database, even if route files or provider
+credentials are unavailable or have rotated:
+
+```sh
+python3 -m relay \
+  --database /tmp/smart-panic-relay.sqlite3 \
+  --resolve-incident DEVICE_ID:INCIDENT_ID
+```
+
+This command performs no provider I/O. It durably stops unsent work and queues
+any required Pushover emergency cancellation for a later worker running with
+the exact provider configuration that originally accepted the alert.
+Resolution also works against the previous v4 schema without migrating it.
+Because v4 did not record provider fingerprints, any already-accepted v4
+emergency must be cancelled manually at Pushover or allowed to expire; the
+relay will not guess which credentials created it.
+
+The offline recipient command is documented in
+[`recipient/README.md`](recipient/README.md). Security constraints, architecture,
+and the still-`NOT_RUN` physical rows are in [`SECURITY.md`](SECURITY.md),
+[`docs/`](docs/), and
+[`tests/end-to-end/physical-matrix.csv`](tests/end-to-end/physical-matrix.csv).
 
 ## License
 

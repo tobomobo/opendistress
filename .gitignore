@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .env
 devices.json
+routes.json
 *.sqlite
 *.sqlite-*
 *.sqlite3
@@ -13,3 +14,6 @@ devices.json
 *.prg
 *.debug.xml
 bin/
+/dist/
+apps/garmin/private.jungle
+apps/garmin/private-resources/

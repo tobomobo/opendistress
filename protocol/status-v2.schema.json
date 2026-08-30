@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tobomobo/smart-panic-button/protocol/status-v2.schema.json",
+  "title": "Smart Panic Button incident status query v2",
+  "description": "Token-level integer checks, clock validation, and stored incident/expiry matching in protocol/README.md are additionally mandatory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "request_id",
+    "incident_id",
+    "device_id",
+    "created_at",
+    "expires_at"
+  ],
+  "properties": {
+    "v": {
+      "type": "integer",
+      "const": 2
+    },
+    "request_id": {
+      "$ref": "#/$defs/id"
+    },
+    "incident_id": {
+      "$ref": "#/$defs/id"
+    },
+    "device_id": {
+      "$ref": "#/$defs/id"
+    },
+    "created_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "expires_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Protocol validation additionally requires created_at < expires_at and an exact match to the stored incident expiry."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$",
+      "description": "Canonical unpadded base64url encoding of exactly 16 bytes."
+    }
+  }
+}
