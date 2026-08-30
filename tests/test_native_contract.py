@@ -93,7 +93,7 @@ class NativeContractTests(unittest.TestCase):
         for expected in (
             "runs-on: ubuntu-24.04",
             "runs-on: macos-26",
-            "gradle-version: \"8.11.1\"",
+            "gradle-version: \"9.5.0\"",
             "DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer",
             'runtime.endswith("watchOS-26-5")',
             'device["name"] == "Apple Watch Series 11 (46mm)"',

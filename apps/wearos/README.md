@@ -21,8 +21,8 @@ at that instant is a separate relay rule. Any plaintext coordinates retained
 only for material-change comparison are atomically scrubbed at local expiry;
 the encrypted queue and result-unknown recovery remain.
 
-The project pins Android Gradle Plugin 8.9.1, Kotlin 2.1.10, Gradle 8.11.1 in
-CI, compile/target SDK 35, and Play Services Location 21.3.0. There is no
+The project pins Android Gradle Plugin 9.3.2 with built-in Kotlin, Gradle 9.5.0
+in CI, compile/target SDK 35, and Play Services Location 21.4.0. There is no
 checked-in wrapper because no local Gradle installation was available to
 generate the official wrapper artifacts.
 
