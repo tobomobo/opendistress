@@ -44,11 +44,12 @@ the watch.
 
 Connect IQ only runs Monkey C applications, so Rust cannot replace the Garmin
 client. Garmin release builds must pass the compiler's strictest type-check
-level and use only Garmin cryptographic primitives; the current source has not
-yet passed that SDK gate. Wear OS uses Kotlin, watchOS uses Swift, and the relay
+level and use only Garmin cryptographic primitives. SDK 9.2.0 now compiles the
+source at `-l 1` and passes its protocol simulator test, but it has not passed
+the strict `-l 3` gate. Wear OS uses Kotlin, watchOS uses Swift, and the relay
 and recipient tools use Python and JavaScript. A Rust relay would be viable,
-but would not remove Monkey C from the watch and is not justified by the current
-small, standard-library implementation.
+but would not remove Monkey C from the watch and is not justified by the
+current small, standard-library implementation.
 
 Swift's standard CryptoKit does not expose the AES-CBC profile required for
 Garmin interoperability, so watchOS uses one narrowly bounded CommonCrypto call

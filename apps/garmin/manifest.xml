@@ -13,7 +13,6 @@
         <iq:permissions>
             <iq:uses-permission id="Communications" />
             <iq:uses-permission id="ComplicationPublisher" />
-            <iq:uses-permission id="Cryptography" />
             <iq:uses-permission id="Positioning" />
         </iq:permissions>
         <iq:languages>

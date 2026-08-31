@@ -10,6 +10,13 @@ GARMIN = ROOT / "apps/garmin"
 
 
 class GarminContractTests(unittest.TestCase):
+    def test_jungle_paths_exclude_nested_sdk_sources(self):
+        jungle = (GARMIN / "monkey.jungle").read_text().splitlines()
+
+        self.assertIn("project.manifest = manifest.xml", jungle)
+        self.assertIn("base.sourcePath = source", jungle)
+        self.assertIn("base.resourcePath = resources", jungle)
+
     def test_resources_parse_and_permissions_match_implemented_phases(self):
         for path in GARMIN.glob("resources/*/*.xml"):
             ET.parse(path)
@@ -21,12 +28,26 @@ class GarminContractTests(unittest.TestCase):
         products = {item.attrib["id"] for item in manifest.findall(".//iq:product", namespace)}
         settings = ET.parse(GARMIN / "resources/settings/settings.xml").getroot()
         setting_keys = {item.attrib["propertyKey"] for item in settings.findall("./setting")}
+        drawables = ET.parse(GARMIN / "resources/drawables/drawables.xml").getroot()
+        drawable_files = {
+            item.attrib["id"]: item.attrib["filename"]
+            for item in drawables.findall("./bitmap")
+        }
 
         self.assertEqual(
             permissions,
-            {"Communications", "ComplicationPublisher", "Cryptography", "Positioning"},
+            {"Communications", "ComplicationPublisher", "Positioning"},
         )
         self.assertEqual(products, {"fenix847mm"})
+        self.assertEqual(
+            drawable_files,
+            {"LauncherIcon": "launcher.svg", "ComplicationIcon": "complication.svg"},
+        )
+        self.assertIn('width="65" height="65"', (GARMIN / "resources/drawables/launcher.svg").read_text())
+        self.assertIn(
+            'width="45" height="45"',
+            (GARMIN / "resources/drawables/complication.svg").read_text(),
+        )
         self.assertEqual(
             setting_keys,
             {"@Properties.relayBaseUrl", "@Properties.deviceId", "@Properties.hmacKeyHex"},
@@ -65,13 +86,38 @@ class GarminContractTests(unittest.TestCase):
             self.assertIn(key[:32], source)
             self.assertIn(key[32:], source)
 
+    def test_monkey_c_self_tests_cover_adversarial_protocol_paths(self):
+        source = (GARMIN / "source/PanicProtocol.mc").read_text()
+
+        for test_name in (
+            "protocolConformance",
+            "protocolRejectsMalformedEvents",
+            "protocolRejectsUnsafeConfiguration",
+            "protocolRejectsTamperedResults",
+        ):
+            self.assertIn(f"(:test)\nfunction {test_name}(logger)", source)
+        for required_probe in (
+            'testEvent["extra"] = 1',
+            "PanicProtocol.MAX_V1_CREATED_AT + 1",
+            'liveEvent["expires_at"] = 1788192001',
+            'liveEvent["expires_at"] = 1788105600',
+            "PanicProtocol.PUBLIC_MAC_KEY,\n            macKey",
+            "PanicProtocol.PUBLIC_ENC_KEY",
+            'accepted["extra"] = null',
+            'status["state"] = "closed"',
+            'status["request_id"] = "sLGys7S1tre4ubq7vL2-vw"',
+            "1788106001",
+            'PanicProtocol.failureResult({"result" => "untrusted"})',
+        ):
+            self.assertIn(required_probe, source)
+
     def test_public_vector_key_cannot_authenticate_configured_test_events(self):
         app = (GARMIN / "source/PanicApp.mc").read_text()
         protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
 
         self.assertEqual(app.count("PanicProtocol.isSafeAuthKey(keyHex)"), 2)
         self.assertIn("return isLowerHexKey(value) && !isPublicFixtureKey(value)", protocol)
-        self.assertIn("requestSignature(PanicProtocol.PUBLIC_AUTH_KEY, testEvent)", protocol)
+        self.assertIn("PanicProtocol.PUBLIC_AUTH_KEY,\n        testEvent", protocol)
 
     def test_live_rejects_public_fixture_keys_in_every_key_role(self):
         protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
@@ -82,8 +128,9 @@ class GarminContractTests(unittest.TestCase):
 
         self.assertIn("isSafeAuthKey(authKey)", safety)
         self.assertEqual(safety.count("!isPublicFixtureKey("), 2)
+        self.assertIn("left.equals(right)", protocol)
         for fixture in ("PUBLIC_AUTH_KEY", "PUBLIC_ENC_KEY", "PUBLIC_MAC_KEY"):
-            self.assertIn(f"value == {fixture}", protocol)
+            self.assertIn(f"stringEquals(value, {fixture})", protocol)
 
     def test_trigger_is_durable_and_submission_starts_before_positioning(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
@@ -102,10 +149,11 @@ class GarminContractTests(unittest.TestCase):
         activate = source[source.index("function activate()") : source.index("function activateTest()")]
         send = source[source.index("function sendPending()") : source.index("function onResponse(")]
 
-        self.assertLess(activate.index("_activeIncident != null"), activate.index('_mode == "LIVE"'))
+        mode_check = 'PanicProtocol.stringEquals(_mode, "LIVE")'
+        self.assertLess(activate.index("_activeIncident != null"), activate.index(mode_check))
         self.assertIn('now < _activeIncident["expires_at"]', activate)
         self.assertIn("Repeated START keeps the same incident", activate)
-        self.assertLess(activate.index("expireLocations();"), activate.index('_mode == "LIVE"'))
+        self.assertLess(activate.index("expireLocations();"), activate.index(mode_check))
         self.assertLess(send.index("_retryTimer.stop();"), send.index("Communications.makeWebRequest("))
 
     def test_only_expired_live_events_can_be_explicitly_removed(self):
@@ -114,7 +162,7 @@ class GarminContractTests(unittest.TestCase):
 
         self.assertIn('now < _queue[j]["expires_at"]', menu)
         self.assertIn('if (_queue[k]["v"] == 1)', menu)
-        self.assertIn('nextActive["incident_id"] == incidentId', menu)
+        self.assertIn('PanicProtocol.stringEquals(nextActive["incident_id"], incidentId)', menu)
         self.assertIn('setState("RESULT UNKNOWN — EXPIRED"', menu)
         self.assertIn('setState("LIVE RETAINED"', menu)
         self.assertIn('_mode = "TEST"', menu)
@@ -134,7 +182,8 @@ class GarminContractTests(unittest.TestCase):
         ]
         self.assertIn('var archivedIncidentId = ""', validation)
         self.assertIn('var archivedExpiresAt = -1', validation)
-        self.assertIn('queue[i]["incident_id"] != archivedIncidentId', validation)
+        self.assertIn('queue[i]["incident_id"],', validation)
+        self.assertIn("archivedIncidentId", validation)
         self.assertIn('queue[i]["expires_at"] != archivedExpiresAt', validation)
 
     def test_queue_clears_only_for_exact_signed_durable_acceptance(self):
@@ -220,7 +269,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn(": remaining + 1", app)
         self.assertIn("_visible = false", app)
         self.assertIn("same foreground-only cadence queries signed `/v2/status`", normalized_readme)
-        self.assertIn("does not yet claim strict `-l 3` conformance", normalized_readme)
+        self.assertIn("strict `-l 3` build still fails and remains a release gate", normalized_readme)
         self.assertIn("-l 1 -w", readme)
 
     def test_signed_status_poll_shares_foreground_cadence_and_request_gate(self):
@@ -251,8 +300,12 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("_queue.size() == 0", bypass)
         self.assertIn("_activeIncident == null", bypass)
         self.assertIn("PanicProtocol.isEncryptedEvent(head)", bypass)
-        self.assertIn('head["kind"] == PanicProtocol.V2_LOCATION_KIND', bypass)
-        self.assertIn('head["incident_id"] == _activeIncident["incident_id"]', bypass)
+        self.assertIn(
+            'PanicProtocol.stringEquals(head["kind"], PanicProtocol.V2_LOCATION_KIND)',
+            bypass,
+        )
+        self.assertIn('head["incident_id"],', bypass)
+        self.assertIn('_activeIncident["incident_id"]', bypass)
         self.assertIn('head["expires_at"] == _activeIncident["expires_at"]', bypass)
         self.assertIn("!canPollStatus()", send)
         self.assertIn("PanicProtocol.randomId()", send)
@@ -262,28 +315,33 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("responseCode == 200", response)
         self.assertIn("PanicProtocol.verifyStatusResult(data, query, keyHex, receiveAt)", response)
         self.assertLess(response.index("verifyStatusResult"), response.index("finishIncidentFromStatus"))
-        self.assertIn('data["state"] == "resolved" || data["state"] == "expired"', response)
-        self.assertIn('data["state"] == "acknowledged"', response)
+        self.assertIn('PanicProtocol.stringEquals(data["state"], "resolved")', response)
+        self.assertIn('PanicProtocol.stringEquals(data["state"], "expired")', response)
+        self.assertIn('PanicProtocol.stringEquals(data["state"], "acknowledged")', response)
         self.assertLess(continuation.index("sendPending();"), continuation.index("scheduleStatusPoll(now);"))
         self.assertNotIn("persistState(", failure)
         self.assertIn("persistState(remaining, null)", terminal)
-        self.assertIn('_queue[i]["incident_id"] != query["incident_id"]', terminal)
+        self.assertIn('!PanicProtocol.stringEquals(', terminal)
+        self.assertIn('_queue[i]["incident_id"],', terminal)
         self.assertIn("_mode = \"TEST\"", terminal)
         self.assertNotIn("ACCEPTED", terminal)
 
         for domain in ("spb.status.query.v2", "spb.status.result.v2"):
             self.assertIn(domain, protocol)
         self.assertIn("hasExactKeys(data, STATUS_RESULT_KEYS)", protocol)
-        self.assertIn('data["request_id"] != query["request_id"]', protocol)
-        self.assertIn('data["incident_id"] != query["incident_id"]', protocol)
-        self.assertIn('data["device_id"] != query["device_id"]', protocol)
+        self.assertIn('!stringEquals(data["request_id"], query["request_id"])', protocol)
+        self.assertIn('!stringEquals(data["incident_id"], query["incident_id"])', protocol)
+        self.assertIn('!stringEquals(data["device_id"], query["device_id"])', protocol)
         self.assertIn('receiveAt - query["created_at"] > 300', protocol)
         self.assertIn('query["created_at"] - data["checked_at"] > 300', protocol)
         self.assertIn('data["checked_at"] - receiveAt > 300', protocol)
 
         event_response = app[app.index("function onResponse(") : app.index("function handleFailure(")]
-        self.assertIn("eventId != _requestEventId", event_response)
-        self.assertIn('requestId != _statusQuery["request_id"]', response)
+        self.assertIn("!PanicProtocol.stringEquals(eventId, _requestEventId)", event_response)
+        self.assertIn(
+            '!PanicProtocol.stringEquals(requestId, _statusQuery["request_id"])',
+            response,
+        )
 
     def test_glance_and_complication_only_launch_or_label_the_foreground_app(self):
         app = (GARMIN / "source/PanicApp.mc").read_text()

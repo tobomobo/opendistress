@@ -4,7 +4,7 @@
         access="public"
         longLabel="@Strings.ComplicationLongLabel"
         shortLabel="@Strings.ComplicationShortLabel"
-        icon="@Drawables.LauncherIcon"
+        icon="@Drawables.ComplicationIcon"
         glancePreview="true">
         <faceIt defaultText="@Strings.ComplicationText" />
     </complication>

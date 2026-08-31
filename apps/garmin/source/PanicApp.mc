@@ -7,6 +7,7 @@ import Toybox.Communications;
 import Toybox.Complications;
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.PersistedContent;
 import Toybox.Position;
 import Toybox.System;
 import Toybox.Time;
@@ -128,8 +129,9 @@ class PanicView extends WatchUi.View {
                 setState("CONFIGURATION FAILURE", "Stored event state is invalid");
                 return;
             }
-            _queue = stored["queue"];
-            _activeIncident = stored["active"];
+            var state = stored as Lang.Dictionary;
+            _queue = state["queue"] as Lang.Array;
+            _activeIncident = state["active"] as Lang.Dictionary or Null;
             if (_queue.size() > 0) {
                 _displayEventId = _queue[0]["event_id"];
                 setState("PENDING", "START retries immutable event");
@@ -151,11 +153,12 @@ class PanicView extends WatchUi.View {
             setState("CONFIGURATION FAILURE", "Stored legacy TEST is invalid");
             return;
         }
-        var migrated = [legacy];
+        var legacyEvent = legacy as Lang.Dictionary;
+        var migrated = [legacyEvent];
         Storage.setValue(STATE_KEY, {"queue" => migrated, "active" => null});
         Storage.deleteValue(LEGACY_PENDING_KEY);
         _queue = migrated;
-        _displayEventId = legacy["event_id"];
+        _displayEventId = legacyEvent["event_id"];
         setState("PENDING", "Legacy TEST migrated; START retries");
     }
 
@@ -175,14 +178,20 @@ class PanicView extends WatchUi.View {
             }
             if (queue[i]["v"] == 2) {
                 if (value["active"] != null) {
-                    if (queue[i]["incident_id"] != value["active"]["incident_id"]
+                    if (!PanicProtocol.stringEquals(
+                            queue[i]["incident_id"],
+                            value["active"]["incident_id"]
+                        )
                         || queue[i]["expires_at"] != value["active"]["expires_at"]) {
                         return false;
                     }
                 } else if (archivedIncidentId.length() == 0) {
                     archivedIncidentId = queue[i]["incident_id"];
                     archivedExpiresAt = queue[i]["expires_at"];
-                } else if (queue[i]["incident_id"] != archivedIncidentId
+                } else if (!PanicProtocol.stringEquals(
+                        queue[i]["incident_id"],
+                        archivedIncidentId
+                    )
                     || queue[i]["expires_at"] != archivedExpiresAt) {
                     return false;
                 }
@@ -266,7 +275,7 @@ class PanicView extends WatchUi.View {
             expireLocations();
             return;
         }
-        if (_mode == "LIVE") {
+        if (PanicProtocol.stringEquals(_mode, "LIVE")) {
             activateLive();
         } else {
             activateTest();
@@ -372,7 +381,7 @@ class PanicView extends WatchUi.View {
         scheduleLocationExpiry(now);
         scheduleStatusPoll(now);
         if (_activeIncident["capture_stage"] == 0) {
-            var snapshot as Position.Info or Null = null;
+            var snapshot = null;
             try {
                 snapshot = Position.getInfo();
             } catch (error) {
@@ -485,7 +494,7 @@ class PanicView extends WatchUi.View {
         }
     }
 
-    function onPosition(info) {
+    function onPosition(info as Position.Info) as Void {
         if (!_visible || _activeIncident == null) {
             return;
         }
@@ -639,8 +648,11 @@ class PanicView extends WatchUi.View {
         }
         var head = _queue[0];
         return PanicProtocol.isEncryptedEvent(head)
-            && head["kind"] == PanicProtocol.V2_LOCATION_KIND
-            && head["incident_id"] == _activeIncident["incident_id"]
+            && PanicProtocol.stringEquals(head["kind"], PanicProtocol.V2_LOCATION_KIND)
+            && PanicProtocol.stringEquals(
+                head["incident_id"],
+                _activeIncident["incident_id"]
+            )
             && head["expires_at"] == _activeIncident["expires_at"];
     }
 
@@ -704,10 +716,14 @@ class PanicView extends WatchUi.View {
         }
     }
 
-    function onStatusResponse(responseCode, data, requestId) {
+    function onStatusResponse(
+        responseCode as Lang.Number,
+        data as Lang.Dictionary or Lang.String or PersistedContent.Iterator or Null,
+        requestId as Lang.Object
+    ) as Void {
         if (!_inFlight
             || _statusQuery == null
-            || requestId != _statusQuery["request_id"]) {
+            || !PanicProtocol.stringEquals(requestId, _statusQuery["request_id"])) {
             return;
         }
         var query = _statusQuery;
@@ -721,7 +737,10 @@ class PanicView extends WatchUi.View {
             return;
         }
         if (_activeIncident == null
-            || _activeIncident["incident_id"] != query["incident_id"]
+            || !PanicProtocol.stringEquals(
+                _activeIncident["incident_id"],
+                query["incident_id"]
+            )
             || _activeIncident["expires_at"] != query["expires_at"]) {
             setState("STATUS UNKNOWN", "Active incident changed during request");
             return;
@@ -742,7 +761,8 @@ class PanicView extends WatchUi.View {
             }
             return;
         }
-        if (data["state"] == "resolved" || data["state"] == "expired") {
+        if (PanicProtocol.stringEquals(data["state"], "resolved")
+            || PanicProtocol.stringEquals(data["state"], "expired")) {
             finishIncidentFromStatus(query, data["state"]);
             return;
         }
@@ -750,7 +770,7 @@ class PanicView extends WatchUi.View {
             expireLocations();
             return;
         }
-        setState(data["state"] == "acknowledged"
+        setState(PanicProtocol.stringEquals(data["state"], "acknowledged")
             ? "RECIPIENT ACKNOWLEDGED"
             : "INCIDENT ACTIVE", "Verified relay status; acquisition continues");
         continueAfterStatus(receiveAt);
@@ -782,7 +802,10 @@ class PanicView extends WatchUi.View {
         var remaining = [];
         for (var i = 0; i < _queue.size(); i += 1) {
             if (_queue[i]["v"] == 1
-                || _queue[i]["incident_id"] != query["incident_id"]) {
+                || !PanicProtocol.stringEquals(
+                    _queue[i]["incident_id"],
+                    query["incident_id"]
+                )) {
                 remaining.add(_queue[i]);
             }
         }
@@ -797,7 +820,9 @@ class PanicView extends WatchUi.View {
             return;
         }
         _retryCount = 0;
-        setState(state == "resolved" ? "INCIDENT RESOLVED" : "INCIDENT EXPIRED",
+        setState(PanicProtocol.stringEquals(state, "resolved")
+                ? "INCIDENT RESOLVED"
+                : "INCIDENT EXPIRED",
             "Signed relay status verified; START defaults to TEST");
     }
 
@@ -815,7 +840,7 @@ class PanicView extends WatchUi.View {
         }
         var record = PanicProtocol.locationRecord(info, path);
         var recordHex = PanicProtocol.bytesHex(record);
-        if (recordHex == _activeIncident["last_location_hex"]) {
+        if (PanicProtocol.stringEquals(recordHex, _activeIncident["last_location_hex"])) {
             return false;
         }
         var config = liveConfiguration();
@@ -926,7 +951,7 @@ class PanicView extends WatchUi.View {
             return;
         }
         if (!PanicProtocol.isHttpsBaseUrl(baseUrl)
-            || event["device_id"] != deviceId
+            || !PanicProtocol.stringEquals(event["device_id"], deviceId)
             || !keyIsSafe) {
             setState("CONFIGURATION FAILURE", "Pending event does not match this build");
             return;
@@ -967,14 +992,19 @@ class PanicView extends WatchUi.View {
         }
     }
 
-    function onResponse(responseCode, data, eventId) {
+    function onResponse(
+        responseCode as Lang.Number,
+        data as Lang.Dictionary or Lang.String or PersistedContent.Iterator or Null,
+        eventId as Lang.Object
+    ) as Void {
         if (!_inFlight
             || _statusQuery != null
-            || eventId != _requestEventId) {
+            || !PanicProtocol.stringEquals(eventId, _requestEventId)) {
             return;
         }
         _inFlight = false;
-        if (_queue.size() == 0 || _queue[0]["event_id"] != _requestEventId) {
+        if (_queue.size() == 0
+            || !PanicProtocol.stringEquals(_queue[0]["event_id"], _requestEventId)) {
             _activeKeyHex = null;
             _requestEventId = null;
             setState("RESULT UNKNOWN", "Persistent queue changed during request");
@@ -1016,11 +1046,11 @@ class PanicView extends WatchUi.View {
     }
 
     function handleFailure(result, detail) {
-        if (result == "configuration_failure") {
+        if (PanicProtocol.stringEquals(result, "configuration_failure")) {
             setState("CONFIGURATION FAILURE", detail);
             return;
         }
-        if (result == "retryable_failure") {
+        if (PanicProtocol.stringEquals(result, "retryable_failure")) {
             setState("RETRYABLE FAILURE", detail);
         } else {
             setState("RESULT UNKNOWN", detail);
@@ -1148,7 +1178,8 @@ class PanicView extends WatchUi.View {
                     }
                 }
                 var nextActive = _activeIncident;
-                if (nextActive != null && nextActive["incident_id"] == incidentId) {
+                if (nextActive != null
+                    && PanicProtocol.stringEquals(nextActive["incident_id"], incidentId)) {
                     nextActive = null;
                 }
                 try {
@@ -1171,8 +1202,8 @@ class PanicView extends WatchUi.View {
             }
             return true;
         }
-        _mode = _mode == "TEST" ? "LIVE" : "TEST";
-        setState("READY — " + _mode, _mode == "LIVE"
+        _mode = PanicProtocol.stringEquals(_mode, "TEST") ? "LIVE" : "TEST";
+        setState("READY — " + _mode, PanicProtocol.stringEquals(_mode, "LIVE")
             ? "START creates encrypted LIVE incident"
             : "START sends non-sensitive TEST");
         return true;

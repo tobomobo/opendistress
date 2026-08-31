@@ -1,5 +1,10 @@
 # Physical evidence
 
+Simulator/compiler evidence is recorded separately in
+[`simulator-matrix.csv`](simulator-matrix.csv). A simulator PASS never changes
+a physical row, and an environment-blocked simulator row is not an app PASS or
+FAIL.
+
 No row in [`physical-matrix.csv`](physical-matrix.csv) has been executed in
 this workspace. `NOT_RUN` is a release blocker for the hardware behavior named
 by that row; host tests cannot turn it into PASS.

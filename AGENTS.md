@@ -63,6 +63,10 @@ because the Connect IQ SDK and hardware are not installed by this repository.
   recipient keys and keep recipient evidence separate.
 - Connect IQ requires Monkey C. Rust is not an on-watch target; SDK type checking
   and physical tests are mandatory even though the VM manages memory.
+- Connect IQ 9.2 simulator execution showed that runtime-created `String`
+  values can fail `==` even when their text matches. Use `String.equals()`
+  after a type check for semantic values; keep the constant-work comparator for
+  signatures.
 
 Add a gotcha only after observing a real failure, and include the verified
 workaround.

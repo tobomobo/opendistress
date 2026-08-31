@@ -1,0 +1,9 @@
+recorded_at_utc,source,sdk,device,scenario,status,notes
+2026-08-31,bfa29243df88+worktree,9.2.0,fenix847mm,direct app-directory build at -l 1,PASS,"Nested SDK present under apps/garmin/bin; explicit Jungle paths prevented SDK template discovery; 108 gradual-type warnings and no icon-size warning"
+2026-08-31,bfa29243df88+worktree,9.2.0,fenix847mm,four-test build at -l 1 -O 1,PASS,"BUILD SUCCESSFUL; 153660-byte PRG in the independent host-compatible harness"
+2026-08-31,bfa29243df88+worktree,9.2.0,fenix847mm,four-test simulator execution,PASS,"protocolConformance plus malformed-event, unsafe-configuration, and tampered-result rejection; passed=4 failed=0 errors=0"
+2026-08-31,bfa29243df88+worktree,9.2.0,fenix847mm,strict app build at -l 3,FAIL_RELEASE_GATE,"Exit 105; 295 compiler errors; no strict artifact"
+2026-08-31,bfa29243df88+worktree,9.2.0,fenix847mm,ordinary foreground app launch,BLOCKED_ENVIRONMENT,"Headless Linux simulator exits 139 after device layout; no app exception; foreground behavior not claimed"
+2026-08-31,bfa29243df88+worktree,9.2.0,fenix847mm,stock Menu2Sample foreground control,BLOCKED_ENVIRONMENT,"Same headless exit 139 as the app; consistent with shared simulator/environment failure"
+2026-08-31,bfa29243df88+worktree,9.2.0,fenix847mm,fully containerized CIQ runner timing control,BLOCKED_ENVIRONMENT,"Six fresh attempts at 0.5/1/2/3/4/5 seconds produced zero runner bytes and timed out while the base shell socket remained healthy"
+2026-08-31,bfa29243df88+worktree,9.2.0,fenix847mm,host Garmin contract suite,PASS,"16 tests passed"
