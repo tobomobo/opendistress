@@ -25,12 +25,16 @@ acknowledgement, or resolution.
 Connect IQ requires Monkey C; it does not offer a Rust target. Monkey C runs as
 managed bytecode and has no raw-pointer or manual-free interface, but runtime
 type errors remain possible. This source still contains dynamically typed
-dictionary boundaries and has not been compiled with the SDK, so it does not
-yet claim strict `-l 3` conformance. The documented build uses gradual checking
-(`-l 1`); a successful `-l 3` build is a release gate. Runtime memory is bounded
-with an at-most-three-event queue, exact dictionary shapes, fixed 16-byte
-plaintext/ciphertext blocks, 32-bit timestamp checks, and one shared in-flight
-event-or-status request.
+dictionary boundaries. SDK 9.2.0 compiles it with gradual checking (`-l 1`),
+but the strict `-l 3` build still fails and remains a release gate. Runtime
+memory is bounded with an at-most-three-event queue, exact dictionary shapes,
+fixed 16-byte plaintext/ciphertext blocks, 32-bit timestamp checks, and one
+shared in-flight event-or-status request.
+
+Protocol, persisted-state, callback-context, mode, and configuration-key
+comparisons use value equality. Connect IQ 9.2 simulator execution proved that
+runtime-created strings cannot safely be compared with `==` for those checks.
+Response signatures retain a constant-work character comparison.
 
 ## Configure TEST
 
@@ -75,10 +79,10 @@ with a higher key version to rotate content keys. Do not rotate
 active: v2 has no authentication-key version with which to retry the immutable
 request under its original key.
 
-The current workspace cannot verify resource-path precedence without the
-Garmin SDK; confirm that gate before putting real keys into a build. If the SDK
-does not override the invalid defaults, stop: this source tree has no alternate
-secret-injection seam. Never move LIVE keys into app settings.
+The simulator run did not verify private resource-path precedence; confirm that
+gate before putting real keys into a build. If the SDK does not override the
+invalid defaults, stop: this source tree has no alternate secret-injection
+seam. Never move LIVE keys into app settings.
 
 LIVE encrypts before any communication call with the fixed v2 profile:
 AES-256-CBC over exactly one block with no padding, then HMAC-SHA256 over the
@@ -136,8 +140,8 @@ The manifest currently targets `fenix847mm`. Confirm the physical watch's
 exact SDK profile—43 mm, Solar, and Pro variants can use different IDs—before
 compiling or sideloading.
 
-The Connect IQ SDK is not installed here. With its `bin` directory on `PATH`,
-from this directory:
+The Connect IQ SDK is not vendored. With its `bin` directory on `PATH`, from
+this directory:
 
 ```sh
 mkdir -p bin
@@ -161,3 +165,32 @@ physical validation still must cover settings, a successful strict `-l 3`
 build, queue restart, tampered results, app-list/glance/complication launch,
 indoor/no-fix location, Bluetooth loss, phone-off Wi-Fi, firmware/reboot
 behavior, and the recorded activation/failure matrices in `tests/end-to-end/`.
+
+## Simulator evidence
+
+On 2026-08-31, official Connect IQ SDK 9.2.0 compiled the complete
+`fenix847mm` app at `-l 1`. Four tests passed in the Garmin simulator:
+`protocolConformance`, `protocolRejectsMalformedEvents`,
+`protocolRejectsUnsafeConfiguration`, and `protocolRejectsTamperedResults`.
+Together they execute the published v1 TEST, encrypted v2 LIVE, encrypted
+location, durable-result, and signed-status vectors, plus canonical-ID,
+timestamp/lifetime, exact-key, key-separation, relay-origin, response-tamper,
+request-binding, status-freshness, and fail-closed failure-result checks. The
+device profile came from the pinned test image
+`ghcr.io/zetxek/connectiq-tester@sha256:c215a5ea9ae89b69a89aaaec6b5df3b8019578ea56b0d892c98251feefbf08cc`;
+the simulator test ran without network access. Garmin's runner returns process
+status 1 even when its structured result says
+`PASSED (passed=4, failed=0, errors=0)`, so automation must parse that result.
+
+An interactive foreground smoke launch is still unverified in this headless
+environment. The simulator process exited with status 139 while loading both
+this app and Garmin's bundled `Menu2Sample`. Its last log lines included
+`SetLayout`, but successful unit execution also emits that line, so it is not
+itself the failing operation. This is consistent with a shared headless
+simulator/environment failure and does not prove an app-specific crash.
+Settings, START/MENU input, persistence/restart, GPS, BLE, Wi-Fi, battery,
+timers, glance, complication, and network callbacks therefore remain
+unverified interactively. Strict `-l 3` currently fails with 295 compiler
+errors and remains a release gate. See the recorded
+[`simulator-matrix.csv`](../../tests/end-to-end/simulator-matrix.csv); every
+physical row remains open.

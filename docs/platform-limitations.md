@@ -5,7 +5,8 @@
   or foreign-function target, so Rust cannot replace the on-watch client.
   Monkey C avoids raw-pointer/manual-allocation bugs, but its gradual type
   system is not Rust's borrow checker and runtime type errors remain possible.
-  The source build targets `-l 1`; strict `-l 3` is an unmet release gate.
+  SDK 9.2.0 compiles the source at `-l 1` and its protocol vectors pass in the
+  simulator; strict `-l 3` remains an unmet release gate.
 - A public Connect IQ application cannot install a global third-party hardware
   button listener. The user must first enter an allowed foreground surface.
 - The device app supports the app list, a glance, and a published complication.

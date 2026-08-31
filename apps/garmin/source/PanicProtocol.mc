@@ -116,10 +116,16 @@ module PanicProtocol {
         return isLowerHex(value, 64);
     }
 
+    function stringEquals(left, right) {
+        return left instanceof Lang.String
+            && right instanceof Lang.String
+            && left.equals(right);
+    }
+
     function isPublicFixtureKey(value) {
-        return value == PUBLIC_AUTH_KEY
-            || value == PUBLIC_ENC_KEY
-            || value == PUBLIC_MAC_KEY;
+        return stringEquals(value, PUBLIC_AUTH_KEY)
+            || stringEquals(value, PUBLIC_ENC_KEY)
+            || stringEquals(value, PUBLIC_MAC_KEY);
     }
 
     function isSafeAuthKey(value) {
@@ -243,9 +249,9 @@ module PanicProtocol {
         return hasExactKeys(value, EVENT_KEYS)
             && value["v"] == 1
             && isCanonicalId(value["event_id"])
-            && value["incident_id"] == value["event_id"]
+            && stringEquals(value["incident_id"], value["event_id"])
             && isCanonicalId(value["device_id"])
-            && value["kind"] == V1_KIND
+            && stringEquals(value["kind"], V1_KIND)
             && value["sequence"] == 0
             && value["created_at"] instanceof Lang.Number
             && value["created_at"] >= 0
@@ -273,12 +279,14 @@ module PanicProtocol {
             || !hasExactKeys(value["payload"], PAYLOAD_KEYS)) {
             return false;
         }
-        if (value["kind"] == V2_LIVE_KIND) {
-            if (value["sequence"] != 0 || value["incident_id"] != value["event_id"]) {
+        if (stringEquals(value["kind"], V2_LIVE_KIND)) {
+            if (value["sequence"] != 0
+                || !stringEquals(value["incident_id"], value["event_id"])) {
                 return false;
             }
-        } else if (value["kind"] == V2_LOCATION_KIND) {
-            if (value["sequence"] < 1 || value["incident_id"] == value["event_id"]) {
+        } else if (stringEquals(value["kind"], V2_LOCATION_KIND)) {
+            if (value["sequence"] < 1
+                || stringEquals(value["incident_id"], value["event_id"])) {
                 return false;
             }
         } else {
@@ -419,13 +427,13 @@ module PanicProtocol {
     function verifyStatusResult(data, query, keyHex, receiveAt) {
         if (!hasExactKeys(data, STATUS_RESULT_KEYS)
             || data["v"] != 2
-            || data["request_id"] != query["request_id"]
-            || data["incident_id"] != query["incident_id"]
-            || data["device_id"] != query["device_id"]
-            || !(data["state"] == "active"
-                || data["state"] == "acknowledged"
-                || data["state"] == "resolved"
-                || data["state"] == "expired")
+            || !stringEquals(data["request_id"], query["request_id"])
+            || !stringEquals(data["incident_id"], query["incident_id"])
+            || !stringEquals(data["device_id"], query["device_id"])
+            || !(stringEquals(data["state"], "active")
+                || stringEquals(data["state"], "acknowledged")
+                || stringEquals(data["state"], "resolved")
+                || stringEquals(data["state"], "expired"))
             || !(data["checked_at"] instanceof Lang.Number)
             || data["checked_at"] < 0
             || data["checked_at"] > MAX_TIME
@@ -518,8 +526,8 @@ module PanicProtocol {
     function verifyDurablyAccepted(data, event, keyHex) {
         if (!hasExactKeys(data, RESULT_KEYS)
             || data["v"] != event["v"]
-            || data["event_id"] != event["event_id"]
-            || data["result"] != "durably_accepted"
+            || !stringEquals(data["event_id"], event["event_id"])
+            || !stringEquals(data["result"], "durably_accepted")
             || !(data["response_signature"] instanceof Lang.String)) {
             return false;
         }
@@ -532,9 +540,9 @@ module PanicProtocol {
     function failureResult(data) {
         if (data instanceof Lang.Dictionary
             && data["result"] instanceof Lang.String
-            && (data["result"] == "retryable_failure"
-                || data["result"] == "configuration_failure"
-                || data["result"] == "result_unknown")) {
+            && (stringEquals(data["result"], "retryable_failure")
+                || stringEquals(data["result"], "configuration_failure")
+                || stringEquals(data["result"], "result_unknown"))) {
             return data["result"];
         }
         return "result_unknown";
@@ -547,9 +555,9 @@ module PanicProtocol {
             && isLowerHex(templateId, 32)
             && keyVersion instanceof Lang.Number
             && keyVersion >= 1
-            && authKey != encryptionKey
-            && authKey != macKey
-            && encryptionKey != macKey
+            && !stringEquals(authKey, encryptionKey)
+            && !stringEquals(authKey, macKey)
+            && !stringEquals(encryptionKey, macKey)
             && !isPublicFixtureKey(encryptionKey)
             && !isPublicFixtureKey(macKey);
     }
@@ -651,39 +659,394 @@ function protocolConformance(logger) {
         "response_signature" => "v2=1PKgg7-Pz7Ko7_jtlrQaJoWxOLwI16D6FGCt4YnnzIM"
     };
 
-    var passed = PanicProtocol.isTestEvent(testEvent)
-        && PanicProtocol.requestSignature(PanicProtocol.PUBLIC_AUTH_KEY, testEvent)
-            == "v1=8k8O8CI4Qixqv4CbzsfUo5kPAxekGoYsyssb7IeAZRs"
-        && PanicProtocol.responseSignature(PanicProtocol.PUBLIC_AUTH_KEY, 1, eventId)
-            == "v1=6eCuAfV44rtvISQNtNPfUXpt50fm_U5sUj4POwx42UM"
-        && PanicProtocol.isEncryptedEvent(liveEvent)
-        && liveEvent["payload"]["ciphertext"] == "8eRa_JOzxdPOO3l494xv5Q"
-        && liveEvent["payload"]["tag"] == "QOA-t_kexwtJrWsQaj8FZuEb9TdOhPAcHCDMbgkrCB8"
-        && PanicProtocol.requestSignature(PanicProtocol.PUBLIC_AUTH_KEY, liveEvent)
-            == "v2=vkHWr3fYtcYij4GqeJJ49dJhDn38m26ifCTJAU3SknY"
-        && PanicProtocol.responseSignature(PanicProtocol.PUBLIC_AUTH_KEY, 2, eventId)
-            == "v2=Z40vnSWhJ7rbDRz6kO8nAh8-Qen5RGpl20xiiQ6kCpI"
-        && PanicProtocol.isEncryptedEvent(locationEvent)
-        && locationEvent["payload"]["ciphertext"] == "Ni1HgpKbRi0gcHT2Ms7Xkw"
-        && locationEvent["payload"]["tag"] == "nMEC__4q1F-LpD8k3ISQ1i1zdYK2aO8LOzvDGlfEj-Y"
-        && PanicProtocol.requestSignature(PanicProtocol.PUBLIC_AUTH_KEY, locationEvent)
-            == "v2=uGLHdOkt0pA1daHA313hWEMUI2pdB5mQNuwQOB_uTM8"
-        && PanicProtocol.responseSignature(
-            PanicProtocol.PUBLIC_AUTH_KEY,
-            2,
-            locationEvent["event_id"]
-        ) == "v2=fsU52lMaXLa4DAu00Awg8-uFZgePLPLim_P4OzRMTiQ"
-        && PanicProtocol.isStatusQuery(statusQuery)
-        && PanicProtocol.statusRequestSignature(PanicProtocol.PUBLIC_AUTH_KEY, statusQuery)
-            == "v2=O7ik82fJBgz3-OwXGZeUALuSlufZvQT2Gr9rkFVnGdw"
+    if (!PanicProtocol.isTestEvent(testEvent)) {
+        if (!PanicProtocol.hasExactKeys(testEvent, PanicProtocol.EVENT_KEYS)) {
+            logger.error("V1 event keys failed");
+        } else if (!PanicProtocol.isCanonicalId(testEvent["event_id"])
+            || !PanicProtocol.isCanonicalId(testEvent["device_id"])) {
+            logger.error("V1 event identifiers failed");
+        } else if (!(testEvent["created_at"] instanceof Lang.Number)
+            || !(testEvent["expires_at"] instanceof Lang.Number)) {
+            logger.error("V1 event timestamp types failed");
+        } else if (testEvent["v"] != 1) {
+            logger.error("V1 event version failed");
+        } else if (!PanicProtocol.stringEquals(
+            testEvent["incident_id"],
+            testEvent["event_id"]
+        )) {
+            logger.error("V1 event incident failed");
+        } else if (!PanicProtocol.stringEquals(testEvent["kind"], PanicProtocol.V1_KIND)) {
+            logger.error("V1 event kind failed");
+        } else if (testEvent["sequence"] != 0) {
+            logger.error("V1 event sequence failed");
+        } else if (testEvent["payload"] != null) {
+            logger.error("V1 event payload failed");
+        } else {
+            logger.error(
+                "V1 event timestamps failed: "
+                + testEvent["created_at"].format("%d")
+                + "/"
+                + testEvent["expires_at"].format("%d")
+            );
+        }
+        return false;
+    }
+    var v1RequestSignature = PanicProtocol.requestSignature(
+        PanicProtocol.PUBLIC_AUTH_KEY,
+        testEvent
+    );
+    if (!PanicProtocol.stringEquals(
+        v1RequestSignature,
+        "v1=8k8O8CI4Qixqv4CbzsfUo5kPAxekGoYsyssb7IeAZRs"
+    )) {
+        logger.error("V1 request signature failed: " + v1RequestSignature);
+        return false;
+    }
+    var v1ResponseSignature = PanicProtocol.responseSignature(
+        PanicProtocol.PUBLIC_AUTH_KEY,
+        1,
+        eventId
+    );
+    if (!PanicProtocol.stringEquals(
+        v1ResponseSignature,
+        "v1=6eCuAfV44rtvISQNtNPfUXpt50fm_U5sUj4POwx42UM"
+    )) {
+        logger.error("V1 response signature failed: " + v1ResponseSignature);
+        return false;
+    }
+    if (!(PanicProtocol.isEncryptedEvent(liveEvent)
+        && PanicProtocol.stringEquals(
+            liveEvent["payload"]["ciphertext"],
+            "8eRa_JOzxdPOO3l494xv5Q"
+        )
+        && PanicProtocol.stringEquals(
+            liveEvent["payload"]["tag"],
+            "QOA-t_kexwtJrWsQaj8FZuEb9TdOhPAcHCDMbgkrCB8"
+        )
+        && PanicProtocol.stringEquals(
+            PanicProtocol.requestSignature(PanicProtocol.PUBLIC_AUTH_KEY, liveEvent),
+            "v2=vkHWr3fYtcYij4GqeJJ49dJhDn38m26ifCTJAU3SknY"
+        )
+        && PanicProtocol.stringEquals(
+            PanicProtocol.responseSignature(PanicProtocol.PUBLIC_AUTH_KEY, 2, eventId),
+            "v2=Z40vnSWhJ7rbDRz6kO8nAh8-Qen5RGpl20xiiQ6kCpI"
+        ))) {
+        logger.error("LIVE v2 conformance vector failed");
+        return false;
+    }
+    if (!(PanicProtocol.isEncryptedEvent(locationEvent)
+        && PanicProtocol.stringEquals(
+            locationEvent["payload"]["ciphertext"],
+            "Ni1HgpKbRi0gcHT2Ms7Xkw"
+        )
+        && PanicProtocol.stringEquals(
+            locationEvent["payload"]["tag"],
+            "nMEC__4q1F-LpD8k3ISQ1i1zdYK2aO8LOzvDGlfEj-Y"
+        )
+        && PanicProtocol.stringEquals(
+            PanicProtocol.requestSignature(PanicProtocol.PUBLIC_AUTH_KEY, locationEvent),
+            "v2=uGLHdOkt0pA1daHA313hWEMUI2pdB5mQNuwQOB_uTM8"
+        )
+        && PanicProtocol.stringEquals(
+            PanicProtocol.responseSignature(
+                PanicProtocol.PUBLIC_AUTH_KEY,
+                2,
+                locationEvent["event_id"]
+            ),
+            "v2=fsU52lMaXLa4DAu00Awg8-uFZgePLPLim_P4OzRMTiQ"
+        ))) {
+        logger.error("Location v2 conformance vector failed");
+        return false;
+    }
+    if (!(PanicProtocol.isStatusQuery(statusQuery)
+        && PanicProtocol.stringEquals(
+            PanicProtocol.statusRequestSignature(PanicProtocol.PUBLIC_AUTH_KEY, statusQuery),
+            "v2=O7ik82fJBgz3-OwXGZeUALuSlufZvQT2Gr9rkFVnGdw"
+        )
         && PanicProtocol.verifyStatusResult(
             statusResult,
             statusQuery,
             PanicProtocol.PUBLIC_AUTH_KEY,
             1788105701
-        );
-    if (!passed) {
-        logger.error("Protocol conformance vectors failed");
+        ))) {
+        logger.error("Status v2 conformance vector failed");
+        return false;
     }
-    return passed;
+    return true;
+}
+
+(:test)
+function protocolRejectsMalformedEvents(logger) {
+    var eventId = "AAECAwQFBgcICQoLDA0ODw";
+    var deviceId = "EBESExQVFhcYGRobHB0eHw";
+    var testEvent = PanicProtocol.newTestEvent(eventId, deviceId, 1788105600);
+
+    if (!PanicProtocol.isTestEvent(testEvent)
+        || PanicProtocol.isTestEvent(
+            PanicProtocol.newTestEvent(eventId, deviceId, -1)
+        )
+        || PanicProtocol.isTestEvent(
+            PanicProtocol.newTestEvent(
+                eventId,
+                deviceId,
+                PanicProtocol.MAX_V1_CREATED_AT + 1
+            )
+        )
+        || PanicProtocol.isCanonicalId("AAECAwQFBgcICQoLDA0ODx")
+        || PanicProtocol.isCanonicalId("AAECAwQFBgcICQoLDA0ODw=")
+        || PanicProtocol.isCanonicalDigest(
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        )) {
+        logger.error("Canonical identifier or V1 timestamp boundary failed");
+        return false;
+    }
+
+    testEvent["extra"] = 1;
+    if (PanicProtocol.isTestEvent(testEvent)) {
+        logger.error("V1 event accepted an extra key");
+        return false;
+    }
+
+    var liveEvent = PanicProtocol.newEncryptedEventWithIv(
+        PanicProtocol.V2_LIVE_KIND,
+        eventId,
+        eventId,
+        deviceId,
+        0,
+        1788105600,
+        1788192000,
+        1,
+        PanicProtocol.hexBytes("a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"),
+        PanicProtocol.PUBLIC_ENC_KEY,
+        PanicProtocol.PUBLIC_MAC_KEY,
+        PanicProtocol.hexBytes("606162636465666768696a6b6c6d6e6f")
+    );
+    if (!PanicProtocol.isEncryptedEvent(liveEvent)) {
+        logger.error("V2 maximum lifetime boundary failed");
+        return false;
+    }
+    liveEvent["expires_at"] = 1788192001;
+    if (PanicProtocol.isEncryptedEvent(liveEvent)) {
+        logger.error("V2 event exceeded maximum lifetime");
+        return false;
+    }
+    liveEvent["expires_at"] = 1788105600;
+    if (PanicProtocol.isEncryptedEvent(liveEvent)) {
+        logger.error("V2 event accepted a zero lifetime");
+        return false;
+    }
+    liveEvent["expires_at"] = 1788109200;
+    liveEvent["kind"] = PanicProtocol.V2_LOCATION_KIND;
+    liveEvent["sequence"] = 1;
+    if (PanicProtocol.isEncryptedEvent(liveEvent)) {
+        logger.error("Location event reused its incident identifier");
+        return false;
+    }
+    liveEvent["event_id"] = "sLGys7S1tre4ubq7vL2-vw";
+    if (!PanicProtocol.isEncryptedEvent(liveEvent)) {
+        logger.error("Valid location event was rejected");
+        return false;
+    }
+    liveEvent["payload"]["tag"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAx";
+    if (PanicProtocol.isEncryptedEvent(liveEvent)) {
+        logger.error("V2 event accepted a non-canonical digest");
+        return false;
+    }
+    return true;
+}
+
+(:test)
+function protocolRejectsUnsafeConfiguration(logger) {
+    var authKey = "11111111111111111111111111111111"
+        + "11111111111111111111111111111111";
+    var encryptionKey = "22222222222222222222222222222222"
+        + "22222222222222222222222222222222";
+    var macKey = "33333333333333333333333333333333"
+        + "33333333333333333333333333333333";
+    var templateId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    if (!PanicProtocol.isSafeAuthKey(authKey)
+        || PanicProtocol.isSafeAuthKey(PanicProtocol.PUBLIC_AUTH_KEY)
+        || PanicProtocol.isSafeAuthKey(
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        )
+        || !PanicProtocol.isSafeLiveConfiguration(
+            authKey,
+            encryptionKey,
+            macKey,
+            templateId,
+            1
+        )
+        || PanicProtocol.isSafeLiveConfiguration(
+            authKey,
+            authKey,
+            macKey,
+            templateId,
+            1
+        )
+        || PanicProtocol.isSafeLiveConfiguration(
+            authKey,
+            encryptionKey,
+            encryptionKey,
+            templateId,
+            1
+        )
+        || PanicProtocol.isSafeLiveConfiguration(
+            authKey,
+            PanicProtocol.PUBLIC_MAC_KEY,
+            macKey,
+            templateId,
+            1
+        )
+        || PanicProtocol.isSafeLiveConfiguration(
+            authKey,
+            encryptionKey,
+            PanicProtocol.PUBLIC_ENC_KEY,
+            templateId,
+            1
+        )
+        || PanicProtocol.isSafeLiveConfiguration(
+            authKey,
+            encryptionKey,
+            macKey,
+            templateId,
+            0
+        )) {
+        logger.error("LIVE key separation or fixture-key rejection failed");
+        return false;
+    }
+    if (!PanicProtocol.isHttpsBaseUrl("https://alerts.example")
+        || PanicProtocol.isHttpsBaseUrl("http://alerts.example")
+        || PanicProtocol.isHttpsBaseUrl("https://alerts.example/")
+        || PanicProtocol.isHttpsBaseUrl("https://alerts.example/v2")
+        || PanicProtocol.isHttpsBaseUrl("https://user@alerts.example")
+        || PanicProtocol.isHttpsBaseUrl("https://alerts.example?test=1")
+        || PanicProtocol.isHttpsBaseUrl("https://alerts.example#fragment")) {
+        logger.error("Relay origin validation failed");
+        return false;
+    }
+    var dynamicValue = StringUtil.charArrayToString("durably_accepted".toCharArray());
+    if (!PanicProtocol.stringEquals(dynamicValue, "durably_accepted")) {
+        logger.error("String value equality failed");
+        return false;
+    }
+    return true;
+}
+
+(:test)
+function protocolRejectsTamperedResults(logger) {
+    var eventId = "AAECAwQFBgcICQoLDA0ODw";
+    var deviceId = "EBESExQVFhcYGRobHB0eHw";
+    var testEvent = PanicProtocol.newTestEvent(eventId, deviceId, 1788105600);
+    var accepted = {
+        "v" => 1,
+        "event_id" => eventId,
+        "result" => "durably_accepted",
+        "response_signature" => PanicProtocol.responseSignature(
+            PanicProtocol.PUBLIC_AUTH_KEY,
+            1,
+            eventId
+        )
+    };
+    if (!PanicProtocol.verifyDurablyAccepted(
+        accepted,
+        testEvent,
+        PanicProtocol.PUBLIC_AUTH_KEY
+    )) {
+        logger.error("Valid durable result was rejected");
+        return false;
+    }
+    accepted["response_signature"] =
+        "v1=6eCuAfV44rtvISQNtNPfUXpt50fm_U5sUj4POwx42UA";
+    if (PanicProtocol.verifyDurablyAccepted(
+        accepted,
+        testEvent,
+        PanicProtocol.PUBLIC_AUTH_KEY
+    )) {
+        logger.error("Tampered durable signature was accepted");
+        return false;
+    }
+    accepted["response_signature"] = PanicProtocol.responseSignature(
+        PanicProtocol.PUBLIC_AUTH_KEY,
+        1,
+        eventId
+    );
+    accepted["extra"] = null;
+    if (PanicProtocol.verifyDurablyAccepted(
+        accepted,
+        testEvent,
+        PanicProtocol.PUBLIC_AUTH_KEY
+    )) {
+        logger.error("Durable result accepted an extra key");
+        return false;
+    }
+
+    var query = PanicProtocol.newStatusQuery(
+        "ICEiIyQlJicoKSorLC0uLw",
+        eventId,
+        deviceId,
+        1788105700,
+        1788109200
+    );
+    var status = {
+        "v" => 2,
+        "request_id" => "ICEiIyQlJicoKSorLC0uLw",
+        "incident_id" => eventId,
+        "device_id" => deviceId,
+        "state" => "resolved",
+        "checked_at" => 1788105701,
+        "response_signature" => "v2=1PKgg7-Pz7Ko7_jtlrQaJoWxOLwI16D6FGCt4YnnzIM"
+    };
+    if (!PanicProtocol.verifyStatusResult(
+        status,
+        query,
+        PanicProtocol.PUBLIC_AUTH_KEY,
+        1788105701
+    )) {
+        logger.error("Valid status result was rejected");
+        return false;
+    }
+    status["state"] = "closed";
+    if (PanicProtocol.verifyStatusResult(
+        status,
+        query,
+        PanicProtocol.PUBLIC_AUTH_KEY,
+        1788105701
+    )) {
+        logger.error("Unknown status state was accepted");
+        return false;
+    }
+    status["state"] = "resolved";
+    status["request_id"] = "sLGys7S1tre4ubq7vL2-vw";
+    if (PanicProtocol.verifyStatusResult(
+        status,
+        query,
+        PanicProtocol.PUBLIC_AUTH_KEY,
+        1788105701
+    )) {
+        logger.error("Mismatched status request was accepted");
+        return false;
+    }
+    status["request_id"] = "ICEiIyQlJicoKSorLC0uLw";
+    if (PanicProtocol.verifyStatusResult(
+        status,
+        query,
+        PanicProtocol.PUBLIC_AUTH_KEY,
+        1788106001
+    )) {
+        logger.error("Stale status result was accepted");
+        return false;
+    }
+    if (!PanicProtocol.stringEquals(
+        PanicProtocol.failureResult({"result" => "retryable_failure"}),
+        "retryable_failure"
+    ) || !PanicProtocol.stringEquals(
+        PanicProtocol.failureResult({"result" => "untrusted"}),
+        "result_unknown"
+    )) {
+        logger.error("Failure result classification failed closed");
+        return false;
+    }
+    return true;
 }

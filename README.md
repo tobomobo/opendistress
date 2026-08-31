@@ -4,7 +4,7 @@ An MIT-licensed, Garmin-first panic-notification prototype with independent
 Wear OS and watchOS clients.
 
 > **Not an emergency-ready product.** The source slices are implemented, but
-> Garmin SDK/device validation, provider trials, native enrollment hardening,
+> Garmin strict/device validation, provider trials, native enrollment hardening,
 > and the physical reliability matrix are still explicit release gates.
 
 ```text
