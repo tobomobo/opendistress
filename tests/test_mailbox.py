@@ -9,6 +9,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from relay.mailbox import (
     ACK_CIPHERTEXT_BYTES,
@@ -193,9 +194,10 @@ class MailboxConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "mailboxes.json"
             path.write_text(json.dumps(raw))
-            os.chmod(path, 0o644)
-            with self.assertRaisesRegex(ValueError, "mode 0600"):
-                load_mailboxes(path)
+            unsafe_stat = mock.Mock(st_mode=0o100644, st_size=path.stat().st_size)
+            with mock.patch.object(Path, "stat", return_value=unsafe_stat):
+                with self.assertRaisesRegex(ValueError, "mode 0600"):
+                    load_mailboxes(path)
             os.chmod(path, 0o600)
             loaded = load_mailboxes(path)
         self.assertEqual(loaded, mailbox_config())
