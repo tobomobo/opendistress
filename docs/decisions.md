@@ -84,3 +84,106 @@ one demonstrated by Pushover and ntfy.
 The Garmin app-list, glance, and published complication surfaces are present.
 The separate launcher face remains absent because the plan requires physical
 measurements to show those stock surfaces are inadequate first.
+
+## 2026-08-31 — Require a covert hold inside the LIVE app
+
+A fully provisioned personal Garmin build is LIVE-only and renders a neutral
+analog cover immediately, but foreground launch alone never triggers. The top
+hardware key (`START`/`ENTER`) must remain pressed for 1.5 seconds; releasing
+sooner cancels, DOWN is inert, and no visible countdown is shown. At the threshold the encrypted event is
+persisted before a short best-effort haptic and immediate submission. This
+reuses the existing retry timer because fēnix permits only three concurrent
+timers by default.
+
+The public/unprovisioned build remains TEST-only. Connect IQ still cannot
+register a global arrow-button listener, so launcher availability remains a
+firmware/device fact. The analog cover and haptic are evidence only of local
+UI and persistence behavior, never relay acceptance, provider delivery,
+acknowledgement, or resolution.
+
+## 2026-08-31 — Treat receiver interruption as an enrollment gate
+
+LIVE Pushover routes use emergency priority 2 and require a receipt, but that
+provider request is not by itself proof of an audible Critical Alert. Each
+recipient must explicitly enable Pushover's iOS Critical Alerts or Android
+alarm/DND override behavior, and must pass a supervised locked-device drill.
+ntfy remains a secondary transport without an equivalent Critical Alert or
+human-acknowledgement claim in this implementation.
+
+## 2026-09-01 — Retry a phone-path failure over saved Wi-Fi without delaying activation
+
+The Garmin client persists a LIVE trigger and makes its first web request
+immediately, before GPS and without a Wi-Fi preflight. Only when Garmin reports
+that the BLE phone path is unavailable or its host timed out does the app ask
+the platform once for an internet-capable saved Wi-Fi connection and retry the
+same immutable queue head. The check has a ten-second watchdog, and reopening
+the foreground app resumes any durable pending event automatically. Neither
+path creates a new incident.
+
+Connect IQ exposes neither the SSID/BSSID nor a nearby-network list through
+this API, and a reported LTE connection is not proof that arbitrary Connect IQ
+HTTPS can use LTE. Those values therefore remain diagnostics rather than
+location or delivery evidence.
+
+The same foreground client now targets the current fēnix 8 AMOLED/Solar/Pro,
+fēnix E, Forerunner 970, Instinct 3 AMOLED/Solar, Venu 4, and Venu X1 SDK
+profiles. Display-relative layouts avoid the Instinct Solar subdisplay and
+cover round AMOLED, round MIP, and rectangular screens. A profile build proves
+only SDK compatibility; physical buttons, readability, haptics, network paths,
+GPS, and foreground lifetime remain device-specific gates.
+
+## 2026-09-01 — Add a phone-configured direct Pushover TEST before the relay
+
+The private beta accepts a Pushover user/group key and application token through
+Garmin's password-type app settings and sends the fixed non-sensitive TEST
+directly from the foreground watch app. This deliberately avoids requiring an
+operator-run relay for the first end-to-end physical proof. A distinct beta app
+ID is required so Garmin Connect/Connect IQ can deliver settings without
+publishing the production listing.
+
+In this mode one `START`/`ENTER` press triggers immediately; DOWN remains inert.
+Only an HTTP 200 response containing status `1`, a valid provider request
+reference, and the required emergency receipt is persisted as acceptance. The
+app then gives a double haptic and draws the neutral analog cover. This
+supersedes the earlier pre-trigger-cover decision for the direct TEST path: the
+cover now means provider acceptance only, never device delivery, recipient
+acknowledgement, incident resolution, or that help is coming. MENU resets the
+accepted TEST. Direct LIVE, receipt polling, and production secret enrollment
+remain out of scope; the later decision below adds only the bounded personal
+direct-GPS drill.
+
+## 2026-09-01 — Permit a bounded plaintext GPS drill only after direct acceptance
+
+For the personal beta POC, the operator explicitly accepts that Pushover and
+the Google Maps link target see exact watch coordinates. This exception is
+separate from normative TEST v1, whose fixed alert remains non-sensitive, and
+does not weaken encrypted LIVE/v2. The direct emergency request is attempted
+and valid provider acceptance is durably stored before any position API call.
+Only then does real watch GPS run in the foreground for at most one hour.
+
+The first valid fix is persisted before submission and sent with Pushover
+priority 1; materially changed later fixes use priority 0 and the existing
+30-second/two-minute/five-minute battery-aware cadence. Pending location state
+survives reopen, provider ambiguity may duplicate a message, and local
+coordinate records are scrubbed at expiry or explicit MENU reset. Mock or
+simulator positions can exercise code but never satisfy a physical GPS gate.
+
+## 2026-09-01 — Add a separate content-blind mailbox transport
+
+The frozen v2 event endpoint remains unchanged for current watch/provider
+testing. A new mailbox transport wraps the complete v2 JSON in a fixed-size,
+independently encrypted capsule so the mailbox operator cannot distinguish LIVE
+from location or read device, incident, sequence, and creation metadata. This
+is a transport around v2, not a v2 migration.
+
+Each recipient gets a separate random mailbox with independent append, read,
+and ACK capabilities. The server stores only their hashes and enforces 32
+active messages, 64 new messages per hour, a 24-hour maximum event lifetime,
+and expiry-plus-24-hour deletion. It does not use proof-of-work or collect
+LIVE/TEST analytics.
+
+Recipient acknowledgements are independently encrypted and bind the exact
+capsule digest, inner incident, sequence, and message ID. Relay acceptance is
+still not E2E acknowledgement. The Node codec and relay endpoints establish the
+contract; companion enrollment, Android receiver integration, Garmin compiler
+work, deployment, and physical drills remain separate gates.

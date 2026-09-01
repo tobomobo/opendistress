@@ -22,6 +22,15 @@ Provider-held notification copies follow the configured provider's own retention
 for example, ntfy commonly caches messages for offline subscribers. Use a private
 self-hosted instance when that boundary is unacceptable.
 
+The personal relay-free Garmin beta has one explicit, non-production exception:
+after the fixed non-sensitive TEST alert receives valid Pushover acceptance, a
+one-hour foreground GPS drill can send exact coordinates in Pushover messages
+and Google Maps URLs. This is outside TEST v1 and v2, and therefore outside the
+encrypted location guarantee above. Pushover and Google can observe and retain
+those coordinates under their own policies. Local last/pending coordinate
+records are scrubbed at expiry or MENU reset. Do not use this exception for
+production LIVE or with anyone who has not explicitly consented.
+
 Maximum defaults are:
 
 | Data | Maximum retention |
@@ -30,11 +39,23 @@ Maximum defaults are:
 | Encrypted LIVE body | earlier of resolution + 24 hours or expiry + 24 hours |
 | Encrypted location body | resolution or event expiry, and always creation + 24 hours |
 | Event, classified delivery, and attempt metadata | event expiry + 24 hours |
+| Blind mailbox capsule and encrypted ACK | event expiry + 24 hours |
 | Raw bodies in logs | never |
 | Provider response content beyond required IDs/evidence | not retained |
 | IP addresses and analytics | not persisted / none |
 | Backups | 7 days |
 
-Contacts and coordinates never belong in URLs, logs, acknowledgements, or bug
-reports. Public fixtures contain only generated test material. Longer retention
-requires an explicit local export rather than changing server defaults.
+Except for the expressly consented personal direct-GPS drill above, contacts
+and coordinates never belong in URLs, logs, acknowledgements, or bug reports.
+Public fixtures contain only generated test material. Longer retention requires
+an explicit local export rather than changing server defaults.
+
+The optional blind-mailbox transport reduces relay-visible application
+metadata further: event kind, device, incident, sequence, creation time, and
+the complete v2 event are inside a fixed-size encrypted capsule. It does not
+hide source IP from the ingress stack, traffic timing, fixed packet size,
+random mailbox/message identifiers, outer expiry, or polling and ACK timing.
+Mailbox capabilities and content keys remain outside logs and are never part of
+aggregate usage statistics. Server configuration contains capability hashes
+only. Central LIVE/TEST counters are intentionally absent because they would
+require revealing the very event semantics this transport hides.

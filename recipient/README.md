@@ -38,3 +38,22 @@ Run its stdlib-only tests with:
 ```sh
 node --test recipient/recipient.test.js
 ```
+
+## Blind mailbox reference codec
+
+[`mailbox.js`](mailbox.js) wraps a complete validated v2 event in a fixed-size
+encrypted capsule and creates/verifies an independently encrypted recipient ACK
+bound to the exact capsule hash, incident, and sequence. It is the shared
+reference for the future companion and Android receiver; it is not yet a
+networked receiver application. Its tests prove fixed outer sizes, semantic
+hiding, tamper rejection, round-trip decoding, and ACK binding:
+
+```sh
+node --test recipient/mailbox.test.js
+```
+
+Mailbox transport keys are independent of v2 content keys. The relay gets only
+SHA-256 capability hashes; the private enrollment carries the raw append/read/
+ACK capabilities plus separate send-encryption, send-MAC, ACK-encryption, and
+ACK-MAC keys. Do not provision that enrollment through ordinary Garmin app
+settings or store it on the relay.

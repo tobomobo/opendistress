@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smart-panic-button.invalid/protocol/mailbox-message-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "mailbox_id", "message_id", "expires_at", "payload"],
+  "properties": {
+    "v": { "const": 1 },
+    "mailbox_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+    "message_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+    "expires_at": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iv", "ciphertext", "tag"],
+      "properties": {
+        "iv": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+        "ciphertext": { "type": "string", "pattern": "^[A-Za-z0-9_-]{683}$" },
+        "tag": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+      }
+    }
+  }
+}

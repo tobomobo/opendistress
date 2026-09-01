@@ -21,13 +21,17 @@ class GarminContractTests(unittest.TestCase):
         for path in GARMIN.glob("resources/*/*.xml"):
             ET.parse(path)
         manifest = ET.parse(GARMIN / "manifest.xml").getroot()
+        beta_manifest = ET.parse(GARMIN / "manifest-beta.xml").getroot()
         namespace = {"iq": "http://www.garmin.com/xml/connectiq"}
         permissions = {
             item.attrib["id"] for item in manifest.findall(".//iq:uses-permission", namespace)
         }
         products = {item.attrib["id"] for item in manifest.findall(".//iq:product", namespace)}
+        beta_products = {
+            item.attrib["id"] for item in beta_manifest.findall(".//iq:product", namespace)
+        }
         settings = ET.parse(GARMIN / "resources/settings/settings.xml").getroot()
-        setting_keys = {item.attrib["propertyKey"] for item in settings.findall("./setting")}
+        setting_keys = {item.attrib["propertyKey"] for item in settings.findall(".//setting")}
         drawables = ET.parse(GARMIN / "resources/drawables/drawables.xml").getroot()
         drawable_files = {
             item.attrib["id"]: item.attrib["filename"]
@@ -38,7 +42,33 @@ class GarminContractTests(unittest.TestCase):
             permissions,
             {"Communications", "ComplicationPublisher", "Positioning"},
         )
-        self.assertEqual(products, {"fenix847mm"})
+        self.assertEqual(
+            products,
+            {
+                "fenix843mm",
+                "fenix847mm",
+                "fenix8solar47mm",
+                "fenix8solar51mm",
+                "fenix8pro47mm",
+                "fenixe",
+                "fr970",
+                "instinct3amoled45mm",
+                "instinct3amoled50mm",
+                "instinct3solar45mm",
+                "venu441mm",
+                "venu445mm",
+                "venux1",
+            },
+        )
+        self.assertEqual(beta_products, products)
+        production_app = manifest.find("./iq:application", namespace)
+        beta_app = beta_manifest.find("./iq:application", namespace)
+        self.assertNotEqual(beta_app.attrib["id"], production_app.attrib["id"])
+        self.assertEqual(beta_app.attrib["name"], "@Strings.BetaAppName")
+        beta_jungle = (GARMIN / "beta.jungle").read_text()
+        self.assertIn("project.manifest = manifest-beta.xml", beta_jungle)
+        self.assertIn("base.sourcePath = source", beta_jungle)
+        self.assertIn("base.resourcePath = resources", beta_jungle)
         self.assertEqual(
             drawable_files,
             {"LauncherIcon": "launcher.svg", "ComplicationIcon": "complication.svg"},
@@ -50,12 +80,67 @@ class GarminContractTests(unittest.TestCase):
         )
         self.assertEqual(
             setting_keys,
-            {"@Properties.relayBaseUrl", "@Properties.deviceId", "@Properties.hmacKeyHex"},
+            {"@Properties.pushoverUserKey", "@Properties.pushoverApiToken"},
+        )
+        setting_types = {
+            item.attrib["propertyKey"]: item.find("./settingConfig").attrib["type"]
+            for item in settings.findall(".//setting")
+        }
+        self.assertEqual(
+            setting_types,
+            {
+                "@Properties.pushoverUserKey": "password",
+                "@Properties.pushoverApiToken": "password",
+            },
         )
         self.assertTrue(
             all("live" not in key.lower() for key in setting_keys),
             "LIVE content/authentication keys must not pass through Garmin app settings",
         )
+
+    def test_status_and_cover_scale_across_round_and_rectangular_displays(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        update = source[
+            source.index("function onUpdate(dc)", source.index("class PanicView"))
+            : source.index("function activate()")
+        ]
+        strings = ET.parse(GARMIN / "resources/strings/strings.xml").getroot()
+        app_name = next(item.text for item in strings.findall("./string") if item.attrib["id"] == "AppName")
+        launcher = (GARMIN / "resources/drawables/launcher.svg").read_text()
+
+        self.assertEqual(app_name, "Panic Button")
+        self.assertIn("var isRound = width == height", update)
+        self.assertIn("var compactRound = isRound && width < 220", update)
+        self.assertIn("compactRound ? 62 : (isRound ? 76 : 88)", update)
+        self.assertIn("compactRound ? 14 : 18", update)
+        self.assertIn("compactRound ? 50 : 47", update)
+        self.assertIn("compactRound ? 86 : 80", update)
+        self.assertEqual(update.count("new WatchUi.TextArea"), 3)
+        self.assertIn("Graphics.FONT_LARGE, Graphics.FONT_MEDIUM", update)
+        self.assertIn("Graphics.FONT_SMALL, Graphics.FONT_TINY", update)
+        self.assertIn("compactDisplayId(_displayEventId)", update)
+        self.assertIn('id.substring(0, 4) + "..."', source)
+        self.assertEqual(launcher.count("<circle"), 1)
+        self.assertEqual(launcher.count("<polygon"), 1)
+        self.assertNotIn("<rect", launcher)
+
+        cover = source[source.index("function drawAnalogCover(") : source.index("function drawHand(")]
+        self.assertIn("var minSize = width < height ? width : height", cover)
+        self.assertIn("var compactRound = width == height && minSize < 220", cover)
+        self.assertIn("(width * 43) / 100", cover)
+        self.assertIn("(height * 57) / 100", cover)
+        self.assertIn("var edgePadding = minSize / 15", cover)
+        self.assertIn("if (minSize >= 220)", cover)
+
+    def test_failed_test_event_uses_clearable_non_live_language(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        failure = source[
+            source.index("function handleFailure(") : source.index("function retryPending()")
+        ]
+
+        self.assertIn('_queue[0]["v"] == 1', failure)
+        self.assertIn('setState("TEST PENDING", detail)', failure)
+        self.assertIn('testPending ? "TEST CONFIG ERROR"', failure)
 
     def test_monkey_c_self_test_embeds_v1_and_v2_public_vectors(self):
         v1 = dict(
@@ -136,13 +221,238 @@ class GarminContractTests(unittest.TestCase):
         source = (GARMIN / "source/PanicApp.mc").read_text()
         live = source[source.index("function activateLive()") : source.index("function captureLocations()")]
 
-        self.assertEqual(source.count("Communications.makeWebRequest("), 2)
+        self.assertEqual(source.count("Communications.makeWebRequest("), 4)
         self.assertLess(live.index("!persistState([event], active)"), live.index("sendPending();"))
         self.assertLess(live.index("sendPending();"), live.index("captureLocations();"))
         self.assertIn("Position.getInfo()", source)
         self.assertIn("Position.enableLocationEvents(", source)
         self.assertIn("MAX_INITIAL_RETRIES = 2", source)
-        self.assertIn("Repeated START keeps the same incident", source)
+        self.assertIn("Repeated press keeps the same incident", source)
+
+    def test_personal_live_requires_start_hold_and_down_is_inert(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        on_show = source[source.index("function onShow()") : source.index("function onHide()")]
+        delegate = source[source.index("class PanicDelegate") :]
+        pressed = source[
+            source.index("function startActionPressed()")
+            : source.index("function startActionReleased()")
+        ]
+        released = source[
+            source.index("function startActionReleased()")
+            : source.index("function commitArmedLive()")
+        ]
+        commit = source[
+            source.index("function commitArmedLive()")
+            : source.index("function selectAction()")
+        ]
+
+        self.assertIn("hasProvisionedLiveConfiguration()", source)
+        self.assertNotIn("activateLive();", on_show)
+        self.assertIn("LIVE_ARM_HOLD_MS = 1500", source)
+        self.assertIn("_retryTimer.start(method(:commitArmedLive)", pressed)
+        self.assertIn("cancelLiveArm();", released)
+        self.assertIn("activateLive();", commit)
+        self.assertIn("function onKeyPressed(event)", delegate)
+        self.assertIn("function onKeyReleased(event)", delegate)
+        self.assertIn("key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER", delegate)
+        self.assertIn("function onNextPage()", delegate)
+        next_page = delegate[delegate.index("function onNextPage()") : delegate.index("function onKeyPressed")]
+        self.assertIn("_view.downAction();", next_page)
+        self.assertNotIn("activate", next_page)
+        self.assertIn(
+            'setState("SETUP REQUIRED", "Enter Pushover keys in Garmin app settings")',
+            source,
+        )
+
+    def test_test_mode_start_press_triggers_without_waiting_for_select(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        pressed = source[
+            source.index("function startActionPressed()")
+            : source.index("function startActionReleased()")
+        ]
+
+        self.assertIn('if (!PanicProtocol.stringEquals(_mode, "LIVE"))', pressed)
+        self.assertIn("activate();", pressed)
+        self.assertLess(pressed.index("_testStartDown = true;"), pressed.index("activate();"))
+        self.assertLess(pressed.index("activate();"), pressed.rindex("return true;"))
+
+        startup = source[
+            source.index("function selectStartupMode()")
+            : source.index("function settingsChanged()")
+        ]
+        self.assertIn('hasDirectPushoverConfiguration()', startup)
+        self.assertIn('? "PUSHOVER_TEST"', startup)
+        self.assertIn("refreshConfiguredMode();", startup)
+
+    def test_phone_settings_changes_refresh_idle_test_mode(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        app = source[source.index("class PanicApp") : source.index("(:glance)")]
+        changed = source[
+            source.index("function settingsChanged()")
+            : source.index("function hasRelayTestConfiguration()")
+        ]
+
+        self.assertIn("function onSettingsChanged()", app)
+        self.assertIn("_view.settingsChanged();", app)
+        self.assertIn("selectStartupMode();", changed)
+        self.assertIn("WatchUi.requestUpdate();", changed)
+        self.assertIn("_queue.size() > 0", changed)
+        self.assertIn('_queue[0]["v"] == 1', changed)
+        self.assertIn("sendPending();", changed)
+        self.assertIn("_directResult != null", changed)
+
+    def test_analog_cover_is_only_provider_acceptance_feedback(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        update = source[source.index("function onUpdate(dc)", source.index("class PanicView")) :]
+        cover = source[source.index("function shouldShowCover()") : source.index("function selectStartupMode()")]
+
+        self.assertIn("return _directResult != null", cover)
+        self.assertNotIn("return _personalLive", cover)
+        self.assertNotIn("_activeIncident != null", cover)
+        self.assertIn("drawAnalogCover(dc);", update)
+        self.assertIn("System.getClockTime()", cover)
+        self.assertIn("COVER_REFRESH_MS = 60000", source)
+        self.assertIn("_statusTimer.start(method(:refreshIdleCover)", cover)
+        self.assertIn("scheduleIdleCoverRefresh();", cover)
+        poll = source[source.index("function pollStatus()") : source.index("function canPollStatus()")]
+        self.assertIn("WatchUi.requestUpdate();", poll)
+        self.assertNotIn("_coverTimer", source)
+        self.assertNotIn("_state", cover)
+
+        direct = source[
+            source.index("function sendDirectPushover(")
+            : source.index("function onResponse(")
+        ]
+        self.assertIn('responseCode == 200 && isPushoverAcceptance(data)', direct)
+        self.assertIn('data["status"] == 1', direct)
+        self.assertIn('isProviderReference(data["request"])', direct)
+        self.assertIn('isPushoverToken(data["receipt"])', direct)
+        self.assertLess(
+            direct.index("persistStateWithDirect("),
+            direct.index('setState("PUSHOVER ACCEPTED"'),
+        )
+        self.assertLess(
+            direct.index('setState("PUSHOVER ACCEPTED"'),
+            direct.index("confirmProviderAcceptance();"),
+        )
+
+    def test_direct_pushover_test_is_emergency_and_contains_no_live_payload(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        direct = source[
+            source.index("function sendDirectPushover(")
+            : source.index("function onPushoverResponse(")
+        ]
+
+        self.assertIn('PUSHOVER_URL = "https://api.pushover.net/1/messages.json"', source)
+        self.assertIn("PUSHOVER_TEST_MESSAGE", direct)
+        self.assertIn('"priority" => "2"', direct)
+        self.assertIn('"retry" => "30"', direct)
+        self.assertIn("REQUEST_CONTENT_TYPE_URL_ENCODED", direct)
+        self.assertIn("method(:onPushoverResponse)", direct)
+        self.assertNotIn("location", direct.lower())
+        self.assertNotIn("live", direct.lower())
+
+    def test_direct_gps_starts_only_after_pushover_acceptance(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        request = source[
+            source.index("function sendDirectPushover(")
+            : source.index("function onPushoverResponse(")
+        ]
+        response = source[
+            source.index("function onPushoverResponse(")
+            : source.index("function isPushoverAcceptance(")
+        ]
+
+        self.assertNotIn("Position.", request)
+        self.assertIn("responseCode == 200 && isPushoverAcceptance(data)", response)
+        self.assertIn('"tracking_expires_at" => trackingExpiresAt', response)
+        self.assertIn('"capture_stage" => captureStage', response)
+        self.assertLess(response.index("persistStateWithDirect("), response.index("confirmProviderAcceptance();"))
+        self.assertLess(response.index("confirmProviderAcceptance();"), response.index("captureDirectLocations();"))
+
+    def test_direct_gps_uses_real_position_and_persists_before_sending(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        direct = source[
+            source.index("function resumeDirectLocations()")
+            : source.index("function scheduleLocationExpiry(")
+        ]
+        queue = direct[
+            direct.index("function queueDirectLocation(")
+            : direct.index("function shouldQueueDirectCadenceLocation(")
+        ]
+
+        self.assertIn("Position.getInfo()", direct)
+        self.assertIn("Position.LOCATION_CONTINUOUS", direct)
+        self.assertIn("Position.QUALITY_NOT_AVAILABLE", direct)
+        self.assertNotIn("LOCATION_ONE_SHOT", direct)
+        self.assertNotIn("mock", direct.lower())
+        self.assertNotIn("fixture", direct.lower())
+        self.assertLess(queue.index("persistDirectTracking("), queue.index("sendDirectLocation();"))
+        self.assertNotIn("locationRecord(null", direct)
+
+    def test_direct_gps_sends_real_map_link_and_requires_provider_acceptance(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        send = source[
+            source.index("function sendDirectLocation()")
+            : source.index("function coordinateE7Text(")
+        ]
+        response = source[
+            source.index("function onDirectLocationResponse(")
+            : source.index("function scheduleDirectLocationRetry(")
+        ]
+
+        self.assertIn("Lang.NUMBER_FORMAT_SINT32", send)
+        self.assertIn('"https://maps.google.com/?q="', send)
+        self.assertIn('"title" => "Garmin PANIC TEST — GPS"', send)
+        self.assertIn("PUSHOVER_LOCATION_MESSAGE", send)
+        self.assertIn('"priority" => sequence == 1 ? "1" : "0"', send)
+        self.assertIn('"timestamp" => captureAt.format("%d")', send)
+        self.assertIn("method(:onDirectLocationResponse)", send)
+        self.assertIn("responseCode == 200 && isPushoverMessageAcceptance(data)", response)
+        acceptance = response[
+            response.index("function isPushoverMessageAcceptance(") :
+        ]
+        self.assertIn('data["status"] == 1', acceptance)
+        self.assertIn('isProviderReference(data["request"])', acceptance)
+        self.assertNotIn("receipt", acceptance)
+
+    def test_direct_gps_resumes_retries_and_scrubs_location_state(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        on_show = source[source.index("function onShow()") : source.index("function onHide()")]
+        expiry = source[
+            source.index("function expireDirectLocations()")
+            : source.index("function queueDirectLocation(")
+        ]
+        menu = source[source.index("function menuAction()") : source.index("function setState(")]
+
+        self.assertIn("resumeDirectLocations();", on_show)
+        self.assertIn('if (_directResult["pending_location_hex"].length() > 0)', source)
+        self.assertIn("scheduleDirectLocationRetry();", source)
+        self.assertIn("method(:retryDirectLocation)", source)
+        self.assertIn("_directLocationRetryBlocked = true", source)
+        self.assertIn("_directLocationRetryBlocked = false", on_show)
+        self.assertIn("stopLocations();", expiry)
+        self.assertIn('persistDirectTracking(', expiry)
+        self.assertIn('"",\n            0,\n            3,\n            ""', expiry)
+        self.assertIn("stopLocations();", menu)
+        self.assertIn("LEGACY_DIRECT_RESULT_KEYS", source)
+        for key in (
+            "tracking_expires_at",
+            "next_location_sequence",
+            "last_location_hex",
+            "last_location_queued_at",
+            "capture_stage",
+            "pending_location_hex",
+        ):
+            self.assertIn(f'"{key}"', source)
+
+    def test_live_confirmation_haptic_follows_durable_commit(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        live = source[source.index("function activateLive()") : source.index("function captureLocations()")]
+
+        self.assertLess(live.index("!persistState([event], active)"), live.index("confirmDurableTrigger();"))
+        self.assertLess(live.index("confirmDurableTrigger();"), live.index("sendPending();"))
+        self.assertIn("Attention.vibrate([new Attention.VibeProfile(25, 120)])", live)
 
     def test_restart_preserves_active_live_semantics_and_retry_timer_cannot_go_stale(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
@@ -152,7 +462,7 @@ class GarminContractTests(unittest.TestCase):
         mode_check = 'PanicProtocol.stringEquals(_mode, "LIVE")'
         self.assertLess(activate.index("_activeIncident != null"), activate.index(mode_check))
         self.assertIn('now < _activeIncident["expires_at"]', activate)
-        self.assertIn("Repeated START keeps the same incident", activate)
+        self.assertIn("Repeated press keeps the same incident", activate)
         self.assertLess(activate.index("expireLocations();"), activate.index(mode_check))
         self.assertLess(send.index("_retryTimer.stop();"), send.index("Communications.makeWebRequest("))
 
@@ -165,17 +475,18 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('PanicProtocol.stringEquals(nextActive["incident_id"], incidentId)', menu)
         self.assertIn('setState("RESULT UNKNOWN — EXPIRED"', menu)
         self.assertIn('setState("LIVE RETAINED"', menu)
-        self.assertIn('_mode = "TEST"', menu)
+        self.assertIn("refreshConfiguredMode();", menu)
+        self.assertNotIn('PanicProtocol.stringEquals(_mode, "TEST") ? "LIVE" : "TEST"', menu)
         send = source[source.index("function sendPending()") : source.index("function onResponse(")]
         self.assertIn('now >= event["expires_at"]', send)
         self.assertLess(send.index('now >= event["expires_at"]'), send.index("makeWebRequest("))
 
         expiry = source[source.index("function expireLocations()") : source.index("function scheduleLocationExpiry(")]
-        self.assertIn('_mode = "TEST"', expiry)
+        self.assertIn("refreshConfiguredMode();", expiry)
         self.assertIn("persistState(_queue, null)", expiry)
         self.assertIn('setState("LOCAL DISARM UNSAVED"', expiry)
         self.assertIn("Encrypted pending events retained; MENU archives", expiry)
-        self.assertIn('"START defaults to TEST"', expiry)
+        self.assertIn('"Hold top button for a new LIVE incident"', expiry)
 
         validation = source[
             source.index("function validStoredState(") : source.index("function validActive(")
@@ -197,7 +508,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("PROVIDER ACCEPTED", app)
         self.assertIn("LIVE events cannot be abandoned", app)
 
-    def test_location_is_fixed_size_encrypted_and_never_sent_as_plain_json(self):
+    def test_relay_live_location_is_fixed_size_encrypted_and_never_sent_as_plain_json(self):
         app = (GARMIN / "source/PanicApp.mc").read_text()
         protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
         schema = json.loads((ROOT / "protocol/incident-v2.schema.json").read_text())
@@ -323,7 +634,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("persistState(remaining, null)", terminal)
         self.assertIn('!PanicProtocol.stringEquals(', terminal)
         self.assertIn('_queue[i]["incident_id"],', terminal)
-        self.assertIn("_mode = \"TEST\"", terminal)
+        self.assertIn("refreshConfiguredMode();", terminal)
         self.assertNotIn("ACCEPTED", terminal)
 
         for domain in ("spb.status.query.v2", "spb.status.result.v2"):
@@ -356,12 +667,37 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("makeWebRequest", glance_class)
         self.assertNotIn("Position.", glance_class)
 
-    def test_wifi_is_observed_but_never_selected_or_gated(self):
+    def test_wifi_fallback_never_delays_first_attempt_or_discards_pending_event(self):
         app = (GARMIN / "source/PanicApp.mc").read_text()
+        send = app[app.index("function sendPending(") : app.index("function onResponse(")]
+        response = app[app.index("function onResponse(") : app.index("function handleFailure(")]
+        fallback = app[
+            app.index("function beginWifiFallback(") : app.index("function handleFailure(")
+        ]
 
         self.assertIn("connections[:wifi]", app)
         self.assertIn("route not forced", app)
-        self.assertNotIn("checkWifiConnection", app)
+        self.assertIn("connections[:lte]", app)
+        self.assertIn("CIQ web route unclaimed", app)
+        self.assertNotIn("checkWifiConnection", send)
+        self.assertIn("Communications.makeWebRequest(", send)
+        self.assertIn("beginWifiFallback(event, responseCode)", response)
+        self.assertIn("Communications.BLE_CONNECTION_UNAVAILABLE", fallback)
+        self.assertIn("Communications.BLE_HOST_TIMEOUT", fallback)
+        self.assertIn("Communications.checkWifiConnection", fallback)
+        self.assertIn("WIFI_CHECK_TIMEOUT_MS", fallback)
+        self.assertIn("method(:wifiCheckTimedOut)", fallback)
+        self.assertIn("function wifiCheckTimedOut()", fallback)
+        self.assertIn("Wi-Fi check timed out; pending event retained", fallback)
+        self.assertIn("Phone unavailable; pending event retained", fallback)
+        self.assertIn("Pending until Pushover acceptance", fallback)
+        self.assertIn("Pending until signed relay acceptance", fallback)
+        self.assertIn("sendPending();", fallback)
+        self.assertNotIn("persistState([],", fallback)
+
+        on_show = app[app.index("function onShow(") : app.index("function onHide(")]
+        self.assertIn("if (_queue.size() > 0)", on_show)
+        self.assertIn("sendPending();", on_show)
 
 
 if __name__ == "__main__":

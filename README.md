@@ -22,11 +22,18 @@ acknowledgement, and incident resolution remain separate evidence.
 
 - A Garmin Connect IQ app in Monkey C with durable TEST/LIVE queues, encrypted
   foreground location updates, app-list/glance/complication launch surfaces,
-  and Wi-Fi/phone diagnostics.
+  responsive layouts for current fēnix, Forerunner, Instinct, and Venu
+  profiles, phone-configured direct Pushover emergency TEST delivery, plus an
+  immediate phone-path request and bounded saved-Wi-Fi fallback that never
+  delays the first attempt.
 - A stdlib-only Python relay with strict HMAC intake, SQLite leases and retry,
   recipient routes bound to their provider configuration, Pushover emergency
   receipts/cancellation, and authenticated ntfy publishing.
 - A Node 22 trusted-recipient CLI that authenticates and decrypts v2 events.
+- An optional content-blind mailbox transport with fixed-size encrypted v2
+  capsules, hashed per-mailbox capabilities, bounded storage, and encrypted
+  exact-capsule acknowledgements. The Node reference codec is implemented;
+  companion, Android receiver, and Garmin integration remain explicit gates.
 - Standalone Kotlin Wear OS and Swift watchOS apps using their native crypto,
   persistence, HTTPS, location, feedback, and accessibility APIs.
 - Frozen v1/v2 schemas and cross-runtime public vectors in
@@ -36,6 +43,18 @@ The conditional Garmin launcher face was not added because the stock launch
 routes have not yet been physically measured. Direct SMS/voice is also
 unclaimed: it needs a companion or provider plus real permission, SIM, carrier,
 and hardware testing.
+
+The direct Garmin-to-Pushover path is deliberately a bounded TEST proof of
+concept. It sends a fixed non-sensitive message and bypasses the relay so the
+watch can be tested end to end without running an alarm server. Pushover API
+acceptance changes the foreground app to its neutral analog cover and triggers
+a double haptic; neither proves phone delivery, human acknowledgement, or that
+help is coming. Only after that acceptance, the foreground beta starts the
+watch's real position API for up to one hour and sends separate Pushover map
+links for a first fix and meaningful later movement. Those direct-GPS drill
+messages are intentionally outside the v1 TEST protocol and are plaintext to
+Pushover and the map-link provider; use them only with the owner's explicit
+consent. Simulator/mock coordinates never count as physical GPS evidence.
 
 ## Run host checks
 
@@ -70,8 +89,23 @@ export PUSHOVER_APP_TOKEN='replace-me'
 python3 -m relay \
   --devices /tmp/smart-panic-devices.json \
   --routes /tmp/smart-panic-routes.json \
+  --mailboxes /tmp/smart-panic-mailboxes.json \
   --database /tmp/smart-panic-relay.sqlite3
 ```
+
+`--mailboxes` is optional. Create one private enrollment bundle and a server
+record containing only capability hashes with:
+
+```sh
+python3 scripts/mailbox_enroll.py \
+  --server-record /tmp/smart-panic-mailboxes.json \
+  --enrollment /private/path/recipient-mailbox.json
+```
+
+Both files are created with mode 0600 and existing files are never overwritten.
+The enrollment contains capabilities and content keys and must never be placed
+on the relay. The mailbox API and remaining metadata are documented in
+[`protocol/README.md`](protocol/README.md) and [`docs/privacy.md`](docs/privacy.md).
 
 The development listener is loopback plain HTTP. Put it behind one trusted HTTPS
 terminator, disable request/header/IP logging there, and never expose the Python
@@ -97,7 +131,9 @@ relay will not guess which credentials created it.
 
 The offline recipient command is documented in
 [`recipient/README.md`](recipient/README.md). Security constraints, architecture,
-and the still-`NOT_RUN` physical rows are in [`SECURITY.md`](SECURITY.md),
+receiver Critical Alert enrollment, and the still-`NOT_RUN` physical rows are
+in [`SECURITY.md`](SECURITY.md),
+[`docs/receiver-enrollment.md`](docs/receiver-enrollment.md),
 [`docs/`](docs/), and
 [`tests/end-to-end/physical-matrix.csv`](tests/end-to-end/physical-matrix.csv).
 

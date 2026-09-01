@@ -401,3 +401,118 @@ and metadata already held by the relay, and request IDs must not be logged.
 [`fixtures/status-query-v2.json`](fixtures/status-query-v2.json) and
 [`fixtures/status-v2.txt`](fixtures/status-v2.txt) publish the public query and
 request/result HMAC vectors.
+
+## Content-blind mailbox transport v1
+
+Mailbox transport v1 is a separate privacy transport around an immutable v2
+event. It does not replace or reinterpret encrypted incident v2. The mailbox
+relay never parses the inner event and therefore does not learn its device,
+incident, kind, sequence, or creation time. It still sees a random mailbox ID,
+a random message ID, expiry, fixed ciphertext size, request timing, source
+network metadata, and acknowledgement timing.
+
+Each one-way sender-to-recipient mailbox has three independent random 32-byte
+capabilities: append, read, and acknowledge. Send them only in exactly one
+`Authorization: Bearer <43-character canonical base64url>` header over HTTPS.
+The relay stores only SHA-256 of each capability. Use one mailbox per recipient
+so the relay does not receive a recipient-group graph. Capabilities authorize
+mailbox operations; they are not content keys.
+
+### Message capsule
+
+`POST /mailbox/v1/<mailbox_id>/messages` accepts at most 2048 bytes matching
+[`mailbox-message-v1.schema.json`](mailbox-message-v1.schema.json). IDs and
+binary members are strictly decoded and re-encoded. Parsers reject duplicates,
+unknown members, coercion, non-integer number tokens, and trailing content.
+
+Serialize the strictly validated v2 event in its fixed normative member order.
+Create an exact 512-byte plaintext containing ASCII `SPBM` at bytes 0-3, an
+unsigned big-endian inner JSON byte length at bytes 4-5, the UTF-8 v2 event from
+byte 6, and cryptographically random padding through the end. Encrypt the whole
+block with AES-256-CBC and no padding under the mailbox send-encryption key and
+a fresh random 16-byte IV. Authenticate with a distinct send-MAC key over this
+exact text, including the final LF:
+
+```text
+spb.mailbox.content.v1
+v=1
+mailbox_id=<mailbox_id>
+message_id=<message_id>
+expires_at=<expires_at>
+payload.iv=<iv>
+payload.ciphertext=<ciphertext>
+```
+
+The full HMAC-SHA256 is the canonical base64url `payload.tag`. The outer expiry
+must equal the encrypted inner event expiry. A recipient verifies the tag in
+constant time before decrypting, validates the packing and inner v2 event, and
+checks that expiry equality. Fixed ciphertext size hides LIVE versus location
+and inner event size; it does not hide traffic timing or outer expiry.
+
+The capsule digest is SHA-256 over the following text, including its final LF:
+
+```text
+spb.mailbox.message.v1
+v=1
+mailbox_id=<mailbox_id>
+message_id=<message_id>
+expires_at=<expires_at>
+payload.iv=<iv>
+payload.ciphertext=<ciphertext>
+payload.tag=<tag>
+```
+
+Persist the complete capsule before submission. Every retry keeps the same ID,
+expiry, IV, ciphertext, tag, and capability. An exact retry returns the prior
+result; the same message ID with another digest conflicts. A mailbox accepts at
+most 32 simultaneously active capsules and 64 new capsules per hour.
+Proof-of-work is deliberately absent from the emergency path.
+
+A successful append is HTTP 202 with `v`, `message_id`,
+`result: durably_accepted`, and `response_mac`. The response MAC is HMAC-SHA256
+under the append capability over:
+
+```text
+spb.mailbox.result.v1
+v=1
+message_id=<message_id>
+result=durably_accepted
+```
+
+This proves relay persistence only. It is not recipient delivery or
+acknowledgement.
+
+### Recipient acknowledgement
+
+The read capability lists active, not-yet-acknowledged capsules with
+`GET /mailbox/v1/<mailbox_id>/messages`. After authenticating, opening, and
+deduplicating the inner event by `(incident_id, sequence)`, the recipient may
+submit [`mailbox-ack-v1.schema.json`](mailbox-ack-v1.schema.json) to
+`POST /mailbox/v1/<mailbox_id>/acknowledgements` with the ACK capability.
+
+The encrypted inner acknowledgement contains exactly `v`, `incident_id`,
+`sequence`, `message_id`, `capsule_sha256`, and `acknowledged_at`. Pack it into
+an exact 256-byte block using ASCII `SPBA`, the same two-byte length, and random
+padding. Encrypt with the independent ACK-encryption key. Its outer HMAC uses
+the independent ACK-MAC key over:
+
+```text
+spb.mailbox.ack-content.v1
+v=1
+message_id=<message_id>
+capsule_sha256=<capsule_sha256>
+payload.iv=<iv>
+payload.ciphertext=<ciphertext>
+```
+
+The relay checks that the clear capsule digest names its exact stored capsule,
+but cannot validate or read the encrypted acknowledgement. The sender lists
+ACKs with its append capability, verifies and decrypts them, and accepts one
+only when every inner incident, sequence, message, and digest binding matches.
+Relay ACK storage is append-only and never means incident resolution. Messages
+and ACKs are removed after expiry plus 24 hours.
+
+[`fixtures/mailbox-message-v1.json`](fixtures/mailbox-message-v1.json) is the
+deterministic Node reference capsule. Python and Node tests require its semantic
+SHA-256 to remain
+`bae4682120b8ed891c0fc7e3a5aeab673ac171a6f8c6015c4d0d86942b6d5f15`.

@@ -1,11 +1,12 @@
 <strings>
-    <string id="AppName">Smart Panic Button</string>
-    <string id="RelayUrlTitle">Relay HTTPS origin</string>
-    <string id="RelayUrlPrompt">Example: https://alerts.example</string>
-    <string id="DeviceIdTitle">Device ID</string>
-    <string id="DeviceIdPrompt">22-character base64url device ID</string>
-    <string id="HmacKeyTitle">Device HMAC key</string>
-    <string id="HmacKeyPrompt">64 lowercase hexadecimal characters</string>
+    <string id="AppName">Panic Button</string>
+    <string id="BetaAppName">Panic Button TEST</string>
+    <string id="PushoverGroupTitle">Pushover TEST setup</string>
+    <string id="PushoverGroupDescription">Direct TEST delivery. After acceptance, real GPS is shared with Pushover and Google Maps for up to one hour. Credentials are stored on this watch.</string>
+    <string id="PushoverUserKeyTitle">Pushover User Key</string>
+    <string id="PushoverUserKeyPrompt">30 characters from the receiving Pushover account</string>
+    <string id="PushoverApiTokenTitle">Pushover API Token</string>
+    <string id="PushoverApiTokenPrompt">30-character application token</string>
     <string id="ComplicationLongLabel">Open panic app</string>
     <string id="ComplicationShortLabel">PANIC</string>
     <string id="ComplicationText">OPEN</string>

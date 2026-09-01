@@ -1,11 +1,10 @@
 <settings>
-    <setting propertyKey="@Properties.relayBaseUrl" title="@Strings.RelayUrlTitle" prompt="@Strings.RelayUrlPrompt">
-        <settingConfig type="url" required="true" />
-    </setting>
-    <setting propertyKey="@Properties.deviceId" title="@Strings.DeviceIdTitle" prompt="@Strings.DeviceIdPrompt">
-        <settingConfig type="password" required="true" maxLength="22" />
-    </setting>
-    <setting propertyKey="@Properties.hmacKeyHex" title="@Strings.HmacKeyTitle" prompt="@Strings.HmacKeyPrompt">
-        <settingConfig type="password" required="true" maxLength="64" />
-    </setting>
+    <group id="pushoverTest" title="@Strings.PushoverGroupTitle" description="@Strings.PushoverGroupDescription">
+        <setting propertyKey="@Properties.pushoverUserKey" title="@Strings.PushoverUserKeyTitle" prompt="@Strings.PushoverUserKeyPrompt">
+            <settingConfig type="password" required="true" maxLength="30" />
+        </setting>
+        <setting propertyKey="@Properties.pushoverApiToken" title="@Strings.PushoverApiTokenTitle" prompt="@Strings.PushoverApiTokenPrompt">
+            <settingConfig type="password" required="true" maxLength="30" />
+        </setting>
+    </group>
 </settings>

@@ -31,6 +31,10 @@ relay host is not solved here.
 | Group/config drift | Recipient membership and a provider destination/credential fingerprint are snapshotted transactionally; mismatched workers cannot claim old work | Provider-account changes behind unchanged credentials can still reroute a recipient |
 | Emergency repeats after resolution | Resolution is separate from acknowledgement; durable provider cancellation where supported | Cancellation can itself be ambiguous until provider evidence is recorded |
 | Location before consent/trigger | Trigger persisted and submission started before location permission/API; only foreground follow-ups | Firmware/lifecycle behavior still requires physical verification |
+| Mailbox operator reads event semantics | Entire v2 event wrapped in fixed-size encrypt-then-MAC capsule with independent keys | Operator still sees IP at ingress, timing, mailbox/message pseudonyms, expiry, fixed size, polls, and ACK timing |
+| Mailbox capability abuse | Separate 256-bit append/read/ACK capabilities, hash-only server config, per-mailbox active/hourly quotas | Stolen append capability can send false capsules and consume quota until rotation |
+| Forged E2E mailbox ACK | Independent ACK encryption/MAC plus exact capsule hash, incident, sequence, and message binding | A stolen recipient enrollment can forge ACKs; relay can accept opaque garbage that the sender must reject |
+| Recipient removal | One mailbox per recipient and capability/key rotation | Old queued capsules remain readable until expiry; companion enrollment and revocation UX are not implemented |
 
 ## Explicit production gates
 
@@ -41,3 +45,7 @@ relay host is not solved here.
 - Physical verification that signed incident-status polling stops each watch's
   foreground location cadence after relay-side resolution.
 - HTTPS edge connection/rate limits and log-retention verification.
+- Companion enrollment with out-of-band verification, platform keystore storage,
+  capability rotation, and recipient removal.
+- Garmin mailbox-capsule implementation, compiler/device evidence, and physical
+  receiver ACK feedback testing. The Node codec is reference evidence only.

@@ -1,0 +1,8 @@
+{
+  "AAECAwQFBgcICQoLDA0ODw": {
+    "enabled": false,
+    "append_cap_sha256": "52fe6094743bfd4f9be4321d98adc7e23c1ab622b0ba830e271d1ee1cbfd7850",
+    "read_cap_sha256": "f14dfc875b1ae75784112f7a93a97a236867a656502ffe4d7cefab60cfe7aed2",
+    "ack_cap_sha256": "4b80290f1d4d74e661a0ea719372cba50562116c980eda7f250ae4115017c641"
+  }
+}

@@ -3,10 +3,12 @@
 import Toybox.Application;
 import Toybox.Application.Properties;
 import Toybox.Application.Storage;
+import Toybox.Attention;
 import Toybox.Communications;
 import Toybox.Complications;
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.PersistedContent;
 import Toybox.Position;
 import Toybox.System;
@@ -15,6 +17,8 @@ import Toybox.Timer;
 import Toybox.WatchUi;
 
 class PanicApp extends Application.AppBase {
+    var _view = null;
+
     function initialize() {
         AppBase.initialize();
         try {
@@ -28,8 +32,14 @@ class PanicApp extends Application.AppBase {
     }
 
     function getInitialView() {
-        var view = new PanicView();
-        return [view, new PanicDelegate(view)];
+        _view = new PanicView();
+        return [_view, new PanicDelegate(_view)];
+    }
+
+    function onSettingsChanged() {
+        if (_view != null) {
+            _view.settingsChanged();
+        }
     }
 
     (:glance)
@@ -47,14 +57,21 @@ class PanicGlanceView extends WatchUi.GlanceView {
     function onUpdate(dc) {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
         dc.clear();
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
-        dc.drawText(
-            dc.getWidth() / 2,
-            dc.getHeight() / 2,
-            Graphics.FONT_SMALL,
-            "OPEN PANIC APP",
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER
-        );
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var label = new WatchUi.TextArea({
+            :text => "OPEN PANIC",
+            :color => Graphics.COLOR_WHITE,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
+                Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => (width * 8) / 100,
+            :locY => (height * 20) / 100,
+            :width => (width * 84) / 100,
+            :height => (height * 60) / 100
+        });
+        label.draw(dc);
     }
 }
 
@@ -64,13 +81,38 @@ class PanicView extends WatchUi.View {
     const LIVE_EXPIRY_SECONDS = 3600;
     const MAX_QUEUE = 3;
     const MAX_INITIAL_RETRIES = 2;
+    const LIVE_ARM_HOLD_MS = 1500;
+    const COVER_REFRESH_MS = 60000;
     const RETRY_DELAY_MS = 5000;
+    const WIFI_CHECK_TIMEOUT_MS = 10000;
+    const PUSHOVER_URL = "https://api.pushover.net/1/messages.json";
+    const PUSHOVER_TEST_MESSAGE =
+        "TEST ONLY — Garmin alert transport check. No emergency action required.";
+    const PUSHOVER_LOCATION_MESSAGE =
+        "REAL GPS TEST — current watch location. No emergency action required.";
+    const PUSHOVER_TOKEN_ALPHABET =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const PROVIDER_REFERENCE_ALPHABET =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
     const MATERIAL_MOVE_E7 = 5000;
     const LOW_BATTERY_PERCENT = 20;
     const FIRST_CADENCE_SECONDS = 30;
     const MIDDLE_CADENCE_SECONDS = 120;
     const LATE_CADENCE_SECONDS = 300;
-    const STATE_KEYS = ["queue", "active"];
+    const LEGACY_STATE_KEYS = ["queue", "active"];
+    const STATE_KEYS = ["queue", "active", "direct_result"];
+    const LEGACY_DIRECT_RESULT_KEYS = ["event_id", "request", "receipt"];
+    const DIRECT_RESULT_KEYS = [
+        "event_id",
+        "request",
+        "receipt",
+        "tracking_expires_at",
+        "next_location_sequence",
+        "last_location_hex",
+        "last_location_queued_at",
+        "capture_stage",
+        "pending_location_hex"
+    ];
     const ACTIVE_KEYS = [
         "incident_id",
         "expires_at",
@@ -81,9 +123,10 @@ class PanicView extends WatchUi.View {
     ];
 
     var _state = "READY — TEST";
-    var _detail = "MENU arms LIVE; START sends";
+    var _detail = "Top button sends TEST";
     var _queue = [];
     var _activeIncident = null;
+    var _directResult = null;
     var _displayEventId = null;
     var _mode = "TEST";
     var _inFlight = false;
@@ -95,6 +138,12 @@ class PanicView extends WatchUi.View {
     var _locationExpiryTimer;
     var _statusTimer;
     var _visible = false;
+    var _personalLive = false;
+    var _armingLive = false;
+    var _wifiCheckPending = false;
+    var _wifiFallbackEventId = null;
+    var _testStartDown = false;
+    var _directLocationRetryBlocked = false;
 
     function initialize() {
         View.initialize();
@@ -102,19 +151,229 @@ class PanicView extends WatchUi.View {
         _locationExpiryTimer = new Timer.Timer();
         _statusTimer = new Timer.Timer();
         loadState();
+        selectStartupMode();
     }
 
     function onShow() {
         _visible = true;
-        resumeLocations();
+        _directLocationRetryBlocked = false;
+        if (_queue.size() > 0) {
+            sendPending();
+        }
+        if (_directResult != null) {
+            resumeDirectLocations();
+        } else {
+            resumeLocations();
+        }
+        scheduleIdleCoverRefresh();
     }
 
     function onHide() {
         _visible = false;
+        cancelLiveArm();
         stopLocations();
         try {
             _retryTimer.stop();
         } catch (error) {
+        }
+        _wifiCheckPending = false;
+    }
+
+    function shouldShowCover() {
+        return _directResult != null;
+    }
+
+    function scheduleIdleCoverRefresh() {
+        if (!_visible || _directResult == null) {
+            return;
+        }
+        try {
+            _statusTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _statusTimer.start(method(:refreshIdleCover), COVER_REFRESH_MS, false);
+        } catch (error) {
+            // A frozen cover is safer than turning a timer failure into a trigger.
+        }
+    }
+
+    function refreshIdleCover() {
+        if (!_visible || _directResult == null) {
+            return;
+        }
+        WatchUi.requestUpdate();
+        scheduleIdleCoverRefresh();
+    }
+
+    function drawAnalogCover(dc) {
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var minSize = width < height ? width : height;
+        var compactRound = width == height && minSize < 220;
+        var centerX = compactRound ? (width * 43) / 100 : width / 2;
+        var centerY = compactRound ? (height * 57) / 100 : height / 2;
+        var edgePadding = minSize / 15;
+        if (edgePadding < 10) {
+            edgePadding = 10;
+        }
+        var radius = minSize / 2 - edgePadding - (compactRound ? minSize / 12 : 0);
+        var majorInset = radius / 10;
+        var minorInset = radius / 18;
+        var majorPen = minSize >= 400 ? 4 : 3;
+        var minorPen = minSize >= 300 ? 2 : 1;
+
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_BLACK);
+        dc.setPenWidth(minorPen);
+        dc.drawCircle(centerX, centerY, radius + edgePadding / 3);
+        for (var i = 0; i < 12; i += 1) {
+            var angle = (i / 12.0) * Math.PI * 2 - Math.PI / 2;
+            var inset = i % 3 == 0 ? majorInset : minorInset;
+            dc.setPenWidth(i % 3 == 0 ? majorPen : minorPen);
+            dc.drawLine(
+                centerX + (radius - inset) * Math.cos(angle),
+                centerY + (radius - inset) * Math.sin(angle),
+                centerX + radius * Math.cos(angle),
+                centerY + radius * Math.sin(angle)
+            );
+        }
+
+        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_BLACK);
+        var numberInset = radius / 6;
+        dc.drawText(centerX, centerY - radius + numberInset, Graphics.FONT_XTINY, "12",
+            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        if (minSize >= 220) {
+            dc.drawText(centerX + radius - numberInset, centerY, Graphics.FONT_XTINY, "3",
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            dc.drawText(centerX - radius + numberInset, centerY, Graphics.FONT_XTINY, "9",
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        }
+        dc.drawText(centerX, centerY + radius - numberInset, Graphics.FONT_XTINY, "6",
+            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+
+        var clock = System.getClockTime();
+        var minuteAngle = (clock.min / 60.0) * Math.PI * 2 - Math.PI / 2;
+        var hourAngle = ((((clock.hour % 12) * 60) + clock.min) / 720.0)
+            * Math.PI * 2 - Math.PI / 2;
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+        dc.setPenWidth(minSize >= 400 ? 7 : (minSize >= 260 ? 5 : 3));
+        drawHand(dc, centerX, centerY, hourAngle, radius * 0.50);
+        dc.setPenWidth(minSize >= 400 ? 4 : (minSize >= 260 ? 3 : 2));
+        drawHand(dc, centerX, centerY, minuteAngle, radius * 0.72);
+        dc.fillCircle(centerX, centerY, minSize >= 400 ? 7 : 4);
+        dc.setPenWidth(1);
+    }
+
+    function drawHand(dc, centerX, centerY, angle, length) {
+        dc.drawLine(
+            centerX,
+            centerY,
+            centerX + length * Math.cos(angle),
+            centerY + length * Math.sin(angle)
+        );
+    }
+
+    function selectStartupMode() {
+        refreshConfiguredMode();
+        if (!PanicProtocol.stringEquals(_state, "READY — TEST")
+            || _queue.size() > 0
+            || _activeIncident != null
+            || _directResult != null) {
+            return;
+        }
+        if (PanicProtocol.stringEquals(_mode, "PUSHOVER_TEST")) {
+            _state = "READY — TEST";
+            _detail = "Press top button to send";
+        } else if (_personalLive) {
+            _state = "READY — LIVE";
+            _detail = "Hold top button to trigger";
+        } else if (hasRelayTestConfiguration()) {
+            _detail = "Press top button to send TEST";
+        } else {
+            _state = "SETUP REQUIRED";
+            _detail = "Enter Pushover keys in Garmin app settings";
+        }
+    }
+
+    function refreshConfiguredMode() {
+        _personalLive = hasProvisionedLiveConfiguration();
+        _mode = hasDirectPushoverConfiguration()
+            ? "PUSHOVER_TEST"
+            : (_personalLive ? "LIVE" : "TEST");
+    }
+
+    function settingsChanged() {
+        if (_activeIncident != null) {
+            return;
+        }
+        refreshConfiguredMode();
+        if (_directResult != null) {
+            if (_directResult["pending_location_hex"].length() > 0 && !_inFlight) {
+                _retryCount = 0;
+                _directLocationRetryBlocked = false;
+                sendDirectLocation();
+            }
+            return;
+        }
+        if (_queue.size() > 0) {
+            if (_queue[0]["v"] == 1 && !_inFlight) {
+                _retryCount = 0;
+                sendPending();
+            }
+            WatchUi.requestUpdate();
+            return;
+        }
+        _state = "READY — TEST";
+        _detail = "Press top button to send";
+        selectStartupMode();
+        WatchUi.requestUpdate();
+    }
+
+    function hasRelayTestConfiguration() {
+        try {
+            return PanicProtocol.isHttpsBaseUrl(Properties.getValue("relayBaseUrl"))
+                && PanicProtocol.isCanonicalId(Properties.getValue("deviceId"))
+                && PanicProtocol.isSafeAuthKey(Properties.getValue("hmacKeyHex"));
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function hasDirectPushoverConfiguration() {
+        try {
+            return isPushoverToken(Properties.getValue("pushoverUserKey"))
+                && isPushoverToken(Properties.getValue("pushoverApiToken"));
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function isPushoverToken(value) {
+        if (!(value instanceof Lang.String) || value.length() != 30) {
+            return false;
+        }
+        var characters = value.toCharArray();
+        for (var i = 0; i < characters.size(); i += 1) {
+            if (PUSHOVER_TOKEN_ALPHABET.find(characters[i].toString()) == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function hasProvisionedLiveConfiguration() {
+        try {
+            return PanicProtocol.isHttpsBaseUrl(Properties.getValue("relayBaseUrl"))
+                && PanicProtocol.isCanonicalId(Properties.getValue("deviceId"))
+                && PanicProtocol.isSafeLiveConfiguration(
+                    Properties.getValue("liveAuthKeyHex"),
+                    Properties.getValue("liveEncKeyHex"),
+                    Properties.getValue("liveMacKeyHex"),
+                    Properties.getValue("liveTemplateIdHex"),
+                    Properties.getValue("liveKeyVersion")
+                );
+        } catch (error) {
+            return false;
         }
     }
 
@@ -125,6 +384,40 @@ class PanicView extends WatchUi.View {
                 migrateLegacyTest();
                 return;
             }
+            if (PanicProtocol.hasExactKeys(stored, LEGACY_STATE_KEYS)) {
+                var legacyState = stored as Lang.Dictionary;
+                stored = {
+                    "queue" => legacyState["queue"],
+                    "active" => legacyState["active"],
+                    "direct_result" => null
+                };
+                Storage.setValue(STATE_KEY, stored);
+            }
+            var storedState = stored as Lang.Dictionary;
+            if (PanicProtocol.hasExactKeys(storedState, STATE_KEYS)
+                && storedState["direct_result"] != null
+                && PanicProtocol.hasExactKeys(
+                    storedState["direct_result"],
+                    LEGACY_DIRECT_RESULT_KEYS
+                )) {
+                var legacyDirect = storedState["direct_result"] as Lang.Dictionary;
+                stored = {
+                    "queue" => storedState["queue"],
+                    "active" => storedState["active"],
+                    "direct_result" => {
+                    "event_id" => legacyDirect["event_id"],
+                    "request" => legacyDirect["request"],
+                    "receipt" => legacyDirect["receipt"],
+                    "tracking_expires_at" => 0,
+                    "next_location_sequence" => 1,
+                    "last_location_hex" => "",
+                    "last_location_queued_at" => 0,
+                    "capture_stage" => 3,
+                    "pending_location_hex" => ""
+                    }
+                };
+                Storage.setValue(STATE_KEY, stored);
+            }
             if (!validStoredState(stored)) {
                 setState("CONFIGURATION FAILURE", "Stored event state is invalid");
                 return;
@@ -132,12 +425,19 @@ class PanicView extends WatchUi.View {
             var state = stored as Lang.Dictionary;
             _queue = state["queue"] as Lang.Array;
             _activeIncident = state["active"] as Lang.Dictionary or Null;
+            _directResult = state["direct_result"] as Lang.Dictionary or Null;
             if (_queue.size() > 0) {
                 _displayEventId = _queue[0]["event_id"];
-                setState("PENDING", "START retries immutable event");
+                setState(_queue[0]["v"] == 1 ? "TEST PENDING" : "PENDING",
+                    _queue[0]["v"] == 1
+                        ? "MENU clears; top button retries"
+                        : "Top button retries immutable event");
             } else if (_activeIncident != null) {
                 _displayEventId = _activeIncident["incident_id"];
                 setState("INCIDENT ACTIVE", "No event is waiting for relay");
+            } else if (_directResult != null) {
+                _displayEventId = _directResult["event_id"];
+                setState("PUSHOVER ACCEPTED", "Provider accepted; human response unknown");
             }
         } catch (error) {
             setState("CONFIGURATION FAILURE", "Cannot read persistent storage");
@@ -155,18 +455,25 @@ class PanicView extends WatchUi.View {
         }
         var legacyEvent = legacy as Lang.Dictionary;
         var migrated = [legacyEvent];
-        Storage.setValue(STATE_KEY, {"queue" => migrated, "active" => null});
+        Storage.setValue(STATE_KEY, {
+            "queue" => migrated,
+            "active" => null,
+            "direct_result" => null
+        });
         Storage.deleteValue(LEGACY_PENDING_KEY);
         _queue = migrated;
         _displayEventId = legacyEvent["event_id"];
-        setState("PENDING", "Legacy TEST migrated; START retries");
+        setState("TEST PENDING", "MENU clears; top button retries");
     }
 
     function validStoredState(value) {
         if (!PanicProtocol.hasExactKeys(value, STATE_KEYS)
             || !(value["queue"] instanceof Lang.Array)
             || value["queue"].size() > MAX_QUEUE
-            || !validActive(value["active"])) {
+            || !validActive(value["active"])
+            || !validDirectResult(value["direct_result"])
+            || (value["direct_result"] != null
+                && (value["queue"].size() > 0 || value["active"] != null))) {
             return false;
         }
         var queue = value["queue"];
@@ -200,6 +507,59 @@ class PanicView extends WatchUi.View {
         return true;
     }
 
+    function validDirectResult(value) {
+        return value == null
+            || (PanicProtocol.hasExactKeys(value, DIRECT_RESULT_KEYS)
+                && PanicProtocol.isCanonicalId(value["event_id"])
+                && isProviderReference(value["request"])
+                && isPushoverToken(value["receipt"])
+                && value["tracking_expires_at"] instanceof Lang.Number
+                && value["tracking_expires_at"] >= 0
+                && value["next_location_sequence"] instanceof Lang.Number
+                && value["next_location_sequence"] >= 1
+                && validLocationHex(value["last_location_hex"])
+                && value["last_location_queued_at"] instanceof Lang.Number
+                && value["last_location_queued_at"] >= 0
+                && (value["tracking_expires_at"] == 0
+                    ? value["last_location_queued_at"] == 0
+                    : value["last_location_queued_at"]
+                        <= value["tracking_expires_at"])
+                && value["capture_stage"] instanceof Lang.Number
+                && value["capture_stage"] >= 0
+                && value["capture_stage"] <= 3
+                && validLocationHex(value["pending_location_hex"])
+                && (value["capture_stage"] == 0
+                    ? value["last_location_hex"].length() == 0
+                        && value["last_location_queued_at"] == 0
+                        && value["pending_location_hex"].length() == 0
+                    : true)
+                && (value["capture_stage"] == 3
+                    ? value["last_location_hex"].length() == 0
+                        && value["last_location_queued_at"] == 0
+                        && value["pending_location_hex"].length() == 0
+                    : true));
+    }
+
+    function validLocationHex(value) {
+        return value instanceof Lang.String
+            && (value.length() == 0 || PanicProtocol.isLowerHex(value, 32));
+    }
+
+    function isProviderReference(value) {
+        if (!(value instanceof Lang.String)
+            || value.length() < 1
+            || value.length() > 128) {
+            return false;
+        }
+        var characters = value.toCharArray();
+        for (var i = 0; i < characters.size(); i += 1) {
+            if (PROVIDER_REFERENCE_ALPHABET.find(characters[i].toString()) == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     function validActive(value) {
         return value == null
             || (PanicProtocol.hasExactKeys(value, ACTIVE_KEYS)
@@ -226,36 +586,77 @@ class PanicView extends WatchUi.View {
     function onUpdate(dc) {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
         dc.clear();
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
-        var centerX = dc.getWidth() / 2;
-        var centerY = dc.getHeight() / 2;
-        dc.drawText(
-            centerX,
-            centerY - 50,
-            Graphics.FONT_SMALL,
-            _state,
-            Graphics.TEXT_JUSTIFY_CENTER
-        );
-        dc.drawText(
-            centerX,
-            centerY - 2,
-            Graphics.FONT_XTINY,
-            _detail,
-            Graphics.TEXT_JUSTIFY_CENTER
-        );
-        if (_displayEventId != null) {
-            dc.drawText(
-                centerX,
-                centerY + 36,
-                Graphics.FONT_XTINY,
-                _displayEventId,
-                Graphics.TEXT_JUSTIFY_CENTER
-            );
+        if (shouldShowCover()) {
+            drawAnalogCover(dc);
+            return;
         }
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var isRound = width == height;
+        var compactRound = isRound && width < 220;
+        var safeWidth = (width * (compactRound ? 62 : (isRound ? 76 : 88))) / 100;
+        var safeLeft = compactRound ? (width * 6) / 100 : (width - safeWidth) / 2;
+        var title = new WatchUi.TextArea({
+            :text => _state,
+            :color => Graphics.COLOR_WHITE,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM,
+                Graphics.FONT_SMALL, Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => safeLeft,
+            :locY => (height * (compactRound ? 14 : 18)) / 100,
+            :width => safeWidth,
+            :height => (height * (compactRound ? 34 : 27)) / 100
+        });
+        title.draw(dc);
+
+        var detail = new WatchUi.TextArea({
+            :text => _detail,
+            :color => Graphics.COLOR_LT_GRAY,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_SMALL, Graphics.FONT_TINY,
+                Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => safeLeft,
+            :locY => (height * (compactRound ? 50 : 47)) / 100,
+            :width => safeWidth,
+            :height => (height * (compactRound ? 34 : 29)) / 100
+        });
+        detail.draw(dc);
+        if (_displayEventId != null) {
+            var tracking = new WatchUi.TextArea({
+                :text => compactDisplayId(_displayEventId),
+                :color => Graphics.COLOR_DK_GRAY,
+                :backgroundColor => Graphics.COLOR_BLACK,
+                :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
+                :justification => Graphics.TEXT_JUSTIFY_CENTER,
+                :locX => safeLeft,
+                :locY => (height * (compactRound ? 86 : 80)) / 100,
+                :width => safeWidth,
+                :height => (height * 12) / 100
+            });
+            tracking.draw(dc);
+        }
+    }
+
+    function compactDisplayId(value) {
+        if (!(value instanceof Lang.String)) {
+            return "ID unavailable";
+        }
+        var id = value as Lang.String;
+        if (id.length() <= 10) {
+            return "ID " + id;
+        }
+        return "ID " + id.substring(0, 4) + "..."
+            + id.substring(id.length() - 4, id.length());
     }
 
     function activate() {
         if (_inFlight) {
+            return;
+        }
+        if (_directResult != null) {
             return;
         }
         if (_queue.size() > 0) {
@@ -269,7 +670,7 @@ class PanicView extends WatchUi.View {
             }
             if (now < _activeIncident["expires_at"]) {
                 _displayEventId = _activeIncident["incident_id"];
-                setState("INCIDENT ACTIVE", "Repeated START keeps the same incident");
+                setState("INCIDENT ACTIVE", "Repeated press keeps the same incident");
                 return;
             }
             expireLocations();
@@ -282,19 +683,98 @@ class PanicView extends WatchUi.View {
         }
     }
 
+    function startActionPressed() {
+        if (!PanicProtocol.stringEquals(_mode, "LIVE")) {
+            if (_testStartDown) {
+                return true;
+            }
+            _testStartDown = true;
+            activate();
+            return true;
+        }
+        if (_armingLive
+            || _inFlight
+            || _queue.size() > 0
+            || _activeIncident != null) {
+            return true;
+        }
+        _armingLive = true;
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _retryTimer.start(method(:commitArmedLive), LIVE_ARM_HOLD_MS, false);
+        } catch (error) {
+            _armingLive = false;
+        }
+        return true;
+    }
+
+    function startActionReleased() {
+        if (!PanicProtocol.stringEquals(_mode, "LIVE")) {
+            _testStartDown = false;
+            return true;
+        }
+        cancelLiveArm();
+        return true;
+    }
+
+    function cancelLiveArm() {
+        if (!_armingLive) {
+            return;
+        }
+        _armingLive = false;
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+    }
+
+    function commitArmedLive() {
+        if (!_armingLive) {
+            return;
+        }
+        _armingLive = false;
+        if (!_visible
+            || _inFlight
+            || _queue.size() > 0
+            || _activeIncident != null) {
+            return;
+        }
+        activateLive();
+    }
+
+    function selectAction() {
+        if (PanicProtocol.stringEquals(_mode, "LIVE")) {
+            return true;
+        }
+        activate();
+        return true;
+    }
+
+    function downAction() {
+        return true;
+    }
+
     function activateTest() {
         var baseUrl = Properties.getValue("relayBaseUrl");
         var deviceId = Properties.getValue("deviceId");
         var keyHex = Properties.getValue("hmacKeyHex");
-        if (!PanicProtocol.isHttpsBaseUrl(baseUrl)
+        var directPushover = hasDirectPushoverConfiguration();
+        if (!directPushover
+            && (!PanicProtocol.isHttpsBaseUrl(baseUrl)
             || !PanicProtocol.isCanonicalId(deviceId)
-            || !PanicProtocol.isSafeAuthKey(keyHex)) {
-            setState("CONFIGURATION FAILURE", "Check TEST URL, device ID, and key");
+            || !PanicProtocol.isSafeAuthKey(keyHex))) {
+            setState("SETUP REQUIRED", "Enter Pushover keys in Garmin app settings");
             return;
         }
         var now = currentTime();
         if (now == null) {
             return;
+        }
+        if (directPushover) {
+            deviceId = PanicProtocol.randomId();
         }
         var event = PanicProtocol.newTestEvent(PanicProtocol.randomId(), deviceId, now);
         if (!PanicProtocol.isTestEvent(event)
@@ -314,7 +794,7 @@ class PanicView extends WatchUi.View {
         }
         if (_activeIncident != null && now < _activeIncident["expires_at"]) {
             _displayEventId = _activeIncident["incident_id"];
-            setState("INCIDENT ACTIVE", "Repeated START keeps the same incident");
+            setState("INCIDENT ACTIVE", "Repeated press keeps the same incident");
             return;
         }
         var config = liveConfiguration();
@@ -359,10 +839,21 @@ class PanicView extends WatchUi.View {
         }
         _displayEventId = incidentId;
         _retryCount = 0;
+        confirmDurableTrigger();
 
         // The alert is durable and its network submission is started before GPS.
         sendPending();
         captureLocations();
+    }
+
+    function confirmDurableTrigger() {
+        try {
+            if (Attention has :vibrate) {
+                Attention.vibrate([new Attention.VibeProfile(25, 120)]);
+            }
+        } catch (error) {
+            // Haptic feedback is best-effort and never changes durable state.
+        }
     }
 
     function captureLocations() {
@@ -459,7 +950,7 @@ class PanicView extends WatchUi.View {
 
     function expireLocations() {
         stopLocations();
-        _mode = "TEST";
+        refreshConfiguredMode();
         if (_activeIncident != null && !persistState(_queue, null)) {
             setState("LOCAL DISARM UNSAVED", "Expired location state could not be scrubbed");
             return;
@@ -467,7 +958,227 @@ class PanicView extends WatchUi.View {
         setState(_queue.size() > 0 ? "RESULT UNKNOWN — EXPIRED" : "INCIDENT EXPIRED",
             _queue.size() > 0
                 ? "Encrypted pending events retained; MENU archives"
-                : "START defaults to TEST");
+                : (_personalLive ? "Hold top button for a new LIVE incident"
+                    : "Top button sends a non-sensitive TEST"));
+        scheduleIdleCoverRefresh();
+    }
+
+    function resumeDirectLocations() {
+        if (_directResult == null || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        var now = currentTime();
+        if (now == null) {
+            return;
+        }
+        if (now >= _directResult["tracking_expires_at"]) {
+            expireDirectLocations();
+            return;
+        }
+        captureDirectLocations();
+    }
+
+    function captureDirectLocations() {
+        if (!_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        var now = currentTime();
+        if (now == null) {
+            return;
+        }
+        if (now >= _directResult["tracking_expires_at"]) {
+            expireDirectLocations();
+            return;
+        }
+        scheduleDirectLocationExpiry(now);
+        if (_directResult["pending_location_hex"].length() > 0) {
+            sendDirectLocation();
+        } else if (_directResult["capture_stage"] == 0) {
+            var snapshot = null;
+            try {
+                snapshot = Position.getInfo();
+            } catch (error) {
+            }
+            if (!queueDirectLocation(snapshot, 0, 1)) {
+                persistDirectTracking(
+                    _directResult["next_location_sequence"],
+                    _directResult["last_location_hex"],
+                    _directResult["last_location_queued_at"],
+                    1,
+                    ""
+                );
+            }
+        }
+        startDirectContinuousLocations();
+    }
+
+    function startDirectContinuousLocations() {
+        if (!_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 0
+            || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        try {
+            Position.enableLocationEvents(Position.LOCATION_CONTINUOUS, method(:onPosition));
+        } catch (error) {
+            // The accepted alert remains valid; reopening retries real GPS acquisition.
+        }
+    }
+
+    function scheduleDirectLocationExpiry(now) {
+        try {
+            _locationExpiryTimer.stop();
+        } catch (error) {
+        }
+        var remaining = _directResult["tracking_expires_at"] - now;
+        if (remaining <= 0) {
+            expireDirectLocations();
+            return;
+        }
+        try {
+            _locationExpiryTimer.start(
+                method(:expireDirectLocations),
+                remaining * 1000,
+                false
+            );
+        } catch (error) {
+            // Every callback and reopen independently enforces the same expiry.
+        }
+    }
+
+    function expireDirectLocations() {
+        stopLocations();
+        if (_directResult == null || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        persistDirectTracking(
+            _directResult["next_location_sequence"],
+            "",
+            0,
+            3,
+            ""
+        );
+        scheduleIdleCoverRefresh();
+    }
+
+    function queueDirectLocation(info, path, nextCaptureStage) {
+        if (_directResult == null
+            || _directResult["capture_stage"] == 3
+            || _directResult["pending_location_hex"].length() > 0
+            || info == null
+            || info.position == null
+            || info.when == null
+            || info.accuracy == Position.QUALITY_NOT_AVAILABLE) {
+            return false;
+        }
+        var now = currentTime();
+        if (now == null
+            || now >= _directResult["tracking_expires_at"]
+            || info.when.value() > now) {
+            return false;
+        }
+        var record = PanicProtocol.locationRecord(info, path);
+        var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        if (captureAt == 0) {
+            return false;
+        }
+        var recordHex = PanicProtocol.bytesHex(record);
+        if (PanicProtocol.stringEquals(recordHex, _directResult["last_location_hex"])) {
+            return false;
+        }
+        if (!persistDirectTracking(
+                _directResult["next_location_sequence"],
+                _directResult["last_location_hex"],
+                _directResult["last_location_queued_at"],
+                nextCaptureStage,
+                recordHex
+            )) {
+            return false;
+        }
+        sendDirectLocation();
+        return true;
+    }
+
+    function shouldQueueDirectCadenceLocation(info, now) {
+        if (_directResult == null
+            || _directResult["pending_location_hex"].length() > 0
+            || info == null
+            || info.position == null
+            || info.when == null
+            || info.accuracy == Position.QUALITY_NOT_AVAILABLE
+            || info.when.value() > now) {
+            return false;
+        }
+        if (_directResult["last_location_hex"].length() == 0) {
+            return true;
+        }
+        var record = PanicProtocol.locationRecord(info, 1);
+        var previous = PanicProtocol.hexBytes(_directResult["last_location_hex"]);
+        var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        if (captureAt == 0) {
+            return false;
+        }
+        if (record[14] > previous[14]) {
+            return true;
+        }
+        var lastQueuedAt = _directResult["last_location_queued_at"];
+        if (now < lastQueuedAt
+            || now - lastQueuedAt < cadenceSecondsForExpiry(
+                now,
+                _directResult["tracking_expires_at"]
+            )) {
+            return false;
+        }
+        var latitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 6,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var previousLatitude = previous.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 6,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var longitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 10,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var previousLongitude = previous.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 10,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        return coordinateChanged(latitude, previousLatitude)
+            || coordinateChanged(longitude, previousLongitude);
+    }
+
+    function persistDirectTracking(
+        nextSequence,
+        lastLocationHex,
+        lastLocationQueuedAt,
+        captureStage,
+        pendingLocationHex
+    ) {
+        if (_directResult == null) {
+            return false;
+        }
+        return persistStateWithDirect(_queue, _activeIncident, {
+            "event_id" => _directResult["event_id"],
+            "request" => _directResult["request"],
+            "receipt" => _directResult["receipt"],
+            "tracking_expires_at" => _directResult["tracking_expires_at"],
+            "next_location_sequence" => nextSequence,
+            "last_location_hex" => lastLocationHex,
+            "last_location_queued_at" => lastLocationQueuedAt,
+            "capture_stage" => captureStage,
+            "pending_location_hex" => pendingLocationHex
+        });
     }
 
     function scheduleLocationExpiry(now) {
@@ -495,7 +1206,14 @@ class PanicView extends WatchUi.View {
     }
 
     function onPosition(info as Position.Info) as Void {
-        if (!_visible || _activeIncident == null) {
+        if (!_visible) {
+            return;
+        }
+        if (_directResult != null) {
+            onDirectPosition(info);
+            return;
+        }
+        if (_activeIncident == null) {
             return;
         }
         var now = currentTime();
@@ -515,6 +1233,32 @@ class PanicView extends WatchUi.View {
         }
         if (queued && !_inFlight && _queue.size() > 0) {
             sendPending();
+        }
+    }
+
+    function onDirectPosition(info) {
+        if (_directResult == null || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        var now = currentTime();
+        if (now == null) {
+            return;
+        }
+        if (now >= _directResult["tracking_expires_at"]) {
+            expireDirectLocations();
+            return;
+        }
+        if (_directResult["pending_location_hex"].length() > 0) {
+            if (!_inFlight) {
+                sendDirectLocation();
+            }
+            return;
+        }
+        if (_directResult["capture_stage"] == 1) {
+            queueDirectLocation(info, 1, 2);
+        } else if (_directResult["capture_stage"] == 2
+            && shouldQueueDirectCadenceLocation(info, now)) {
+            queueDirectLocation(info, 1, 2);
         }
     }
 
@@ -576,7 +1320,10 @@ class PanicView extends WatchUi.View {
     }
 
     function cadenceSeconds(now) {
-        var expiresAt = _activeIncident["expires_at"];
+        return cadenceSecondsForExpiry(now, _activeIncident["expires_at"]);
+    }
+
+    function cadenceSecondsForExpiry(now, expiresAt) {
         var startedAt = expiresAt >= LIVE_EXPIRY_SECONDS
             ? expiresAt - LIVE_EXPIRY_SECONDS
             : 0;
@@ -619,6 +1366,7 @@ class PanicView extends WatchUi.View {
         if (!_visible || _activeIncident == null) {
             return;
         }
+        WatchUi.requestUpdate();
         var now = currentTime();
         if (now == null) {
             return;
@@ -810,7 +1558,7 @@ class PanicView extends WatchUi.View {
             }
         }
         stopLocations();
-        _mode = "TEST";
+        refreshConfiguredMode();
         try {
             _retryTimer.stop();
         } catch (error) {
@@ -823,7 +1571,10 @@ class PanicView extends WatchUi.View {
         setState(PanicProtocol.stringEquals(state, "resolved")
                 ? "INCIDENT RESOLVED"
                 : "INCIDENT EXPIRED",
-            "Signed relay status verified; START defaults to TEST");
+            _personalLive
+                ? "Signed relay status verified; hold top button for a new incident"
+                : "Signed relay status verified; top button sends TEST");
+        scheduleIdleCoverRefresh();
     }
 
     function appendLocation(info, path, nextCaptureStage) {
@@ -905,7 +1656,7 @@ class PanicView extends WatchUi.View {
                 templateId,
                 keyVersion
             )) {
-            setState("CONFIGURATION FAILURE", "LIVE build secrets are not provisioned");
+            setState("SETUP REQUIRED", "LIVE build secrets are not provisioned");
             return null;
         }
         return {
@@ -920,7 +1671,7 @@ class PanicView extends WatchUi.View {
     }
 
     function sendPending() {
-        if (_inFlight || _queue.size() == 0) {
+        if (_inFlight || _wifiCheckPending || _queue.size() == 0) {
             return;
         }
         try {
@@ -948,6 +1699,13 @@ class PanicView extends WatchUi.View {
             } else {
                 setState("TEST EXPIRED", "MENU removes pending TEST");
             }
+            return;
+        }
+        if (event["v"] == 1
+            && _queue.size() == 1
+            && _activeIncident == null
+            && hasDirectPushoverConfiguration()) {
+            sendDirectPushover(event, now);
             return;
         }
         if (!PanicProtocol.isHttpsBaseUrl(baseUrl)
@@ -989,6 +1747,313 @@ class PanicView extends WatchUi.View {
             _activeKeyHex = null;
             _requestEventId = null;
             handleFailure("retryable_failure", "Request could not be queued");
+        }
+    }
+
+    function sendDirectPushover(event, now) {
+        _requestEventId = event["event_id"];
+        _inFlight = true;
+        _displayEventId = event["event_id"];
+        setState("SENDING TEST", connectionSummary());
+        var parameters = {
+            "token" => Properties.getValue("pushoverApiToken"),
+            "user" => Properties.getValue("pushoverUserKey"),
+            "title" => "Garmin PANIC TEST",
+            "message" => PUSHOVER_TEST_MESSAGE,
+            "priority" => "2",
+            "retry" => "30",
+            "expire" => (event["expires_at"] - now).toString()
+        };
+        var options = {
+            :method => Communications.HTTP_REQUEST_METHOD_POST,
+            :headers => {
+                "Content-Type" => Communications.REQUEST_CONTENT_TYPE_URL_ENCODED
+            },
+            :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON,
+            :context => event["event_id"]
+        };
+        try {
+            Communications.makeWebRequest(
+                PUSHOVER_URL,
+                parameters,
+                options,
+                method(:onPushoverResponse)
+            );
+        } catch (error) {
+            _inFlight = false;
+            _requestEventId = null;
+            handleFailure("retryable_failure", "Pushover request could not be queued");
+        }
+    }
+
+    function onPushoverResponse(
+        responseCode as Lang.Number,
+        data as Lang.Dictionary or Lang.String or PersistedContent.Iterator or Null,
+        eventId as Lang.Object
+    ) as Void {
+        if (!_inFlight
+            || _statusQuery != null
+            || !PanicProtocol.stringEquals(eventId, _requestEventId)) {
+            return;
+        }
+        _inFlight = false;
+        if (_queue.size() == 0
+            || !PanicProtocol.stringEquals(_queue[0]["event_id"], _requestEventId)) {
+            _requestEventId = null;
+            setState("RESULT UNKNOWN", "Persistent queue changed during Pushover request");
+            return;
+        }
+        var event = _queue[0];
+        _requestEventId = null;
+        if (responseCode == 200 && isPushoverAcceptance(data)) {
+            var acceptedAt = currentTime();
+            var trackingExpiresAt = 0;
+            var captureStage = 3;
+            if (acceptedAt != null
+                && acceptedAt <= PanicProtocol.MAX_TIME - LIVE_EXPIRY_SECONDS) {
+                trackingExpiresAt = acceptedAt + LIVE_EXPIRY_SECONDS;
+                captureStage = 0;
+            }
+            var directResult = {
+                "event_id" => event["event_id"],
+                "request" => data["request"],
+                "receipt" => data["receipt"],
+                "tracking_expires_at" => trackingExpiresAt,
+                "next_location_sequence" => 1,
+                "last_location_hex" => "",
+                "last_location_queued_at" => 0,
+                "capture_stage" => captureStage,
+                "pending_location_hex" => ""
+            };
+            if (!persistStateWithDirect(
+                    copyQueue(1),
+                    _activeIncident,
+                    directResult
+                )) {
+                setState("RESULT UNKNOWN", "Pushover accepted; local evidence failed");
+                return;
+            }
+            _retryCount = 0;
+            setState("PUSHOVER ACCEPTED", "Provider accepted; human response unknown");
+            confirmProviderAcceptance();
+            scheduleIdleCoverRefresh();
+            if (captureStage == 0) {
+                captureDirectLocations();
+            }
+            return;
+        }
+        if (responseCode < 0 && beginWifiFallback(event, responseCode)) {
+            return;
+        }
+        if (data instanceof Lang.Dictionary && data["status"] == 0) {
+            handleFailure("configuration_failure", "Pushover rejected TEST configuration");
+        } else if (responseCode >= 400 && responseCode < 500) {
+            handleFailure("configuration_failure", "Pushover rejected TEST request");
+        } else {
+            handleFailure(responseCode < 0
+                    ? transportFailure(responseCode)
+                    : "result_unknown",
+                "Pushover result unknown; pending TEST retained");
+        }
+    }
+
+    function isPushoverAcceptance(data) {
+        return data instanceof Lang.Dictionary
+            && data["status"] == 1
+            && isProviderReference(data["request"])
+            && isPushoverToken(data["receipt"]);
+    }
+
+    function confirmProviderAcceptance() {
+        try {
+            if (Attention has :vibrate) {
+                Attention.vibrate([
+                    new Attention.VibeProfile(25, 120),
+                    new Attention.VibeProfile(0, 80),
+                    new Attention.VibeProfile(25, 120)
+                ]);
+            }
+        } catch (error) {
+            // Provider acceptance is already durable; feedback remains best-effort.
+        }
+    }
+
+    function sendDirectLocation() {
+        if (_inFlight
+            || !_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 3
+            || _directResult["pending_location_hex"].length() == 0
+            || _directLocationRetryBlocked
+            || !hasDirectPushoverConfiguration()) {
+            return;
+        }
+        var now = currentTime();
+        if (now == null) {
+            return;
+        }
+        if (now >= _directResult["tracking_expires_at"]) {
+            expireDirectLocations();
+            return;
+        }
+        var record = PanicProtocol.hexBytes(
+            _directResult["pending_location_hex"]
+        );
+        var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var latitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 6,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var longitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 10,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        if (captureAt == 0
+            || latitude < -900000000
+            || latitude > 900000000
+            || longitude < -1800000000
+            || longitude > 1800000000) {
+            return;
+        }
+        var sequence = _directResult["next_location_sequence"];
+        var latitudeText = coordinateE7Text(latitude);
+        var longitudeText = coordinateE7Text(longitude);
+        var requestContext = _directResult["event_id"]
+            + "-location-" + sequence.format("%d");
+        var parameters = {
+            "token" => Properties.getValue("pushoverApiToken"),
+            "user" => Properties.getValue("pushoverUserKey"),
+            "title" => "Garmin PANIC TEST — GPS",
+            "message" => PUSHOVER_LOCATION_MESSAGE
+                + " Update " + sequence.format("%d") + ".",
+            "priority" => sequence == 1 ? "1" : "0",
+            "timestamp" => captureAt.format("%d"),
+            "url" => "https://maps.google.com/?q="
+                + latitudeText + "," + longitudeText,
+            "url_title" => "Open current location"
+        };
+        var options = {
+            :method => Communications.HTTP_REQUEST_METHOD_POST,
+            :headers => {
+                "Content-Type" => Communications.REQUEST_CONTENT_TYPE_URL_ENCODED
+            },
+            :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON,
+            :context => requestContext
+        };
+        _requestEventId = requestContext;
+        _inFlight = true;
+        try {
+            Communications.makeWebRequest(
+                PUSHOVER_URL,
+                parameters,
+                options,
+                method(:onDirectLocationResponse)
+            );
+        } catch (error) {
+            _inFlight = false;
+            _requestEventId = null;
+            scheduleDirectLocationRetry();
+        }
+    }
+
+    function coordinateE7Text(value) {
+        var negative = value < 0;
+        var magnitude = negative ? -value : value;
+        return (negative ? "-" : "")
+            + (magnitude / 10000000).format("%d")
+            + "." + (magnitude % 10000000).format("%07d");
+    }
+
+    function onDirectLocationResponse(
+        responseCode as Lang.Number,
+        data as Lang.Dictionary or Lang.String or PersistedContent.Iterator or Null,
+        requestContext as Lang.Object
+    ) as Void {
+        if (!_inFlight
+            || _statusQuery != null
+            || !PanicProtocol.stringEquals(requestContext, _requestEventId)) {
+            return;
+        }
+        _inFlight = false;
+        _requestEventId = null;
+        if (_directResult == null
+            || _directResult["pending_location_hex"].length() == 0) {
+            return;
+        }
+        if (responseCode == 200 && isPushoverMessageAcceptance(data)) {
+            var recordHex = _directResult["pending_location_hex"];
+            var record = PanicProtocol.hexBytes(recordHex);
+            var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+                :offset => 2,
+                :endianness => Lang.ENDIAN_BIG
+            });
+            if (!persistDirectTracking(
+                    _directResult["next_location_sequence"] + 1,
+                    recordHex,
+                    captureAt,
+                    _directResult["capture_stage"],
+                    ""
+                )) {
+                scheduleDirectLocationRetry();
+                return;
+            }
+            _retryCount = 0;
+            _directLocationRetryBlocked = false;
+            scheduleIdleCoverRefresh();
+            return;
+        }
+        if (data instanceof Lang.Dictionary && data["status"] == 0) {
+            _directLocationRetryBlocked = true;
+            return;
+        }
+        if (responseCode >= 400 && responseCode < 500) {
+            _directLocationRetryBlocked = true;
+            return;
+        }
+        scheduleDirectLocationRetry();
+    }
+
+    function isPushoverMessageAcceptance(data) {
+        return data instanceof Lang.Dictionary
+            && data["status"] == 1
+            && isProviderReference(data["request"]);
+    }
+
+    function scheduleDirectLocationRetry() {
+        if (!_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 3
+            || _directResult["pending_location_hex"].length() == 0) {
+            return;
+        }
+        if (_retryCount >= MAX_INITIAL_RETRIES) {
+            _directLocationRetryBlocked = true;
+            return;
+        }
+        _retryCount += 1;
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _retryTimer.start(
+                method(:retryDirectLocation),
+                RETRY_DELAY_MS,
+                false
+            );
+        } catch (error) {
+            // The durable pending fix is retried when the app is reopened.
+        }
+    }
+
+    function retryDirectLocation() {
+        if (!_inFlight
+            && _directResult != null
+            && _directResult["pending_location_hex"].length() > 0) {
+            sendDirectLocation();
         }
     }
 
@@ -1042,15 +2107,95 @@ class PanicView extends WatchUi.View {
         var result = responseCode < 0
             ? transportFailure(responseCode)
             : PanicProtocol.failureResult(data);
+        if (responseCode < 0 && beginWifiFallback(event, responseCode)) {
+            return;
+        }
         handleFailure(result, "Pending event retained");
     }
 
-    function handleFailure(result, detail) {
-        if (PanicProtocol.stringEquals(result, "configuration_failure")) {
-            setState("CONFIGURATION FAILURE", detail);
+    function beginWifiFallback(event, responseCode) {
+        if ((responseCode != Communications.BLE_CONNECTION_UNAVAILABLE
+                && responseCode != Communications.BLE_HOST_TIMEOUT)
+            || _wifiCheckPending
+            || PanicProtocol.stringEquals(_wifiFallbackEventId, event["event_id"])
+            || !(Communications has :checkWifiConnection)) {
+            return false;
+        }
+        _wifiFallbackEventId = event["event_id"];
+        _wifiCheckPending = true;
+        setState("TRYING WI-FI", "Phone unavailable; pending event retained");
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _retryTimer.start(method(:wifiCheckTimedOut), WIFI_CHECK_TIMEOUT_MS, false);
+            Communications.checkWifiConnection(method(:onWifiConnectionChecked));
+        } catch (error) {
+            try {
+                _retryTimer.stop();
+            } catch (stopError) {
+            }
+            _wifiCheckPending = false;
+            return false;
+        }
+        return true;
+    }
+
+    function onWifiConnectionChecked(
+        result as {
+            :wifiAvailable as Lang.Boolean,
+            :errorCode as Communications.WifiConnectionStatus
+        }
+    ) as Void {
+        if (!_wifiCheckPending) {
             return;
         }
-        if (PanicProtocol.stringEquals(result, "retryable_failure")) {
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+        _wifiCheckPending = false;
+        if (_queue.size() == 0
+            || !PanicProtocol.stringEquals(
+                _queue[0]["event_id"],
+                _wifiFallbackEventId
+            )) {
+            return;
+        }
+        var wifiAvailable = false;
+        try {
+            wifiAvailable = result[:wifiAvailable] == true;
+        } catch (error) {
+            wifiAvailable = false;
+        }
+        if (wifiAvailable) {
+            setState("RETRYING WI-FI", hasDirectPushoverConfiguration()
+                ? "Pending until Pushover acceptance"
+                : "Pending until signed relay acceptance");
+            sendPending();
+        } else {
+            handleFailure("retryable_failure", "Wi-Fi unavailable; pending event retained");
+        }
+    }
+
+    function wifiCheckTimedOut() {
+        if (!_wifiCheckPending) {
+            return;
+        }
+        _wifiCheckPending = false;
+        handleFailure("retryable_failure", "Wi-Fi check timed out; pending event retained");
+    }
+
+    function handleFailure(result, detail) {
+        var testPending = _queue.size() > 0 && _queue[0]["v"] == 1;
+        if (PanicProtocol.stringEquals(result, "configuration_failure")) {
+            setState(testPending ? "TEST CONFIG ERROR" : "CONFIGURATION FAILURE", detail);
+            return;
+        }
+        if (testPending) {
+            setState("TEST PENDING", detail);
+        } else if (PanicProtocol.stringEquals(result, "retryable_failure")) {
             setState("RETRYABLE FAILURE", detail);
         } else {
             setState("RESULT UNKNOWN", detail);
@@ -1064,7 +2209,10 @@ class PanicView extends WatchUi.View {
             try {
                 _retryTimer.start(method(:retryPending), RETRY_DELAY_MS, false);
             } catch (error) {
-                setState("RETRYABLE FAILURE", "START retries immutable event");
+                setState(testPending ? "TEST PENDING" : "RETRYABLE FAILURE",
+                    testPending
+                        ? "Automatic retry unavailable; press top button"
+                        : "Top button retries immutable event");
             }
         }
     }
@@ -1077,7 +2225,8 @@ class PanicView extends WatchUi.View {
 
     function transportFailure(responseCode) {
         if (responseCode == Communications.BLE_QUEUE_FULL
-            || responseCode == Communications.BLE_CONNECTION_UNAVAILABLE) {
+            || responseCode == Communications.BLE_CONNECTION_UNAVAILABLE
+            || responseCode == Communications.BLE_HOST_TIMEOUT) {
             return "retryable_failure";
         }
         if (responseCode == Communications.BLE_REQUEST_TOO_LARGE
@@ -1097,6 +2246,10 @@ class PanicView extends WatchUi.View {
             var wifi = connections[:wifi];
             if (wifi != null && wifi.state == System.CONNECTION_STATE_CONNECTED) {
                 return "Wi-Fi reported connected; route not forced";
+            }
+            var lte = connections[:lte];
+            if (lte != null && lte.state == System.CONNECTION_STATE_CONNECTED) {
+                return "LTE reported connected; CIQ web route unclaimed";
             }
             if (settings.phoneConnected) {
                 return "Phone reported connected; route not forced";
@@ -1127,17 +2280,25 @@ class PanicView extends WatchUi.View {
     }
 
     function persistState(nextQueue, nextActive) {
+        return persistStateWithDirect(nextQueue, nextActive, _directResult);
+    }
+
+    function persistStateWithDirect(nextQueue, nextActive, nextDirectResult) {
         try {
             Storage.setValue(STATE_KEY, {
                 "queue" => nextQueue,
-                "active" => nextActive
+                "active" => nextActive,
+                "direct_result" => nextDirectResult
             });
             _queue = nextQueue;
             _activeIncident = nextActive;
+            _directResult = nextDirectResult;
             if (_queue.size() > 0) {
                 _displayEventId = _queue[0]["event_id"];
             } else if (_activeIncident != null) {
                 _displayEventId = _activeIncident["incident_id"];
+            } else if (_directResult != null) {
+                _displayEventId = _directResult["event_id"];
             } else {
                 _displayEventId = null;
             }
@@ -1187,7 +2348,7 @@ class PanicView extends WatchUi.View {
                 } catch (error) {
                 }
                 if (persistState(remaining, nextActive)) {
-                    _mode = "TEST";
+                    refreshConfiguredMode();
                     _retryCount = 0;
                     setState("RESULT UNKNOWN — EXPIRED", "Expired LIVE removed explicitly");
                 } else {
@@ -1196,16 +2357,31 @@ class PanicView extends WatchUi.View {
                 return true;
             }
             if (persistState([], _activeIncident)) {
-                setState("READY — TEST", "Pending TEST abandoned explicitly");
+                _state = "READY — TEST";
+                _detail = "Pending TEST abandoned explicitly";
+                selectStartupMode();
+                WatchUi.requestUpdate();
             } else {
                 setState("CONFIGURATION FAILURE", "Cannot abandon pending TEST");
             }
             return true;
         }
-        _mode = PanicProtocol.stringEquals(_mode, "TEST") ? "LIVE" : "TEST";
-        setState("READY — " + _mode, PanicProtocol.stringEquals(_mode, "LIVE")
-            ? "START creates encrypted LIVE incident"
-            : "START sends non-sensitive TEST");
+        if (_directResult != null) {
+            stopLocations();
+            if (persistStateWithDirect([], _activeIncident, null)) {
+                _state = "READY — TEST";
+                _detail = "Press top button to send";
+                selectStartupMode();
+                WatchUi.requestUpdate();
+            } else {
+                setState("CONFIGURATION FAILURE", "Cannot reset accepted TEST");
+            }
+            return true;
+        }
+        _state = "READY — TEST";
+        _detail = "Press top button to send";
+        selectStartupMode();
+        WatchUi.requestUpdate();
         return true;
     }
 
@@ -1225,8 +2401,27 @@ class PanicDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onSelect() {
-        _view.activate();
-        return true;
+        return _view.selectAction();
+    }
+
+    function onNextPage() {
+        return _view.downAction();
+    }
+
+    function onKeyPressed(event) {
+        var key = event.getKey();
+        if (key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER) {
+            return _view.startActionPressed();
+        }
+        return false;
+    }
+
+    function onKeyReleased(event) {
+        var key = event.getKey();
+        if (key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER) {
+            return _view.startActionReleased();
+        }
+        return false;
     }
 
     function onMenu() {
