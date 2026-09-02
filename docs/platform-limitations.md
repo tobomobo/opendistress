@@ -9,9 +9,13 @@
   simulator; strict `-l 3` remains an unmet release gate.
 - A public Connect IQ application cannot install a global third-party hardware
   button listener. The user must first enter an allowed foreground surface.
-- After it is foregrounded, TEST mode sends on one top-button
-  (`START`/`ENTER`) press. The private LIVE mode still requires a 1.5-second
-  hold; release cancels and DOWN is inert. A Garmin shortcut can help only when the
+- After it is foregrounded, both TEST and private LIVE require an exact
+  app-timed 2.5-second top-button (`START`/`ENTER`) hold. Release cancels and
+  removes the elapsed-time progress ring; DOWN is inert. The ring starts at six
+  o'clock and grows symmetrically to the exact trigger threshold without a
+  numeric countdown. Screen taps and firmware-timed touch holds do not trigger: the
+  Connect IQ touch API does not expose a reliable initial touch-down timestamp
+  for the same exact-duration gesture. A Garmin shortcut can help only when the
   device firmware itself offers the installed app as a target; the application
   cannot create or claim that shortcut.
 - The device app supports the app list, a glance, and a published complication.

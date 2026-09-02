@@ -14,17 +14,22 @@ and a bounded relay-free direct-provider TEST path:
 - a bounded, explicitly privacy-relaxed direct-GPS drill after provider
   acceptance.
 
-When a valid Grafana webhook or valid Pushover settings are present, the top hardware button
-(`START`/`ENTER`) immediately creates and sends a clearly marked TESTNOTRUF.
+When a valid Grafana webhook or valid Pushover settings are present, the top
+hardware button (`START`/`ENTER`) must remain pressed for 2.5 seconds before the
+app creates and sends a clearly marked TESTNOTRUF. Releasing sooner creates no
+event. A tap or firmware-timed touchscreen hold is consumed without triggering;
+Connect IQ does not expose a reliable touch-down time for an exact app-timed hold.
 An optional protected-person name from phone-editable app settings is appended
 to the notification title. The same settings screen can hold an optional
 provider-neutral emergency card: home address, children/family information, a person
 description, background, responder instructions, and an HTTPS photo URL.
 Omitting any or all of it never blocks activation.
 DOWN is consumed without triggering. A fully provisioned personal build with
-no direct TEST settings remains LIVE-only: LIVE is committed only after the top
-button remains pressed for 1.5 seconds, and releasing sooner cancels without
-creating an event. There is no visible countdown or on-watch TEST/LIVE switch.
+no direct TEST settings remains LIVE-only and uses the same 2.5-second hardware
+hold. While the button remains down, a thin progress ring grows from six
+o'clock in both directions and closes at the trigger threshold. It is driven
+by elapsed time, disappears immediately on release, and contains no numeric
+countdown. There is no on-watch TEST/LIVE switch.
 
 At the hold threshold, the personal build persists the encrypted LIVE event,
 attempts one short haptic confirmation, and starts submission immediately.
@@ -414,17 +419,17 @@ it does not replace physical GPS or provider delivery evidence.
 
 Earlier native macOS simulator runs verified the public setup state and the
 former pre-trigger cover behavior. That cover behavior was intentionally
-superseded by the direct-TEST acceptance UX above. The current fēnix 8 47 mm
-simulator shows readable `READY — TEST` copy with no cover, and one short
+superseded by the direct-TEST acceptance UX above. An earlier fēnix 8 47 mm
+simulator build showed readable `READY — TEST` copy with no cover, and one short
 upper-right START press immediately reached Pushover and displayed its expected
 configuration rejection when run with deliberately invalid 30-character test
-tokens. This proves the SDK input/callback path and visible error state, not
-provider acceptance or receiver delivery. The valid-receipt cover and every
-real-GPS behavior still need the supervised physical Pushover drill.
+tokens. The unified 2.5-second hold has intentionally superseded that short-press
+behavior. The valid-receipt cover and every real-GPS behavior still need the
+supervised physical Pushover drill.
 
 The separate beta manifest also exported successfully at `-l 1` for all 17
 expanded device configurations. The automation API still cannot hold a
-simulated button for 1.5 seconds, so the positive private-LIVE hold remains
+simulated button for 2.5 seconds, so the positive TEST/LIVE hold remains
 unexecuted rather than inferred. Earlier simulator work also reproduced and
 removed a fourth-timer regression. All personal simulations used
 non-production keys; none proved relay acceptance or delivery.
