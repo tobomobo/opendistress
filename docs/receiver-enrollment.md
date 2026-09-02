@@ -53,8 +53,12 @@ notification, sound, or battery-management settings.
 For the relay-free Garmin beta POC, enter the Pushover user/group key and a
 dedicated test application token in the Garmin app settings instead of changing
 the relay route. A 2.5-second top-button hold sends the same explicitly
-non-sensitive emergency TEST plus any optional shared emergency-card text and
-photo link. The card is outside normative v1 TEST and visible to Garmin and
+non-sensitive emergency TEST plus any optional prepared alert message, shared
+emergency-card text, and photo link. Write the prepared message and response
+plan in calm conditions, using the setting prompts to specify first contact,
+first action, unsafe actions to avoid, and all-clear verification. Run a TEST
+with every intended responder after each material change. The card is outside
+normative v1 TEST and visible to Garmin and
 Pushover. Confirm
 with the receiver locked that the device's preview policy is acceptable; unlike
 Grafana, Pushover has no separate rich-detail template that guarantees the card

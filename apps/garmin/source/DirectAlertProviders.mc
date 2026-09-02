@@ -95,6 +95,13 @@ module DirectAlertProfile {
         "KEIN ECHTER NOTFALL. Garmin Testausloesung; keine Hilfeleistung erforderlich.";
     const TEST_TITLE = "TESTNOTRUF";
     const PUSHOVER_MAX_MESSAGE_CHARACTERS = 1024;
+    const PUSHOVER_ALERT_MESSAGE_CHARACTERS = 160;
+    const PUSHOVER_RESPONSE_CHARACTERS = 170;
+    const PUSHOVER_NAME_CHARACTERS = 40;
+    const PUSHOVER_DESCRIPTION_CHARACTERS = 100;
+    const PUSHOVER_CHILDREN_CHARACTERS = 100;
+    const PUSHOVER_ADDRESS_CHARACTERS = 100;
+    const PUSHOVER_BACKGROUND_CHARACTERS = 90;
 
     function optionalText(propertyKey, maxLength) {
         var value = Properties.getValue(propertyKey);
@@ -110,6 +117,10 @@ module DirectAlertProfile {
         return optionalText("protectedPersonName", 40);
     }
 
+    function alertMessage() {
+        return optionalText("customAlertMessage", 240);
+    }
+
     function photoUrl() {
         var value = optionalText("profilePhotoUrl", 512);
         if (value.length() < 9
@@ -123,6 +134,7 @@ module DirectAlertProfile {
 
     function fields() {
         return {
+            "alert_message" => alertMessage(),
             "person_name" => personName(),
             "home_address" => optionalText("homeAddress", 120),
             "children_info" => optionalText("childrenInfo", 150),
@@ -136,6 +148,10 @@ module DirectAlertProfile {
     function personalizedTitle(baseTitle) {
         var name = personName();
         return name.length() > 0 ? baseTitle + " — " + name : baseTitle;
+    }
+
+    function initialMessage() {
+        return appendSection(TEST_MESSAGE, "VORBEREITETE NACHRICHT", alertMessage());
     }
 
     function locationTitle(sequence) {
@@ -164,23 +180,38 @@ module DirectAlertProfile {
         return value.length() > 0 ? message + "\n\n" + label + "\n" + value : message;
     }
 
+    function clippedText(value, maxLength) {
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength - 3) + "...";
+    }
+
+    function appendClippedSection(message, label, value, maxLength) {
+        return appendSection(message, label, clippedText(value, maxLength));
+    }
+
     function pushoverMessage() {
         var profile = fields();
         var message = TEST_MESSAGE;
-        message = appendSection(message, "PERSON MIT DER UHR", profile["person_name"]);
-        message = appendSection(message, "HEIMADRESSE", profile["home_address"]);
-        message = appendSection(message, "KINDER / FAMILIE", profile["children_info"]);
-        message = appendSection(
+        message = appendClippedSection(message, "VORBEREITETE NACHRICHT",
+            profile["alert_message"], PUSHOVER_ALERT_MESSAGE_CHARACTERS);
+        message = appendClippedSection(message, "HINWEISE FUER HELFER",
+            profile["response_instructions"], PUSHOVER_RESPONSE_CHARACTERS);
+        message = appendClippedSection(message, "PERSON MIT DER UHR",
+            profile["person_name"], PUSHOVER_NAME_CHARACTERS);
+        message = appendClippedSection(
             message,
             "BESCHREIBUNG DIESER PERSON",
-            profile["person_description"]
+            profile["person_description"],
+            PUSHOVER_DESCRIPTION_CHARACTERS
         );
-        message = appendSection(message, "HINTERGRUND", profile["background_info"]);
-        message = appendSection(
-            message,
-            "HINWEISE FUER HELFER",
-            profile["response_instructions"]
-        );
+        message = appendClippedSection(message, "KINDER / FAMILIE",
+            profile["children_info"], PUSHOVER_CHILDREN_CHARACTERS);
+        message = appendClippedSection(message, "HEIMADRESSE",
+            profile["home_address"], PUSHOVER_ADDRESS_CHARACTERS);
+        message = appendClippedSection(message, "HINTERGRUND",
+            profile["background_info"], PUSHOVER_BACKGROUND_CHARACTERS);
         return message.length() <= PUSHOVER_MAX_MESSAGE_CHARACTERS
             ? message
             : TEST_MESSAGE;
@@ -307,7 +338,7 @@ module DirectGrafanaAdapter {
         return profilePayload(
             eventId,
             DirectAlertProfile.personalizedTitle(DirectAlertProfile.TEST_TITLE),
-            DirectAlertProfile.TEST_MESSAGE,
+            DirectAlertProfile.initialMessage(),
             "",
             profile
         );
@@ -347,6 +378,7 @@ module DirectGrafanaAdapter {
             "title" => title,
             "state" => "alerting",
             "message" => message,
+            "alert_message" => profile["alert_message"],
             "person_name" => profile["person_name"],
             "home_address" => profile["home_address"],
             "children_info" => profile["children_info"],
@@ -468,6 +500,17 @@ function directProviderSafetyTransitions(logger) {
             expectedLocationMessage
         )) {
         logger.error("GPS update message lost its section formatting");
+        return false;
+    }
+    if (!PanicProtocol.stringEquals(
+            DirectAlertProfile.clippedText("123456", 5),
+            "12..."
+        )
+        || !PanicProtocol.stringEquals(
+            DirectAlertProfile.clippedText("12345", 5),
+            "12345"
+        )) {
+        logger.error("Pushover profile clipping boundary failed");
         return false;
     }
     return true;

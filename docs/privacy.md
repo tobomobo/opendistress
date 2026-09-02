@@ -23,13 +23,13 @@ for example, ntfy commonly caches messages for offline subscribers. Use a privat
 self-hosted instance when that boundary is unacceptable.
 
 The personal relay-free Garmin beta has one explicit, non-production exception:
-its optional protected-person display name and emergency-card fields synchronize
-through Garmin and are stored on the watch. The display name appears in TEST
-titles sent to each selected provider. The home address, children/family
-information, person description, background, responder instructions, and
-optional HTTPS photo URL are mapped independently for each direct provider.
-Grafana receives structured fields in the webhook payload; its short mobile
-template can keep them off the lock screen. Pushover receives bounded profile
+its optional protected-person display name, prepared alert message, and
+emergency-card fields synchronize through Garmin and are stored on the watch.
+The display name appears in TEST titles sent to each selected provider. The
+prepared message is intentionally included in Grafana's mobile message; home
+address, children/family information, person description, background, response
+plan, and optional HTTPS photo URL are mapped as separate detail fields.
+Pushover receives bounded profile
 text in the notification message and the photo URL as a supplementary link, so
 its app or the receiver OS may expose the text on the lock screen. Each selected
 provider receives its mapped content, and an image host learns when the photo

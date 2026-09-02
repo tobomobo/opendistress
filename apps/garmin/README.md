@@ -105,10 +105,14 @@ for this beta: the current watch setting contains the generated webhook URL but
 does not provision a separate `Authorization` bearer token.
 
 Install the Beta/App-Store artifact, then edit the route credentials, optional
-**Protected person name**, and optional **TEST emergency card** in the Connect
-IQ Store app, Garmin Connect, or Garmin Express. The card supports a home
-address, children/family information, a person description, relevant
-background, responder instructions, and an HTTPS photo URL. Garmin's standard
+**Protected person name**, and optional **Prepared alert and response plan** in
+the Connect IQ Store app, Garmin Connect, or Garmin Express. The settings begin
+with a prepared alert message and a concise response-plan template, followed by
+home address, children/family information, person description, relevant
+background, and an HTTPS photo URL. Prompts ask the owner to decide in calm
+conditions whom responders contact first, what they do, what they avoid, and
+how they verify a genuine all-clear. Example text is guidance only and is never
+stored or sent as a default. Garmin's standard
 settings UI cannot upload a photo, so the last field is a link that Grafana can
 render and Pushover can expose for deliberate opening. The image host sees
 retrieval. The watch receives the updated values through Garmin app settings
@@ -127,8 +131,9 @@ monkeyc -e -f beta.jungle \
 
 The beta posts the TESTNOTRUF directly to Grafana, Pushover, or both. The
 initial alert title always starts with `TESTNOTRUF`; its message always starts
-with `KEIN ECHTER NOTFALL`. If set, the optional display name appears only after the
-TEST marker. With both configured, the watch serializes provider calls through
+with `KEIN ECHTER NOTFALL`. If configured, the prepared alert message follows
+as its own `VORBEREITETE NACHRICHT` section, and the optional display name
+appears only after the TEST marker. With both configured, the watch serializes provider calls through
 its one in-flight request gate: preferred Grafana is attempted first and
 Pushover is the independent fallback when Grafana is not definitely accepted.
 Success from either route is enough to start the acceptance cover and GPS
@@ -142,6 +147,14 @@ shared profile at this adapter boundary without changing activation semantics.
 Because each provider has different acceptance and acknowledgement evidence,
 its pending/accepted state must still be added explicitly rather than hidden
 behind a false common `delivered` flag.
+
+Grafana receives the full prepared alert message in its `message` value and all
+profile values as separate fields for the opened detail view. Pushover has only
+one bounded body, so it receives a deterministic compact rendering in response
+priority order: prepared message, response plan, wearer identity/description,
+family, address, then background. Each value has a documented clipping budget,
+the complete worst-case body remains within 1,024 characters, and it never
+falls back by silently discarding the entire profile.
 
 Every accepted direct route stores a one-way credential/destination fingerprint.
 GPS is sent only while the current phone-synced provider settings match that
