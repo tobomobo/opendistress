@@ -397,6 +397,10 @@ class GarminContractTests(unittest.TestCase):
         config = identity_setting.find("./settingConfig")
         self.assertEqual(config.attrib["required"], "false")
         self.assertEqual(config.attrib["maxLength"], "40")
+        strings = ET.parse(GARMIN / "resources/strings/strings.xml").getroot()
+        string_values = {item.attrib["id"]: item.text for item in strings.findall("./string")}
+        self.assertIn("person wearing the watch", string_values["ProtectedPersonNameTitle"])
+        self.assertIn("person sending the alert", string_values["PersonDescriptionPrompt"])
         self.assertIn('const TEST_TITLE = "TESTNOTRUF"', providers)
         self.assertIn('const LOCATION_TITLE = "TESTNOTRUF — GPS"', providers)
         self.assertIn("KEIN ECHTER NOTFALL", providers)
@@ -469,10 +473,10 @@ class GarminContractTests(unittest.TestCase):
             + sum(
                 len(label)
                 for label in (
-                    "\n\nPERSON\n",
+                    "\n\nPERSON MIT DER UHR\n",
                     "\n\nHEIMADRESSE\n",
                     "\n\nKINDER / FAMILIE\n",
-                    "\n\nPERSONENBESCHREIBUNG\n",
+                    "\n\nBESCHREIBUNG DIESER PERSON\n",
                     "\n\nHINTERGRUND\n",
                     "\n\nHINWEISE FUER HELFER\n",
                 )
@@ -481,6 +485,7 @@ class GarminContractTests(unittest.TestCase):
             + sum(int(length) for _, length in profile_limits.values() if length)
         )
         self.assertLessEqual(maximum_profile_message, 1024)
+        self.assertEqual(maximum_profile_message, 1017)
         self.assertIn('value.find("https://") != 0', providers)
         self.assertIn('value.find("@") != null', providers)
         self.assertIn('value.find("#") != null', providers)
