@@ -60,8 +60,12 @@
   accepts the alert, runs only while the app remains foreground, and expires
   after one hour. It sends no synthetic no-fix record. Its exact coordinates
   are plaintext to every direct provider that accepted the trigger and exposed
-  in a Google Maps URL. Neither simulator nor mock GPS is accepted as physical
-  reliability evidence.
+  in a Google Maps URL. Garmin's synchronous `Position.getInfo()` value is a
+  last-known snapshot, not proof of a current fix, so it is always marked as
+  possibly stale and sent with its reported age. Continuous callbacks older
+  than 30 seconds receive the same warning. A small reported age still does not
+  independently prove spatial freshness. Neither simulator nor mock GPS is
+  accepted as physical reliability evidence.
 - Foreground cadence stops at local expiry or a verified signed relay status of
   `resolved`/`expired`. Polling occurs only while the client is foregrounded, so
   lifecycle and network delays still postpone that stop.

@@ -37,6 +37,11 @@ URL is retrieved.
 After the clearly marked TEST alert receives valid Grafana Cloud IRM or
 Pushover acceptance, a one-hour foreground GPS drill can send exact coordinates
 to every direct provider that accepted the trigger and in Google Maps URLs.
+The first last-known update and every fix older than 30 seconds are visibly
+marked as possibly stale; capture time, computed age, source kind, and stale
+classification accompany Grafana updates, while Pushover receives the warning,
+age, and Garmin capture timestamp. Age is diagnostic metadata, not proof that a
+coordinate is current.
 This is outside TEST v1 and v2, and therefore outside the encrypted location
 guarantee above. Grafana, Pushover, Garmin's settings/network path, and Google
 can observe or retain data within their respective roles and policies. The
