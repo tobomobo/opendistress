@@ -441,16 +441,12 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("person wearing the watch", string_values["ProtectedPersonNameTitle"])
         self.assertIn("person sending the alert", string_values["PersonDescriptionPrompt"])
         self.assertIn('const TEST_TITLE = "TESTNOTRUF"', providers)
-        self.assertIn('const LOCATION_TITLE = "TESTNOTRUF — GPS"', providers)
+        self.assertIn("function locationTitle(sequence)", providers)
         self.assertIn("KEIN ECHTER NOTFALL", providers)
         self.assertIn('optionalText("protectedPersonName", 40)', providers)
         self.assertIn("function personalizedTitle(baseTitle)", providers)
         self.assertEqual(
             providers.count("DirectAlertProfile.TEST_TITLE"),
-            2,
-        )
-        self.assertEqual(
-            providers.count("DirectAlertProfile.LOCATION_TITLE"),
             2,
         )
 
@@ -683,10 +679,17 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn('_directResult["grafana_accepted"]', queue)
         self.assertIn("pendingPushover && hasBoundDirectPushover()", completion)
         self.assertIn("pendingGrafana && hasBoundDirectGrafana()", completion)
-        self.assertEqual(providers.count("DirectAlertProfile.LOCATION_TITLE"), 2)
-        self.assertEqual(providers.count("DirectAlertProfile.locationMessage("), 2)
+        self.assertNotIn("LOCATION_TITLE", providers)
+        self.assertEqual(providers.count("DirectAlertProfile.locationTitle(sequence)"), 2)
+        self.assertEqual(providers.count("DirectAlertProfile.locationMessage("), 3)
+        self.assertIn('return "GPS-UPDATE " + sequence.format("%d")', providers)
+        self.assertIn('return "GPS-UPDATE " + sequence.format("%d") + "\\n\\n"', providers)
+        self.assertIn('"TESTMODUS — KEIN ECHTER NOTFALL\\n\\n"', providers)
+        self.assertIn('"GPS-STATUS\\n" + status', providers)
+        self.assertIn('"\\n\\nGPS-ALTER LAUT UHR\\n"', providers)
+        self.assertIn('"\\n\\nKARTE\\n" + mapUrl', providers)
         self.assertIn("WARNUNG: letzter bekannter", providers)
-        self.assertIn("Alter laut Uhr:", providers)
+        self.assertNotIn('+ " " + mapUrl', providers)
         self.assertIn('payload["gps_capture_time"] = captureAt', providers)
         self.assertIn('payload["gps_age_seconds"] = ageSeconds', providers)
         self.assertIn('payload["gps_fix_kind"]', providers)

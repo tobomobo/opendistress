@@ -67,10 +67,12 @@ real position API for up to one hour. A cached fix older than that acceptance is
 rejected. Each provider that accepted the trigger receives the first fresh fix
 and meaningful later movement, but only while its current credentials match the
 fingerprint stored at acceptance; Grafana updates reuse the
-same alert UID, while Pushover uses separate map-link messages. These GPS drill
-messages are outside v1 TEST and plaintext to Grafana and/or Pushover plus the
-map-link provider. Use them only with the owner's explicit consent. Simulator
-or mock coordinates never count as physical GPS evidence. Grafana's in-app ACK
+same alert UID, while Pushover uses separate map-link messages. Both render
+location notifications update-first, with blank-line-separated TEST status,
+GPS status, signal age, and map sections instead of one dense sentence. These
+GPS drill messages are outside v1 TEST and plaintext to Grafana and/or Pushover
+plus the map-link provider. Use them only with the owner's explicit consent.
+Simulator or mock coordinates never count as physical GPS evidence. Grafana's in-app ACK
 is useful receiver evidence but is not yet returned to or displayed by the
 watch.
 

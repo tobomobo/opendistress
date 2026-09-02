@@ -125,9 +125,9 @@ monkeyc -e -f beta.jungle \
   -y private-resources/developer_key.der -l 1
 ```
 
-The beta posts the TESTNOTRUF directly to Grafana, Pushover, or both. Its title
-always starts with `TESTNOTRUF`; its message always starts with
-`KEIN ECHTER NOTFALL`. If set, the optional display name appears only after the
+The beta posts the TESTNOTRUF directly to Grafana, Pushover, or both. The
+initial alert title always starts with `TESTNOTRUF`; its message always starts
+with `KEIN ECHTER NOTFALL`. If set, the optional display name appears only after the
 TEST marker. With both configured, the watch serializes provider calls through
 its one in-flight request gate: preferred Grafana is attempted first and
 Pushover is the independent fallback when Grafana is not definitely accepted.
@@ -159,6 +159,26 @@ moeglicherweise veraltet` and includes its send-time age in seconds. Continuous
 location callbacks are labeled as live callbacks, but receive the same warning
 once their reported timestamp is more than 30 seconds old.
 
+Every location notification begins with an update-first title such as
+`GPS-UPDATE 2 — TESTNOTRUF — Name`. Grafana and Pushover receive the same
+blank-line-separated body shape so the new information is scannable before any
+detail context:
+
+```text
+GPS-UPDATE 2
+
+TESTMODUS — KEIN ECHTER NOTFALL
+
+GPS-STATUS
+Aktueller Garmin-GPS-Teststandort.
+
+GPS-ALTER LAUT UHR
+5 s
+
+KARTE
+https://maps.google.com/?q=...
+```
+
 Grafana's formatted webhook receives `alert_uid`, `title`, `state`, `message`,
 and the optional emergency-card fields; later GPS updates reuse the same
 `alert_uid` and repeat the current card so it remains available in the newest
@@ -170,11 +190,12 @@ keeps sensitive profile text off the short lock-screen notification while still
 making it available after a responder deliberately opens the alert. A webhook
 HTTP 2xx is only Grafana ingestion acceptance. Grafana's mobile app may provide
 Important Push and receiver ACK after receiver-side setup, but this watch
-version neither polls nor displays that ACK. Pushover uses emergency priority `2`, a 30-second
-retry interval, and the remaining TEST lifetime as expiry. Its first location
+version neither polls nor displays that ACK. Pushover uses emergency priority
+`2`, a 30-second retry interval, and the remaining TEST lifetime as expiry. Its first location
 uses priority `1`; later locations use priority `0`. Its location text includes
-the same last-known/stale warning and age, while its provider timestamp remains
-the Garmin capture time rather than the later delivery-attempt time.
+the same sectioned status, last-known/stale warning, age, and map URL, while its
+provider timestamp remains the Garmin capture time rather than the later
+delivery-attempt time.
 
 Use these Grafana **Mobile push notifications** templates:
 

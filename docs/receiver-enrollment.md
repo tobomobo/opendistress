@@ -52,9 +52,10 @@ notification, sound, or battery-management settings.
 
 For the relay-free Garmin beta POC, enter the Pushover user/group key and a
 dedicated test application token in the Garmin app settings instead of changing
-the relay route. One top-button press sends the same explicitly non-sensitive
-emergency TEST plus any optional shared emergency-card text and photo link. The
-card is outside normative v1 TEST and visible to Garmin and Pushover. Confirm
+the relay route. A 2.5-second top-button hold sends the same explicitly
+non-sensitive emergency TEST plus any optional shared emergency-card text and
+photo link. The card is outside normative v1 TEST and visible to Garmin and
+Pushover. Confirm
 with the receiver locked that the device's preview policy is acceptable; unlike
 Grafana, Pushover has no separate rich-detail template that guarantees the card
 appears only after opening the app. The watch's double haptic and analog cover record provider API
@@ -62,9 +63,10 @@ acceptance only; this beta does not poll the receipt, so acknowledgement must be
 verified directly on the receiver and in Pushover during the supervised drill.
 Only after that acceptance the foreground beta may send separate real-GPS
 updates for up to one hour. Verify that the first high-priority location and a
-later normal-priority moved location open the expected map position. This
-personal POC exposes the exact coordinates to Pushover and Google Maps; use a
-dedicated test account and obtain the watch owner's explicit consent. Simulator
+later normal-priority moved location begin with `GPS-UPDATE`, preserve the
+blank-line-separated status/age/map sections, and open the expected map
+position. This personal POC exposes the exact coordinates to Pushover and
+Google Maps; use a dedicated test account and obtain the watch owner's explicit consent. Simulator
 or mock locations do not satisfy this drill.
 
 Alternatively, create a **Grafana Cloud IRM** custom integration with a

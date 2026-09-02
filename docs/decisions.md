@@ -234,3 +234,18 @@ Pre-acceptance cached fixes are rejected. Remaining targets are persisted with
 the fix before submission. This adds no Grafana route to encrypted relay LIVE and
 does not change the frozen v1/v2 wire contracts. Grafana OSS OnCall is excluded;
 the implemented target is Grafana Cloud IRM.
+
+## 2026-09-02 — Make direct GPS notifications update-first
+
+Direct Grafana and Pushover GPS notifications use one shared rendering instead
+of provider-specific dense sentences. The title begins with the sequence-aware
+`GPS-UPDATE`, followed by the explicit TEST marker. The body separates TEST
+status, GPS status, watch-reported signal age, and map URL with blank lines.
+Stale and last-known warnings remain in the GPS-status section.
+
+Grafana continues to reuse the incident's `alert_uid` and repeat structured
+profile fields because its newest alert item must retain responder context.
+Those detail fields do not precede the update in the mobile `title`/`message`.
+Pushover keeps its separate notification and map action but receives the same
+formatted body. Provider acceptance, delivery, and human acknowledgement remain
+separate facts.
