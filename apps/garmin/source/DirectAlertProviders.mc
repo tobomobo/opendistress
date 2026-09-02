@@ -94,7 +94,6 @@ module DirectAlertProfile {
     const TEST_MESSAGE =
         "KEIN ECHTER NOTFALL. Garmin Testausloesung; keine Hilfeleistung erforderlich.";
     const TEST_TITLE = "TESTNOTRUF";
-    const LOCATION_TITLE = "TESTNOTRUF — GPS";
     const PUSHOVER_MAX_MESSAGE_CHARACTERS = 1024;
 
     function optionalText(propertyKey, maxLength) {
@@ -139,19 +138,26 @@ module DirectAlertProfile {
         return name.length() > 0 ? baseTitle + " — " + name : baseTitle;
     }
 
-    function locationMessage(sequence, path, ageSeconds) {
-        var message;
+    function locationTitle(sequence) {
+        return "GPS-UPDATE " + sequence.format("%d") + " — TESTNOTRUF";
+    }
+
+    function locationMessage(sequence, path, ageSeconds, mapUrl) {
+        var status;
         if (path != 1) {
-            message = "KEIN ECHTER NOTFALL. WARNUNG: letzter bekannter "
+            status = "WARNUNG: letzter bekannter "
                 + "Garmin-GPS-Teststandort; moeglicherweise veraltet.";
         } else if (DirectAlertSafety.isPossiblyStaleLocation(path, ageSeconds)) {
-            message = "KEIN ECHTER NOTFALL. WARNUNG: Garmin-GPS-Teststandort "
+            status = "WARNUNG: Garmin-GPS-Teststandort "
                 + "ist moeglicherweise veraltet.";
         } else {
-            message = "KEIN ECHTER NOTFALL. Garmin GPS-Teststandort.";
+            status = "Aktueller Garmin-GPS-Teststandort.";
         }
-        return message + " Alter laut Uhr: " + ageSeconds.format("%d")
-            + " s. Update " + sequence.format("%d") + ".";
+        return "GPS-UPDATE " + sequence.format("%d") + "\n\n"
+            + "TESTMODUS — KEIN ECHTER NOTFALL\n\n"
+            + "GPS-STATUS\n" + status
+            + "\n\nGPS-ALTER LAUT UHR\n" + ageSeconds.format("%d") + " s"
+            + "\n\nKARTE\n" + mapUrl;
     }
 
     function appendSection(message, label, value) {
@@ -251,12 +257,13 @@ module DirectPushoverAdapter {
             "token" => Properties.getValue("pushoverApiToken"),
             "user" => Properties.getValue("pushoverUserKey"),
             "title" => DirectAlertProfile.personalizedTitle(
-                DirectAlertProfile.LOCATION_TITLE
+                DirectAlertProfile.locationTitle(sequence)
             ),
             "message" => DirectAlertProfile.locationMessage(
                 sequence,
                 path,
-                ageSeconds
+                ageSeconds,
+                mapUrl
             ),
             "priority" => sequence == 1 ? "1" : "0",
             "timestamp" => captureAt.format("%d"),
@@ -317,9 +324,10 @@ module DirectGrafanaAdapter {
         var profile = DirectAlertProfile.fields();
         var payload = profilePayload(
             eventId,
-            DirectAlertProfile.personalizedTitle(DirectAlertProfile.LOCATION_TITLE),
-            DirectAlertProfile.locationMessage(sequence, path, ageSeconds)
-                + " " + mapUrl,
+            DirectAlertProfile.personalizedTitle(
+                DirectAlertProfile.locationTitle(sequence)
+            ),
+            DirectAlertProfile.locationMessage(sequence, path, ageSeconds, mapUrl),
             mapUrl,
             profile
         );
@@ -436,6 +444,30 @@ function directProviderSafetyTransitions(logger) {
     }
     if (!DirectAlertSafety.isPossiblyStaleLocation(1, 31)) {
         logger.error("Old continuous GPS callback was presented as current");
+        return false;
+    }
+    if (!PanicProtocol.stringEquals(
+            DirectAlertProfile.locationTitle(2),
+            "GPS-UPDATE 2 — TESTNOTRUF"
+        )) {
+        logger.error("GPS update title is not update-first");
+        return false;
+    }
+    var expectedLocationMessage = "GPS-UPDATE 2\n\n"
+        + "TESTMODUS — KEIN ECHTER NOTFALL\n\n"
+        + "GPS-STATUS\nAktueller Garmin-GPS-Teststandort.\n\n"
+        + "GPS-ALTER LAUT UHR\n5 s\n\n"
+        + "KARTE\nhttps://maps.google.com/?q=1,2";
+    if (!PanicProtocol.stringEquals(
+            DirectAlertProfile.locationMessage(
+                2,
+                1,
+                5,
+                "https://maps.google.com/?q=1,2"
+            ),
+            expectedLocationMessage
+        )) {
+        logger.error("GPS update message lost its section formatting");
         return false;
     }
     return true;
