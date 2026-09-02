@@ -84,6 +84,7 @@ class GarminContractTests(unittest.TestCase):
                 "@Properties.pushoverUserKey",
                 "@Properties.pushoverApiToken",
                 "@Properties.grafanaWebhookUrl",
+                "@Properties.protectedPersonName",
             },
         )
         setting_types = {
@@ -96,6 +97,7 @@ class GarminContractTests(unittest.TestCase):
                 "@Properties.pushoverUserKey": "password",
                 "@Properties.pushoverApiToken": "password",
                 "@Properties.grafanaWebhookUrl": "password",
+                "@Properties.protectedPersonName": "alphaNumeric",
             },
         )
         self.assertTrue(
@@ -360,6 +362,35 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("location", direct.lower())
         self.assertNotIn("live", direct.lower())
 
+    def test_direct_test_identity_is_phone_editable_optional_and_test_only(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        properties = ET.parse(GARMIN / "resources/properties/properties.xml").getroot()
+        settings = ET.parse(GARMIN / "resources/settings/settings.xml").getroot()
+        property_ids = {item.attrib["id"] for item in properties.findall("./property")}
+        identity_setting = next(
+            item
+            for item in settings.findall(".//setting")
+            if item.attrib["propertyKey"] == "@Properties.protectedPersonName"
+        )
+
+        self.assertIn("protectedPersonName", property_ids)
+        config = identity_setting.find("./settingConfig")
+        self.assertEqual(config.attrib["required"], "false")
+        self.assertEqual(config.attrib["maxLength"], "40")
+        self.assertIn('const DIRECT_TEST_TITLE = "TESTNOTRUF"', source)
+        self.assertIn('const DIRECT_LOCATION_TITLE = "TESTNOTRUF — GPS"', source)
+        self.assertIn("KEIN ECHTER NOTFALL", source)
+        self.assertIn('Properties.getValue("protectedPersonName")', source)
+        self.assertIn("function personalizedTestTitle(baseTitle)", source)
+        self.assertEqual(
+            source.count('"title" => personalizedTestTitle(DIRECT_TEST_TITLE)'),
+            2,
+        )
+        self.assertEqual(
+            source.count('"title" => personalizedTestTitle(DIRECT_LOCATION_TITLE)'),
+            2,
+        )
+
     def test_direct_gps_starts_only_after_a_provider_acceptance(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
         pushover_request = source[
@@ -471,7 +502,10 @@ class GarminContractTests(unittest.TestCase):
 
         self.assertIn("Lang.NUMBER_FORMAT_SINT32", send)
         self.assertIn('"https://maps.google.com/?q="', send)
-        self.assertEqual(send.count('"title" => DIRECT_LOCATION_TITLE'), 2)
+        self.assertEqual(
+            send.count('"title" => personalizedTestTitle(DIRECT_LOCATION_TITLE)'),
+            2,
+        )
         self.assertIn("DIRECT_LOCATION_MESSAGE", send)
         self.assertIn('"priority" => sequence == 1 ? "1" : "0"', send)
         self.assertIn('"timestamp" => captureAt.format("%d")', send)

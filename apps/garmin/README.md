@@ -15,7 +15,9 @@ and a bounded relay-free direct-provider TEST path:
   acceptance.
 
 When a valid Grafana webhook or valid Pushover settings are present, the top hardware button
-(`START`/`ENTER`) immediately creates and sends a fixed non-sensitive TEST.
+(`START`/`ENTER`) immediately creates and sends a clearly marked TESTNOTRUF.
+An optional protected-person name from phone-editable app settings is appended
+to the notification title; omitting it never blocks activation.
 DOWN is consumed without triggering. A fully provisioned personal build with
 no direct TEST settings remains LIVE-only: LIVE is committed only after the top
 button remains pressed for 1.5 seconds, and releasing sooner cancels without
@@ -95,9 +97,10 @@ Leave Grafana's optional **Require a Grafana service account token** switch off
 for this beta: the current watch setting contains the generated webhook URL but
 does not provision a separate `Authorization` bearer token.
 
-Install the Beta/App-Store artifact, then edit the password fields in the
-Connect IQ Store app, Garmin Connect, or Garmin Express. The watch receives the
-updated values through Garmin app settings and refreshes an idle setup screen
+Install the Beta/App-Store artifact, then edit the route credentials and the
+optional **Protected person name** in the Connect IQ Store app, Garmin Connect,
+or Garmin Express. The watch receives the updated values through Garmin app
+settings and refreshes an idle setup screen
 without a reinstall. If a TEST is already pending after a rejected
 configuration, saving corrected valid values retries that same durable event
 automatically. A USB-sideloaded PRG does not provide this normal phone
@@ -110,12 +113,14 @@ monkeyc -e -f beta.jungle \
   -y private-resources/developer_key.der -l 1
 ```
 
-The beta posts the fixed alert directly to Grafana, Pushover, or both. With both
-configured, the watch serializes provider calls through its one in-flight
-request gate: Pushover is attempted first, while Grafana is persisted as a
-separate pending route and also serves as fallback after a definite Pushover
-rejection. Success from either route is enough to start the acceptance cover
-and GPS drill; the second route continues independently.
+The beta posts the TESTNOTRUF directly to Grafana, Pushover, or both. Its title
+always starts with `TESTNOTRUF`; its message always starts with
+`KEIN ECHTER NOTFALL`. If set, the optional display name appears only after the
+TEST marker. With both configured, the watch serializes provider calls through
+its one in-flight request gate: Pushover is attempted first, while Grafana is
+persisted as a separate pending route and also serves as fallback after a
+definite Pushover rejection. Success from either route is enough to start the
+acceptance cover and GPS drill; the second route continues independently.
 
 Grafana's formatted webhook receives `alert_uid`, `title`, `state`, and
 `message`; later GPS updates reuse the same `alert_uid`. A webhook HTTP 2xx is
@@ -125,7 +130,8 @@ polls nor displays that ACK. Pushover uses emergency priority `2`, a 30-second
 retry interval, and the remaining TEST lifetime as expiry. Its first location
 uses priority `1`; later locations use priority `0`.
 
-The initial fixed TEST contains no location or LIVE payload. After acceptance,
+The initial TEST contains no location or LIVE payload, but its optional display
+name is visible to Garmin and each selected provider. After acceptance,
 the direct-GPS drill may send exact coordinates in a Google Maps URL to each
 accepted provider. Garmin, Grafana and/or Pushover, and Google can therefore
 observe data in this explicitly privacy-relaxed path. Ambiguous provider

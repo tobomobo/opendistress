@@ -1,4 +1,9 @@
 <settings>
+    <group id="testIdentity" title="@Strings.TestIdentityGroupTitle" description="@Strings.TestIdentityGroupDescription">
+        <setting propertyKey="@Properties.protectedPersonName" title="@Strings.ProtectedPersonNameTitle" prompt="@Strings.ProtectedPersonNamePrompt">
+            <settingConfig type="alphaNumeric" required="false" maxLength="40" />
+        </setting>
+    </group>
     <group id="grafanaIrm" title="@Strings.GrafanaGroupTitle" description="@Strings.GrafanaGroupDescription">
         <setting propertyKey="@Properties.grafanaWebhookUrl" title="@Strings.GrafanaWebhookTitle" prompt="@Strings.GrafanaWebhookPrompt">
             <settingConfig type="password" required="false" maxLength="512" />

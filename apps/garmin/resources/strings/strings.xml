@@ -1,6 +1,10 @@
 <strings>
     <string id="AppName">Panic Button</string>
     <string id="BetaAppName">Panic Button TEST</string>
+    <string id="TestIdentityGroupTitle">TEST alert identity</string>
+    <string id="TestIdentityGroupDescription">Optional name shown to recipients. Every beta notification remains clearly marked TESTNOTRUF and KEIN ECHTER NOTFALL. The name syncs through Garmin services, is stored on the watch, and is visible to configured providers.</string>
+    <string id="ProtectedPersonNameTitle">Protected person name</string>
+    <string id="ProtectedPersonNamePrompt">For example: Alex</string>
     <string id="PushoverGroupTitle">Pushover TEST setup</string>
     <string id="PushoverGroupDescription">Optional fallback TEST delivery. After acceptance, real GPS is shared with Pushover and Google Maps for up to one hour. Settings sync through Garmin services and are stored on the watch.</string>
     <string id="PushoverUserKeyTitle">Pushover User Key</string>

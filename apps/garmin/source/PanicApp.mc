@@ -87,11 +87,11 @@ class PanicView extends WatchUi.View {
     const WIFI_CHECK_TIMEOUT_MS = 10000;
     const PUSHOVER_URL = "https://api.pushover.net/1/messages.json";
     const DIRECT_TEST_MESSAGE =
-        "TEST ONLY — Garmin alert transport check. No emergency action required.";
+        "KEIN ECHTER NOTFALL. Garmin Testausloesung; keine Hilfeleistung erforderlich.";
     const DIRECT_LOCATION_MESSAGE =
-        "REAL GPS TEST — current watch location. No emergency action required.";
-    const DIRECT_TEST_TITLE = "Garmin PANIC TEST";
-    const DIRECT_LOCATION_TITLE = "Garmin PANIC TEST — GPS";
+        "KEIN ECHTER NOTFALL. Aktueller Garmin GPS-Teststandort.";
+    const DIRECT_TEST_TITLE = "TESTNOTRUF";
+    const DIRECT_LOCATION_TITLE = "TESTNOTRUF — GPS";
     const PUSHOVER_TOKEN_ALPHABET =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     const PROVIDER_REFERENCE_ALPHABET =
@@ -658,6 +658,21 @@ class PanicView extends WatchUi.View {
             }
         }
         return true;
+    }
+
+    function protectedPersonName() {
+        var value = Properties.getValue("protectedPersonName");
+        if (!(value instanceof Lang.String)
+            || value.length() < 1
+            || value.length() > 40) {
+            return "";
+        }
+        return value as Lang.String;
+    }
+
+    function personalizedTestTitle(baseTitle) {
+        var name = protectedPersonName();
+        return name.length() > 0 ? baseTitle + " — " + name : baseTitle;
     }
 
     function validActive(value) {
@@ -1901,7 +1916,7 @@ class PanicView extends WatchUi.View {
         var parameters = {
             "token" => Properties.getValue("pushoverApiToken"),
             "user" => Properties.getValue("pushoverUserKey"),
-            "title" => DIRECT_TEST_TITLE,
+            "title" => personalizedTestTitle(DIRECT_TEST_TITLE),
             "message" => DIRECT_TEST_MESSAGE,
             "priority" => "2",
             "retry" => "30",
@@ -1936,7 +1951,7 @@ class PanicView extends WatchUi.View {
     function grafanaAlertPayload(eventId) {
         return {
             "alert_uid" => eventId,
-            "title" => DIRECT_TEST_TITLE,
+            "title" => personalizedTestTitle(DIRECT_TEST_TITLE),
             "state" => "alerting",
             "message" => DIRECT_TEST_MESSAGE
         };
@@ -2227,7 +2242,7 @@ class PanicView extends WatchUi.View {
             var parameters = {
                 "token" => Properties.getValue("pushoverApiToken"),
                 "user" => Properties.getValue("pushoverUserKey"),
-                "title" => DIRECT_LOCATION_TITLE,
+                "title" => personalizedTestTitle(DIRECT_LOCATION_TITLE),
                 "message" => DIRECT_LOCATION_MESSAGE
                     + " Update " + sequence.format("%d") + ".",
                 "priority" => sequence == 1 ? "1" : "0",
@@ -2261,7 +2276,7 @@ class PanicView extends WatchUi.View {
             && hasDirectGrafanaConfiguration()) {
             var grafanaParameters = {
                 "alert_uid" => _directResult["event_id"],
-                "title" => DIRECT_LOCATION_TITLE,
+                "title" => personalizedTestTitle(DIRECT_LOCATION_TITLE),
                 "state" => "alerting",
                 "message" => DIRECT_LOCATION_MESSAGE
                     + " Update " + sequence.format("%d") + ". " + mapUrl,

@@ -5,6 +5,7 @@
     <property id="pushoverUserKey" type="string"></property>
     <property id="pushoverApiToken" type="string"></property>
     <property id="grafanaWebhookUrl" type="string"></property>
+    <property id="protectedPersonName" type="string"></property>
     <property id="liveAuthKeyHex" type="string"></property>
     <property id="liveEncKeyHex" type="string"></property>
     <property id="liveMacKeyHex" type="string"></property>

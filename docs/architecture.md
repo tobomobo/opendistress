@@ -88,10 +88,12 @@ submission; provider-call ambiguity may therefore produce a duplicate retry.
 
 - Each sender has a per-device request HMAC key. V2 additionally uses separate
   encryption and content-MAC keys shared only with trusted recipients.
-- Garmin's ordinary settings path is trusted only for non-sensitive TEST.
+- Garmin's ordinary settings path is trusted only for TEST configuration.
   The current beta stores a secret Grafana Cloud IRM webhook URL, Pushover
-  destination/application keys, or both there and sends a fixed TEST directly
-  to those routes. Those values are not LIVE content/authentication keys. LIVE
+  destination/application keys, or both there and sends a TEST directly to
+  those routes. It may also store an optional protected-person display name;
+  this name is intentionally included in provider-visible TEST titles. Those
+  values are not LIVE content/authentication keys. LIVE
   credentials are supplied only in a private personal build.
 - The relay sees timing, opaque device/incident/route identifiers, event kind,
   sequence, expiry, ciphertext size, and provider metadata, but not v2 content.

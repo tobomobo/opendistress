@@ -45,8 +45,10 @@ unclaimed: it needs a companion or provider plus real permission, SIM, carrier,
 and hardware testing.
 
 The relay-free Garmin path is deliberately a bounded TEST proof of concept. It
-sends a fixed non-sensitive alert directly to a phone-configured Grafana Cloud
-IRM formatted webhook, Pushover, or both. With both configured, the watch uses
+sends a clearly marked TEST alert directly to a phone-configured Grafana Cloud
+IRM formatted webhook, Pushover, or both. An optional phone-configured display
+name personalizes the TEST title and is therefore visible to Garmin and each
+selected provider. With both configured, the watch uses
 one network request at a time but records each provider independently; Pushover
 is attempted first and Grafana remains a separate route. The first HTTP-level
 provider acceptance changes the foreground app to its neutral analog cover and
