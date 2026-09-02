@@ -1,10 +1,15 @@
 <settings>
+    <group id="grafanaIrm" title="@Strings.GrafanaGroupTitle" description="@Strings.GrafanaGroupDescription">
+        <setting propertyKey="@Properties.grafanaWebhookUrl" title="@Strings.GrafanaWebhookTitle" prompt="@Strings.GrafanaWebhookPrompt">
+            <settingConfig type="password" required="false" maxLength="512" />
+        </setting>
+    </group>
     <group id="pushoverTest" title="@Strings.PushoverGroupTitle" description="@Strings.PushoverGroupDescription">
         <setting propertyKey="@Properties.pushoverUserKey" title="@Strings.PushoverUserKeyTitle" prompt="@Strings.PushoverUserKeyPrompt">
-            <settingConfig type="password" required="true" maxLength="30" />
+            <settingConfig type="password" required="false" maxLength="30" />
         </setting>
         <setting propertyKey="@Properties.pushoverApiToken" title="@Strings.PushoverApiTokenTitle" prompt="@Strings.PushoverApiTokenPrompt">
-            <settingConfig type="password" required="true" maxLength="30" />
+            <settingConfig type="password" required="false" maxLength="30" />
         </setting>
     </group>
 </settings>

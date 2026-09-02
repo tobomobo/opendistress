@@ -23,10 +23,12 @@ relay host is not solved here.
 | Parser, slow-client, or response abuse | 1 KiB body, strict media/length/encoding, five-second socket timeout, bounded provider responses, no redirects | Aggregate connection/rate limits belong at the HTTPS edge |
 | Device enumeration | Unknown, disabled, missing-key, and bad-signature paths use dummy-key work and one external 401 | Timing is reduced, not formally constant across the entire HTTP stack |
 | Secret/config leakage | 0600 device/route/database files, environment provider token, ignored local build config, no secret logging | Host administrators and locally built client binaries can recover provisioned keys |
+| Direct-provider URL leakage | Grafana URL is password-type, restricted to HTTPS `*.grafana.net` formatted webhooks, and never logged by app code | Garmin settings sync, the watch, and anyone seeing the full URL gain authority to inject TEST alerts until it is rotated |
 | Provider URL logging | Inbound URLs carry no credentials; relay logging omits outbound requests | Pushover requires its application token in the HTTPS receipt-query URL, so an egress proxy must also suppress URL logs |
 | Public fixture used in production | Enabled loaders reject every published role key | Operators can still modify the source and remove the check |
 | Ciphertext malleability or oracle | Encrypt-then-MAC; recipient verifies full tag before no-padding AES-CBC decrypt | Compromise of recipient content keys reveals retained envelopes for that key version |
 | False delivery claim | Evidence-specific states and signed intake response | Provider acceptance is not device delivery or human acknowledgement |
+| False Grafana ACK claim | Watch labels webhook 2xx only as provider acceptance; receiver drill records Important Push and in-app ACK separately | Current watch code cannot query Grafana ACK or escalation state |
 | Forged acknowledgement | Per-recipient Pushover emergency receipt tied to its snapshotted route | Pushover can manufacture the evidence it originates; ntfy acknowledgement is unsupported |
 | Group/config drift | Recipient membership and a provider destination/credential fingerprint are snapshotted transactionally; mismatched workers cannot claim old work | Provider-account changes behind unchanged credentials can still reroute a recipient |
 | Emergency repeats after resolution | Resolution is separate from acknowledgement; durable provider cancellation where supported | Cancellation can itself be ambiguous until provider evidence is recorded |

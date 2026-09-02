@@ -80,7 +80,11 @@ class GarminContractTests(unittest.TestCase):
         )
         self.assertEqual(
             setting_keys,
-            {"@Properties.pushoverUserKey", "@Properties.pushoverApiToken"},
+            {
+                "@Properties.pushoverUserKey",
+                "@Properties.pushoverApiToken",
+                "@Properties.grafanaWebhookUrl",
+            },
         )
         setting_types = {
             item.attrib["propertyKey"]: item.find("./settingConfig").attrib["type"]
@@ -91,6 +95,7 @@ class GarminContractTests(unittest.TestCase):
             {
                 "@Properties.pushoverUserKey": "password",
                 "@Properties.pushoverApiToken": "password",
+                "@Properties.grafanaWebhookUrl": "password",
             },
         )
         self.assertTrue(
@@ -221,7 +226,7 @@ class GarminContractTests(unittest.TestCase):
         source = (GARMIN / "source/PanicApp.mc").read_text()
         live = source[source.index("function activateLive()") : source.index("function captureLocations()")]
 
-        self.assertEqual(source.count("Communications.makeWebRequest("), 4)
+        self.assertEqual(source.count("Communications.makeWebRequest("), 6)
         self.assertLess(live.index("!persistState([event], active)"), live.index("sendPending();"))
         self.assertLess(live.index("sendPending();"), live.index("captureLocations();"))
         self.assertIn("Position.getInfo()", source)
@@ -260,7 +265,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("_view.downAction();", next_page)
         self.assertNotIn("activate", next_page)
         self.assertIn(
-            'setState("SETUP REQUIRED", "Enter Pushover keys in Garmin app settings")',
+            'setState("SETUP REQUIRED", "Enter Grafana webhook or Pushover keys")',
             source,
         )
 
@@ -280,8 +285,8 @@ class GarminContractTests(unittest.TestCase):
             source.index("function selectStartupMode()")
             : source.index("function settingsChanged()")
         ]
-        self.assertIn('hasDirectPushoverConfiguration()', startup)
-        self.assertIn('? "PUSHOVER_TEST"', startup)
+        self.assertIn('PanicProtocol.stringEquals(_mode, "DIRECT_TEST")', startup)
+        self.assertIn("hasDirectAlertConfiguration()", startup)
         self.assertIn("refreshConfiguredMode();", startup)
 
     def test_phone_settings_changes_refresh_idle_test_mode(self):
@@ -319,32 +324,35 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("_coverTimer", source)
         self.assertNotIn("_state", cover)
 
-        direct = source[
-            source.index("function sendDirectPushover(")
-            : source.index("function onResponse(")
+        pushover = source[
+            source.index("function onPushoverResponse(")
+            : source.index("function isPushoverAcceptance(")
         ]
-        self.assertIn('responseCode == 200 && isPushoverAcceptance(data)', direct)
-        self.assertIn('data["status"] == 1', direct)
-        self.assertIn('isProviderReference(data["request"])', direct)
-        self.assertIn('isPushoverToken(data["receipt"])', direct)
+        acceptance = source[
+            source.index("function beginAcceptedDirectTracking(")
+            : source.index("function onPushoverResponse(")
+        ]
+        self.assertIn('responseCode == 200 && isPushoverAcceptance(data)', pushover)
+        self.assertIn('"pushover_accepted" => pushoverAccepted', acceptance)
+        self.assertIn('"grafana_accepted" => grafanaAccepted', acceptance)
         self.assertLess(
-            direct.index("persistStateWithDirect("),
-            direct.index('setState("PUSHOVER ACCEPTED"'),
+            acceptance.index("persistStateWithDirect("),
+            acceptance.index('setState("PROVIDER ACCEPTED"'),
         )
         self.assertLess(
-            direct.index('setState("PUSHOVER ACCEPTED"'),
-            direct.index("confirmProviderAcceptance();"),
+            acceptance.index('setState("PROVIDER ACCEPTED"'),
+            acceptance.index("confirmProviderAcceptance();"),
         )
 
     def test_direct_pushover_test_is_emergency_and_contains_no_live_payload(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
         direct = source[
             source.index("function sendDirectPushover(")
-            : source.index("function onPushoverResponse(")
+            : source.index("function grafanaAlertPayload(")
         ]
 
         self.assertIn('PUSHOVER_URL = "https://api.pushover.net/1/messages.json"', source)
-        self.assertIn("PUSHOVER_TEST_MESSAGE", direct)
+        self.assertIn("DIRECT_TEST_MESSAGE", direct)
         self.assertIn('"priority" => "2"', direct)
         self.assertIn('"retry" => "30"', direct)
         self.assertIn("REQUEST_CONTENT_TYPE_URL_ENCODED", direct)
@@ -352,23 +360,83 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("location", direct.lower())
         self.assertNotIn("live", direct.lower())
 
-    def test_direct_gps_starts_only_after_pushover_acceptance(self):
+    def test_direct_gps_starts_only_after_a_provider_acceptance(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
-        request = source[
+        pushover_request = source[
             source.index("function sendDirectPushover(")
+            : source.index("function grafanaAlertPayload(")
+        ]
+        grafana_request = source[
+            source.index("function sendDirectGrafanaRequest(")
+            : source.index("function onGrafanaAlertResponse(")
+        ]
+        acceptance = source[
+            source.index("function beginAcceptedDirectTracking(")
             : source.index("function onPushoverResponse(")
         ]
+
+        self.assertNotIn("Position.", pushover_request)
+        self.assertNotIn("Position.", grafana_request)
+        self.assertIn('"tracking_expires_at" => trackingExpiresAt', acceptance)
+        self.assertIn('"capture_stage" => captureStage', acceptance)
+        self.assertLess(
+            acceptance.index("persistStateWithDirect("),
+            acceptance.index("confirmProviderAcceptance();"),
+        )
+        self.assertLess(
+            acceptance.index("confirmProviderAcceptance();"),
+            acceptance.index("captureDirectLocations();"),
+        )
+
+    def test_grafana_formatted_webhook_is_validated_and_acceptance_is_not_ack(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
+        request = source[
+            source.index("function grafanaAlertPayload(")
+            : source.index("function onGrafanaAlertResponse(")
+        ]
         response = source[
+            source.index("function onGrafanaAlertResponse(")
+            : source.index("function beginAcceptedDirectTracking(")
+        ]
+
+        self.assertIn("var authorityEndRelative", protocol)
+        self.assertIn('host.substring(host.length() - 12, host.length())', protocol)
+        self.assertIn('".grafana.net"', protocol)
+        self.assertIn('"/integrations/v1/formatted_webhook/"', protocol)
+        validator = protocol[
+            protocol.index("function isGrafanaWebhookUrl(")
+            : protocol.index("function randomId()")
+        ]
+        self.assertIn('value.find("@") != null', validator)
+        self.assertIn('"alert_uid" => eventId', request)
+        self.assertIn('"state" => "alerting"', request)
+        self.assertIn("REQUEST_CONTENT_TYPE_JSON", request)
+        self.assertIn("responseCode >= 200 && responseCode < 300", response)
+        self.assertIn("responseCode != 429", response)
+        self.assertIn('responseCode == 429 ? "retryable_failure"', response)
+        self.assertIn("Human acknowledgement remains separate", response)
+        self.assertNotIn("acknowledged", response.lower())
+
+    def test_pushover_and_grafana_are_independent_direct_alert_routes(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        send = source[source.index("function sendPending()") : source.index("function onResponse(")]
+        pushover_send = source[
+            source.index("function sendDirectPushover(")
+            : source.index("function grafanaAlertPayload(")
+        ]
+        pushover = source[
             source.index("function onPushoverResponse(")
             : source.index("function isPushoverAcceptance(")
         ]
 
-        self.assertNotIn("Position.", request)
-        self.assertIn("responseCode == 200 && isPushoverAcceptance(data)", response)
-        self.assertIn('"tracking_expires_at" => trackingExpiresAt', response)
-        self.assertIn('"capture_stage" => captureStage', response)
-        self.assertLess(response.index("persistStateWithDirect("), response.index("confirmProviderAcceptance();"))
-        self.assertLess(response.index("confirmProviderAcceptance();"), response.index("captureDirectLocations();"))
+        self.assertIn("hasDirectAlertConfiguration()", send)
+        self.assertIn("hasDirectPushoverConfiguration()", send)
+        self.assertIn("sendDirectGrafanaInitial(event);", send)
+        self.assertIn("hasDirectGrafanaConfiguration()", pushover_send)
+        self.assertIn("sendDirectGrafanaInitial(event);", pushover_send)
+        self.assertIn("hasDirectGrafanaConfiguration()", pushover)
+        self.assertIn("sendDirectGrafanaInitial(event);", pushover)
 
     def test_direct_gps_uses_real_position_and_persists_before_sending(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
@@ -403,12 +471,20 @@ class GarminContractTests(unittest.TestCase):
 
         self.assertIn("Lang.NUMBER_FORMAT_SINT32", send)
         self.assertIn('"https://maps.google.com/?q="', send)
-        self.assertIn('"title" => "Garmin PANIC TEST — GPS"', send)
-        self.assertIn("PUSHOVER_LOCATION_MESSAGE", send)
+        self.assertEqual(send.count('"title" => DIRECT_LOCATION_TITLE'), 2)
+        self.assertIn("DIRECT_LOCATION_MESSAGE", send)
         self.assertIn('"priority" => sequence == 1 ? "1" : "0"', send)
         self.assertIn('"timestamp" => captureAt.format("%d")', send)
         self.assertIn("method(:onDirectLocationResponse)", send)
+        self.assertIn('"alert_uid" => _directResult["event_id"]', send)
+        self.assertIn('"state" => "alerting"', send)
+        self.assertIn('"link_to_upstream_details" => mapUrl', send)
+        self.assertIn("method(:onGrafanaLocationResponse)", send)
         self.assertIn("responseCode == 200 && isPushoverMessageAcceptance(data)", response)
+        self.assertIn("responseCode >= 200 && responseCode < 300", response)
+        self.assertIn("responseCode == 429", response)
+        self.assertIn("completeDirectLocationProvider(true)", response)
+        self.assertIn("completeDirectLocationProvider(false)", response)
         acceptance = response[
             response.index("function isPushoverMessageAcceptance(") :
         ]
@@ -443,6 +519,11 @@ class GarminContractTests(unittest.TestCase):
             "last_location_queued_at",
             "capture_stage",
             "pending_location_hex",
+            "pushover_accepted",
+            "grafana_accepted",
+            "grafana_alert_pending",
+            "pending_location_pushover",
+            "pending_location_grafana",
         ):
             self.assertIn(f'"{key}"', source)
 
@@ -504,8 +585,11 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("responseCode == 202", app)
         self.assertIn("PanicProtocol.verifyDurablyAccepted(data, event, keyHex)", app)
         self.assertIn("result=durably_accepted", protocol)
-        self.assertIn("Provider evidence remains separate", app)
-        self.assertNotIn("PROVIDER ACCEPTED", app)
+        relay_response = app[
+            app.index("function onResponse(") : app.index("function beginWifiFallback(")
+        ]
+        self.assertIn("Provider evidence remains separate", relay_response)
+        self.assertNotIn("PROVIDER ACCEPTED", relay_response)
         self.assertIn("LIVE events cannot be abandoned", app)
 
     def test_relay_live_location_is_fixed_size_encrypted_and_never_sent_as_plain_json(self):
@@ -690,7 +774,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("function wifiCheckTimedOut()", fallback)
         self.assertIn("Wi-Fi check timed out; pending event retained", fallback)
         self.assertIn("Phone unavailable; pending event retained", fallback)
-        self.assertIn("Pending until Pushover acceptance", fallback)
+        self.assertIn("Pending until provider acceptance", fallback)
         self.assertIn("Pending until signed relay acceptance", fallback)
         self.assertIn("sendPending();", fallback)
         self.assertNotIn("persistState([],", fallback)

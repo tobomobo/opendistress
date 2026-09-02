@@ -73,43 +73,46 @@ valid result. Acquisition stops at local expiry or after an exact signed
 alone does not stop it.
 
 The relay-free Garmin beta has a deliberately separate direct-GPS drill. It
-starts only after a direct emergency TEST has received and durably stored valid
-Pushover acceptance. For up to one foreground hour it uses the real watch
-position API and sends a first fix plus materially changed later fixes as
-Pushover messages with map URLs. This is not a v1 payload and does not alter the
-normative rule that TEST v1 is non-sensitive. It is also not v2: Pushover and
-the map provider see the exact coordinate, and there is no relay resolution or
-receipt polling. Pending fixes are persisted before submission; provider-call
-ambiguity may therefore produce a duplicate retry.
+starts only after a direct TEST has received and durably stored valid Grafana
+Cloud IRM or Pushover acceptance. For up to one foreground hour it uses the real
+watch position API and sends a first fix plus materially changed later fixes to
+every provider that accepted the trigger. Grafana updates share the trigger's
+alert UID; Pushover uses separate messages with map URLs. This is not a v1
+payload and does not alter the normative rule that TEST v1 is non-sensitive.
+It is also not v2: each selected direct provider and the map provider see the
+exact coordinate, and there is no relay resolution or direct-provider ACK
+polling. Pending fixes and remaining provider targets are persisted before
+submission; provider-call ambiguity may therefore produce a duplicate retry.
 
 ## Trust boundaries
 
 - Each sender has a per-device request HMAC key. V2 additionally uses separate
   encryption and content-MAC keys shared only with trusted recipients.
 - Garmin's ordinary settings path is trusted only for non-sensitive TEST.
-  The current beta stores a Pushover destination key and application token
-  there and sends a fixed emergency-priority TEST directly to Pushover. Those
-  values are not LIVE content/authentication keys. LIVE credentials are
-  supplied only in a private personal build.
+  The current beta stores a secret Grafana Cloud IRM webhook URL, Pushover
+  destination/application keys, or both there and sends a fixed TEST directly
+  to those routes. Those values are not LIVE content/authentication keys. LIVE
+  credentials are supplied only in a private personal build.
 - The relay sees timing, opaque device/incident/route identifiers, event kind,
   sequence, expiry, ciphertext size, and provider metadata, but not v2 content.
 - Pushover and ntfy see the notification timing and opaque encrypted envelope.
   They are trusted only for evidence they originate; neither is evidence that a
   person is safe.
-- In the explicitly privacy-relaxed direct-GPS drill, Pushover and the map-link
-  provider additionally see exact coordinates. This exception is limited to
-  the personal beta and is not inherited by LIVE or the normative protocol.
+- In the explicitly privacy-relaxed direct-GPS drill, Grafana and/or Pushover
+  plus the map-link provider additionally see exact coordinates. This exception
+  is limited to the personal beta and is not inherited by LIVE or the normative
+  protocol.
 - Public source builds contain unusable placeholder credentials. Personal
   native builds currently embed their locally supplied keys; hardware-backed
   enrollment is a production gate.
 
-The direct Garmin-to-Pushover TEST path intentionally sits beside, not inside,
+The direct Garmin-to-provider TEST path intentionally sits beside, not inside,
 the normative event protocol. It is a low-setup transport proof: no relay is
-required, the emergency TEST itself contains no location or LIVE content, and
-a validated Pushover emergency receipt is persisted before the analog
-acceptance cover appears or direct GPS begins. Pushover acceptance still does
-not collapse transport delivery, recipient acknowledgement, or incident
-resolution into one fact.
+required, the TEST itself contains no location or LIVE content, and at least
+one validated provider acceptance is persisted before the analog acceptance
+cover appears or direct GPS begins. Grafana `2xx` proves webhook ingestion;
+Pushover requires its emergency receipt. Neither collapses transport delivery,
+recipient acknowledgement, or incident resolution into one fact.
 
 See [`threat-model.md`](threat-model.md), [`privacy.md`](privacy.md), and the
 normative [`../protocol/README.md`](../protocol/README.md).

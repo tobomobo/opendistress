@@ -1,8 +1,11 @@
 phase,gate,route_or_condition,target,status,completed,last_run_utc,evidence_reference,notes
 1,physical TEST ping,app list / phone proxy,1,NOT_RUN,0,,,
-1,beta settings sync,Connect IQ beta install plus phone-edited Pushover keys on fēnix 8 47mm,1,NOT_RUN,0,,,
+1,beta settings sync,Connect IQ beta install plus phone-edited Grafana webhook and optional Pushover keys on fēnix 8 47mm,1,NOT_RUN,0,,,
+1,direct Grafana TEST,one short START press through webhook acceptance and analog cover,1,NOT_RUN,0,,,
+1,direct Grafana Important Push,locked receiver phone gets audible Important Push and deliberate in-app ACK,repeated,NOT_RUN,0,,,
+1,direct dual-provider TEST,Grafana and Pushover each accept the same trigger independently,repeated,NOT_RUN,0,,,
 1,direct Pushover TEST,one short START press through provider acceptance and analog cover,1,NOT_RUN,0,,,
-1,direct GPS first fix,real fēnix 8 outdoor fix after Pushover acceptance opens the expected map point,10,NOT_RUN,0,,,
+1,direct GPS first fix,real fēnix 8 outdoor fix after direct-provider acceptance opens the expected map point in every accepted route,10,NOT_RUN,0,,,
 1,direct GPS indoor acquisition,real fēnix 8 starts with no usable indoor fix then sends a later real fix without mock data,10,NOT_RUN,0,,,
 1,direct GPS movement,real fēnix 8 moves more than cadence threshold and sends a later normal-priority map update,10,NOT_RUN,0,,,
 1,direct GPS durable retry,interrupt network after real fix persistence then reopen and receive the retained fix,repeated,NOT_RUN,0,,,

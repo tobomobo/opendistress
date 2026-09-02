@@ -1,7 +1,7 @@
 # Garmin app
 
 This foreground Connect IQ app implements the Garmin slices of the protocol
-and a bounded direct-Pushover TEST path:
+and a bounded relay-free direct-provider TEST path:
 
 - non-sensitive TEST v1;
 - durable relay acceptance and immutable retry;
@@ -9,11 +9,12 @@ and a bounded direct-Pushover TEST path:
 - an app-list entry, static glance, and published complication;
 - immediate phone/default-path submission plus one best-effort Wi-Fi check and
   immutable retry when Garmin reports the phone path unavailable.
-- direct Pushover emergency TEST submission using phone-editable app settings;
+- direct Grafana Cloud IRM formatted-webhook TEST submission and optional
+  Pushover emergency TEST fallback using phone-editable app settings;
 - a bounded, explicitly privacy-relaxed direct-GPS drill after provider
   acceptance.
 
-When valid Pushover settings are present, the top hardware button
+When a valid Grafana webhook or valid Pushover settings are present, the top hardware button
 (`START`/`ENTER`) immediately creates and sends a fixed non-sensitive TEST.
 DOWN is consumed without triggering. A fully provisioned personal build with
 no direct TEST settings remains LIVE-only: LIVE is committed only after the top
@@ -39,24 +40,27 @@ with the matching event ID and a valid response HMAC. `RELAY ACCEPTED` means
 relay persistence—not provider acceptance, device delivery, human
 acknowledgement, or resolution.
 
-The neutral analog cover is shown only after the direct Pushover API returns a
-valid emergency receipt and request reference and that evidence is stored. A
-double haptic accompanies that transition. In this direct TEST path the cover
-means only **Pushover accepted the request**; it does not mean a receiver phone
-displayed or sounded it, a person acknowledged it, or help is coming. The
-cover is an ordinary foreground app view, not a replacement system watch face.
-MENU clears accepted TEST evidence and returns to readiness.
+The neutral analog cover is shown only after at least one direct provider
+accepts the TEST and that fact is stored. Pushover requires HTTP 200 plus its
+valid request reference and emergency receipt; Grafana requires an HTTP 2xx
+from the configured formatted webhook. A double haptic accompanies the first
+stored acceptance. The cover means only **a provider accepted the request**;
+it does not mean a receiver phone displayed or sounded it, a person ACKed it,
+or help is coming. The cover is an ordinary foreground app view, not a
+replacement system watch face. MENU clears accepted TEST evidence and returns
+to readiness.
 
 After that stored acceptance, and never before it, the beta requests a real
-watch position for up to one hour. The first valid fix is sent as a separate
-high-priority Pushover message with a Google Maps link; meaningful later moves
-use normal priority. Position acquisition and updates run only while the app is
-foreground. No synthetic unavailable record is sent, and simulator/mock fixes
-are not evidence that real GPS works. A pending fix is stored before its
-network call, retried a bounded number of times, and resumed when the app is
-reopened. MENU or the one-hour expiry stops positioning and scrubs the locally
-stored coordinate records while retaining the provider-acceptance cover until
-MENU resets it.
+watch position for up to one hour. Every provider that accepted the trigger is
+targeted sequentially for each fix. Pushover gets a separate high-priority
+first map-link message and normal-priority later moves. Grafana gets updates on
+the same alert UID, including the map link. Position acquisition and updates
+run only while the app is foreground. No synthetic unavailable record is sent,
+and simulator/mock fixes are not evidence that real GPS works. A pending fix
+and its remaining provider targets are stored before network calls, retried a
+bounded number of times, and resumed when the app is reopened. MENU or the
+one-hour expiry stops positioning and scrubs local coordinate records while
+retaining the provider-acceptance cover until MENU resets it.
 
 ## Memory and type safety
 
@@ -76,12 +80,22 @@ Response signatures retain a constant-work character comparison.
 
 ## Configure TEST
 
-The end-user TEST path needs only two 30-character Pushover values:
+The end-user TEST path needs at least one direct route:
 
-- `Pushover user/group key`: the receiver or receiver-group destination;
-- `Pushover application API token`: an application registered by the tester.
+- preferred: a Grafana **Cloud IRM** formatted-webhook URL from a custom
+  integration;
+- optional fallback: the 30-character Pushover user/group key and 30-character
+  application API token.
 
-Install the Beta/App-Store artifact, then edit those password fields in the
+The Grafana URL must be HTTPS, end in a token plus `/`, and use a
+`*.grafana.net` host with `/integrations/v1/formatted_webhook/`. The URL is a
+credential. Do not paste it into logs, issues, screenshots, or this repository.
+Grafana OSS OnCall is archived and is not the supported receiver path here.
+Leave Grafana's optional **Require a Grafana service account token** switch off
+for this beta: the current watch setting contains the generated webhook URL but
+does not provision a separate `Authorization` bearer token.
+
+Install the Beta/App-Store artifact, then edit the password fields in the
 Connect IQ Store app, Garmin Connect, or Garmin Express. The watch receives the
 updated values through Garmin app settings and refreshes an idle setup screen
 without a reinstall. If a TEST is already pending after a rejected
@@ -96,17 +110,34 @@ monkeyc -e -f beta.jungle \
   -y private-resources/developer_key.der -l 1
 ```
 
-The beta sends a form-encoded HTTPS POST directly to Pushover with priority
-`2`, a 30-second retry interval, and the remaining TEST lifetime as expiry. It
-contains no location or LIVE payload. After its acceptance, a separate
-direct-GPS drill may send exact coordinates in a Google Maps URL. The first
-location uses Pushover priority `1`; later locations use priority `0`, so they
-do not create more emergency receipts. Both Pushover and Google can observe
-the exact coordinates. Pushover has no idempotency key, so an ambiguous retry
-can duplicate either the emergency TEST or a location update. The token,
-destination, and direct coordinates are private and are stored or processed by
-Garmin/Pushover/the map provider; this is acceptable only for the bounded
-personal POC, not production LIVE enrollment.
+The beta posts the fixed alert directly to Grafana, Pushover, or both. With both
+configured, the watch serializes provider calls through its one in-flight
+request gate: Pushover is attempted first, while Grafana is persisted as a
+separate pending route and also serves as fallback after a definite Pushover
+rejection. Success from either route is enough to start the acceptance cover
+and GPS drill; the second route continues independently.
+
+Grafana's formatted webhook receives `alert_uid`, `title`, `state`, and
+`message`; later GPS updates reuse the same `alert_uid`. A webhook HTTP 2xx is
+only Grafana ingestion acceptance. Grafana's mobile app may provide Important
+Push and receiver ACK after receiver-side setup, but this watch version neither
+polls nor displays that ACK. Pushover uses emergency priority `2`, a 30-second
+retry interval, and the remaining TEST lifetime as expiry. Its first location
+uses priority `1`; later locations use priority `0`.
+
+The initial fixed TEST contains no location or LIVE payload. After acceptance,
+the direct-GPS drill may send exact coordinates in a Google Maps URL to each
+accepted provider. Garmin, Grafana and/or Pushover, and Google can therefore
+observe data in this explicitly privacy-relaxed path. Ambiguous provider
+recovery may duplicate an alert or location. These credentials and coordinates
+are private and are stored or processed through the participating services;
+this is acceptable only for the bounded personal POC, not production LIVE
+enrollment.
+
+Grafana rate limiting (`429`) remains retryable/pending rather than becoming a
+configuration failure. The watch performs only bounded immediate retries and
+otherwise retains state for reopen; it does not claim an offline delivery
+queue at the provider boundary.
 
 The older relay-backed v1 TEST path remains available to build-time/private
 configurations, but its relay URL, device ID, and HMAC key are no longer exposed
@@ -174,7 +205,7 @@ restart. A missing one-shot callback therefore cannot gate later acquisition.
 It never waits for GPS, starts GPS for an unactivated incident, sends plaintext
 coordinates, or invents a radius. That sentence describes the encrypted LIVE
 path. The explicitly separate direct-GPS drill described above relaxes the
-plaintext boundary only after direct Pushover TEST acceptance.
+plaintext boundary only after direct Grafana or Pushover TEST acceptance.
 
 After the initial callback, continuous positioning runs only while this view is
 foreground and the incident is unexpired. A quality improvement queues
@@ -291,6 +322,12 @@ device profile came from the pinned test image
 the simulator test ran without network access. Garmin's runner returns process
 status 1 even when its structured result says
 `PASSED (passed=4, failed=0, errors=0)`, so automation must parse that result.
+
+The 2026-09-02 rerun also executed the Grafana formatted-webhook validator: one
+representative Cloud IRM URL passed, while HTTP, a non-Grafana host, a short
+token, and a query-suffixed credential failed closed. This is URL-validation
+and simulator evidence only; no Grafana endpoint, Important Push, receiver ACK,
+or GPS provider call was exercised.
 
 Earlier native macOS simulator runs verified the public setup state and the
 former pre-trigger cover behavior. That cover behavior was intentionally

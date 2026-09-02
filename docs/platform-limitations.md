@@ -19,9 +19,9 @@
 - A watch face, if hardware testing eventually earns one, launches the device
   app; it does not send the incident itself.
 - A device app cannot replace the selected system watch face. Its analog cover
-  is an ordinary foreground view. It appears only after direct Pushover TEST
-  acceptance and therefore cannot be used as evidence of phone delivery,
-  human acknowledgement, or response.
+  is an ordinary foreground view. It appears only after direct Grafana or
+  Pushover TEST acceptance and therefore cannot be used as evidence of phone
+  delivery, human acknowledgement, or response.
 - Garmin's normal phone-editable app settings require a Connect IQ Store
   installation. The separate private beta application ID lets the owner test
   those settings without releasing the app publicly; a bare USB PRG sideload
@@ -51,11 +51,12 @@
 - GPS can be slow or unavailable indoors. A LIVE event is persisted and its
   submission is started before location is requested; unavailable fixes remain
   valid encrypted updates.
-- The personal direct-GPS drill starts only after Pushover accepts the alert,
-  runs only while the app remains foreground, and expires after one hour. It
-  sends no synthetic no-fix record. Its exact coordinates are plaintext to
-  Pushover and exposed in a Google Maps URL, and neither simulator nor mock GPS
-  is accepted as physical reliability evidence.
+- The personal direct-GPS drill starts only after at least one direct provider
+  accepts the alert, runs only while the app remains foreground, and expires
+  after one hour. It sends no synthetic no-fix record. Its exact coordinates
+  are plaintext to every direct provider that accepted the trigger and exposed
+  in a Google Maps URL. Neither simulator nor mock GPS is accepted as physical
+  reliability evidence.
 - Foreground cadence stops at local expiry or a verified signed relay status of
   `resolved`/`expired`. Polling occurs only while the client is foregrounded, so
   lifecycle and network delays still postpone that stop.
@@ -64,12 +65,16 @@
   alarm/DND behavior depend on recipient-side app and OS permissions and remain
   unproven until the locked/silent physical rows pass. ntfy priority has no
   equivalent Critical Alert guarantee here.
-- The direct Pushover TEST stores the private user/group key and application
-  token in Garmin app properties and on the watch. It sends only fixed TEST
-  text before acceptance, does not poll the receipt yet, and cannot report
-  human acknowledgement. The separate post-acceptance direct-GPS drill also
-  sends exact coordinates. Because Pushover exposes no idempotency key,
-  recovery after an ambiguous provider call may duplicate an alert or location.
+- The direct settings store either a secret Grafana formatted-webhook URL,
+  private Pushover keys, or both in Garmin app properties and on the watch;
+  Garmin services carry the settings sync. Grafana Cloud IRM can generate
+  Important Push and let a receiver ACK in its mobile app, but a webhook `2xx`
+  proves ingestion only. The watch does not query Grafana's ACK state. Grafana
+  OSS OnCall is not a supported target. This beta also cannot send Grafana's
+  optional service-account bearer token, so that integration switch must remain
+  disabled. The separate post-acceptance direct-GPS drill sends exact
+  coordinates. Neither route has an end-to-end idempotency contract here, so
+  ambiguous recovery may duplicate an alert or location.
 
 Wear OS and watchOS support native Kotlin and Swift respectively. Their source
 projects are not build or device evidence: this workspace has no Android SDK,

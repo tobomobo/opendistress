@@ -145,6 +145,55 @@ module PanicProtocol {
         return value.substring(8, value.length()).find("/") == null;
     }
 
+    function isGrafanaWebhookUrl(value) {
+        if (!(value instanceof Lang.String)
+            || value.length() < 80
+            || value.length() > 512
+            || value.find("https://") != 0
+            || value.find("?") != null
+            || value.find("#") != null
+            || value.find("@") != null
+            || value.toCharArray()[value.length() - 1] != '/') {
+            return false;
+        }
+        var marker = "/integrations/v1/formatted_webhook/";
+        var markerAt = value.find(marker);
+        if (markerAt == null || markerAt <= 8) {
+            return false;
+        }
+        var authorityEndRelative = value.substring(8, value.length()).find("/");
+        if (authorityEndRelative == null) {
+            return false;
+        }
+        var authorityEnd = 8 + authorityEndRelative;
+        if (markerAt < authorityEnd) {
+            return false;
+        }
+        var host = value.substring(8, authorityEnd);
+        if (host.length() <= 12
+            || !stringEquals(
+                host.substring(host.length() - 12, host.length()),
+                ".grafana.net"
+            )) {
+            return false;
+        }
+        var token = value.substring(
+            markerAt + marker.length(),
+            value.length() - 1
+        );
+        if (token.length() < 16 || token.length() > 128 || token.find("/") != null) {
+            return false;
+        }
+        var allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
+        var characters = token.toCharArray();
+        for (var i = 0; i < characters.size(); i += 1) {
+            if (allowed.find(characters[i].toString()) == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     function randomId() {
         return base64Url(Cryptography.randomBytes(16));
     }
@@ -924,6 +973,32 @@ function protocolRejectsUnsafeConfiguration(logger) {
         || PanicProtocol.isHttpsBaseUrl("https://alerts.example?test=1")
         || PanicProtocol.isHttpsBaseUrl("https://alerts.example#fragment")) {
         logger.error("Relay origin validation failed");
+        return false;
+    }
+    if (!PanicProtocol.isGrafanaWebhookUrl(
+            "https://oncall-prod-eu-west-0.grafana.net/oncall/"
+            + "integrations/v1/formatted_webhook/"
+            + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/"
+        )
+        || PanicProtocol.isGrafanaWebhookUrl(
+            "http://oncall-prod-eu-west-0.grafana.net/oncall/"
+            + "integrations/v1/formatted_webhook/"
+            + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/"
+        )
+        || PanicProtocol.isGrafanaWebhookUrl(
+            "https://evil.example/oncall/integrations/v1/formatted_webhook/"
+            + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/"
+        )
+        || PanicProtocol.isGrafanaWebhookUrl(
+            "https://oncall-prod-eu-west-0.grafana.net/oncall/"
+            + "integrations/v1/formatted_webhook/short/"
+        )
+        || PanicProtocol.isGrafanaWebhookUrl(
+            "https://oncall-prod-eu-west-0.grafana.net/oncall/"
+            + "integrations/v1/formatted_webhook/"
+            + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/?leak=1"
+        )) {
+        logger.error("Grafana formatted-webhook URL validation failed");
         return false;
     }
     var dynamicValue = StringUtil.charArrayToString("durably_accepted".toCharArray());

@@ -63,6 +63,20 @@ personal POC exposes the exact coordinates to Pushover and Google Maps; use a
 dedicated test account and obtain the watch owner's explicit consent. Simulator
 or mock locations do not satisfy this drill.
 
+Alternatively, create a **Grafana Cloud IRM** custom integration with a
+formatted incoming webhook, configure its escalation chain, and paste the
+secret webhook URL into the Garmin app's password-type setting. Install the
+Grafana mobile app on each intended responder, enable Important Push, and test
+the exact locked/DND/Focus state. Record separately: webhook HTTP acceptance,
+first audible/vibration interruption, deliberate in-app ACK, and the alert
+timeline. The watch's cover and haptic prove only webhook ingestion and do not
+show the Grafana ACK. Repeat with notification permission or Important Push
+disabled as a negative control. If both Grafana and Pushover are configured,
+verify each independently and verify that GPS reaches every provider that
+accepted the trigger. Grafana OSS OnCall is not the supported mobile path.
+The beta does not provision Grafana's optional service-account bearer token;
+leave that integration toggle disabled or the webhook correctly returns 403.
+
 The required rows are in
 [`../tests/end-to-end/physical-matrix.csv`](../tests/end-to-end/physical-matrix.csv).
 Until they say `PASS`, the product remains not emergency-ready. ntfy may remain

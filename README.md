@@ -23,9 +23,9 @@ acknowledgement, and incident resolution remain separate evidence.
 - A Garmin Connect IQ app in Monkey C with durable TEST/LIVE queues, encrypted
   foreground location updates, app-list/glance/complication launch surfaces,
   responsive layouts for current fēnix, Forerunner, Instinct, and Venu
-  profiles, phone-configured direct Pushover emergency TEST delivery, plus an
-  immediate phone-path request and bounded saved-Wi-Fi fallback that never
-  delays the first attempt.
+  profiles, phone-configured direct Grafana Cloud IRM and optional Pushover
+  emergency TEST delivery, plus an immediate phone-path request and bounded
+  saved-Wi-Fi fallback that never delays the first attempt.
 - A stdlib-only Python relay with strict HMAC intake, SQLite leases and retry,
   recipient routes bound to their provider configuration, Pushover emergency
   receipts/cancellation, and authenticated ntfy publishing.
@@ -44,17 +44,24 @@ routes have not yet been physically measured. Direct SMS/voice is also
 unclaimed: it needs a companion or provider plus real permission, SIM, carrier,
 and hardware testing.
 
-The direct Garmin-to-Pushover path is deliberately a bounded TEST proof of
-concept. It sends a fixed non-sensitive message and bypasses the relay so the
-watch can be tested end to end without running an alarm server. Pushover API
-acceptance changes the foreground app to its neutral analog cover and triggers
-a double haptic; neither proves phone delivery, human acknowledgement, or that
-help is coming. Only after that acceptance, the foreground beta starts the
-watch's real position API for up to one hour and sends separate Pushover map
-links for a first fix and meaningful later movement. Those direct-GPS drill
-messages are intentionally outside the v1 TEST protocol and are plaintext to
-Pushover and the map-link provider; use them only with the owner's explicit
-consent. Simulator/mock coordinates never count as physical GPS evidence.
+The relay-free Garmin path is deliberately a bounded TEST proof of concept. It
+sends a fixed non-sensitive alert directly to a phone-configured Grafana Cloud
+IRM formatted webhook, Pushover, or both. With both configured, the watch uses
+one network request at a time but records each provider independently; Pushover
+is attempted first and Grafana remains a separate route. The first HTTP-level
+provider acceptance changes the foreground app to its neutral analog cover and
+triggers a double haptic. This proves neither phone delivery, Important/Critical
+Push behavior, human acknowledgement, nor that help is coming.
+
+Only after the first stored acceptance, the foreground beta starts the watch's
+real position API for up to one hour. Each provider that accepted the trigger
+receives the first fix and meaningful later movement; Grafana updates reuse the
+same alert UID, while Pushover uses separate map-link messages. These GPS drill
+messages are outside v1 TEST and plaintext to Grafana and/or Pushover plus the
+map-link provider. Use them only with the owner's explicit consent. Simulator
+or mock coordinates never count as physical GPS evidence. Grafana's in-app ACK
+is useful receiver evidence but is not yet returned to or displayed by the
+watch.
 
 ## Run host checks
 

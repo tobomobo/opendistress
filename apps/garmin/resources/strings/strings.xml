@@ -2,11 +2,15 @@
     <string id="AppName">Panic Button</string>
     <string id="BetaAppName">Panic Button TEST</string>
     <string id="PushoverGroupTitle">Pushover TEST setup</string>
-    <string id="PushoverGroupDescription">Direct TEST delivery. After acceptance, real GPS is shared with Pushover and Google Maps for up to one hour. Credentials are stored on this watch.</string>
+    <string id="PushoverGroupDescription">Optional fallback TEST delivery. After acceptance, real GPS is shared with Pushover and Google Maps for up to one hour. Settings sync through Garmin services and are stored on the watch.</string>
     <string id="PushoverUserKeyTitle">Pushover User Key</string>
     <string id="PushoverUserKeyPrompt">30 characters from the receiving Pushover account</string>
     <string id="PushoverApiTokenTitle">Pushover API Token</string>
     <string id="PushoverApiTokenPrompt">30-character application token</string>
+    <string id="GrafanaGroupTitle">Grafana Cloud IRM</string>
+    <string id="GrafanaGroupDescription">Formatted-webhook TEST delivery. Receiver setup can add Important Push and in-app acknowledgement. Alert text and GPS links are visible to Grafana. The secret URL syncs through Garmin services and is stored on the watch.</string>
+    <string id="GrafanaWebhookTitle">Formatted webhook URL</string>
+    <string id="GrafanaWebhookPrompt">https://...grafana.net/integrations/v1/formatted_webhook/.../</string>
     <string id="ComplicationLongLabel">Open panic app</string>
     <string id="ComplicationShortLabel">PANIC</string>
     <string id="ComplicationText">OPEN</string>

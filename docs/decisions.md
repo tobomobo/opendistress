@@ -187,3 +187,23 @@ capsule digest, inner incident, sequence, and message ID. Relay acceptance is
 still not E2E acknowledgement. The Node codec and relay endpoints establish the
 contract; companion enrollment, Android receiver integration, Garmin compiler
 work, deployment, and physical drills remain separate gates.
+
+## 2026-09-02 — Add Grafana Cloud IRM as a relay-free receiver route
+
+The Garmin beta accepts one secret Grafana Cloud IRM formatted-webhook URL via
+Garmin's password-type phone settings. It sends the same fixed non-sensitive
+TEST used by the Pushover proof, with the event ID as Grafana `alert_uid`.
+Grafana can be the only route or can coexist with Pushover. The watch keeps its
+single in-flight request boundary: it attempts Pushover first when configured,
+persists Grafana as a separate pending provider, and uses Grafana as fallback
+after a definite Pushover rejection. Acceptance by either provider starts the
+analog cover, double haptic, and bounded foreground GPS drill.
+
+Grafana HTTP 2xx is recorded only as provider ingestion acceptance. Important
+Push, OS interruption, in-app ACK, escalation, and human response remain
+separate receiver evidence; the watch does not query or display Grafana ACKs.
+GPS updates reuse the same alert UID and are sent to every provider whose
+trigger acceptance was stored. Their remaining targets are persisted with the
+fix before submission. This adds no Grafana route to encrypted relay LIVE and
+does not change the frozen v1/v2 wire contracts. Grafana OSS OnCall is excluded;
+the implemented target is Grafana Cloud IRM.

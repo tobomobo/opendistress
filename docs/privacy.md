@@ -23,13 +23,16 @@ for example, ntfy commonly caches messages for offline subscribers. Use a privat
 self-hosted instance when that boundary is unacceptable.
 
 The personal relay-free Garmin beta has one explicit, non-production exception:
-after the fixed non-sensitive TEST alert receives valid Pushover acceptance, a
-one-hour foreground GPS drill can send exact coordinates in Pushover messages
-and Google Maps URLs. This is outside TEST v1 and v2, and therefore outside the
-encrypted location guarantee above. Pushover and Google can observe and retain
-those coordinates under their own policies. Local last/pending coordinate
-records are scrubbed at expiry or MENU reset. Do not use this exception for
-production LIVE or with anyone who has not explicitly consented.
+after the fixed non-sensitive TEST alert receives valid Grafana Cloud IRM or
+Pushover acceptance, a one-hour foreground GPS drill can send exact coordinates
+to every direct provider that accepted the trigger and in Google Maps URLs.
+This is outside TEST v1 and v2, and therefore outside the encrypted location
+guarantee above. Grafana, Pushover, Garmin's settings/network path, and Google
+can observe or retain data within their respective roles and policies. The
+Grafana webhook URL and Pushover credentials also synchronize through Garmin
+and are stored on the watch. Local last/pending coordinate records are scrubbed
+at expiry or MENU reset. Do not use this exception for production LIVE or with
+anyone who has not explicitly consented.
 
 Maximum defaults are:
 
