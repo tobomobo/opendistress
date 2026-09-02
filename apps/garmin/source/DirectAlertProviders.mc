@@ -161,12 +161,12 @@ module DirectAlertProfile {
     function pushoverMessage() {
         var profile = fields();
         var message = TEST_MESSAGE;
-        message = appendSection(message, "PERSON", profile["person_name"]);
+        message = appendSection(message, "PERSON MIT DER UHR", profile["person_name"]);
         message = appendSection(message, "HEIMADRESSE", profile["home_address"]);
         message = appendSection(message, "KINDER / FAMILIE", profile["children_info"]);
         message = appendSection(
             message,
-            "PERSONENBESCHREIBUNG",
+            "BESCHREIBUNG DIESER PERSON",
             profile["person_description"]
         );
         message = appendSection(message, "HINTERGRUND", profile["background_info"]);
