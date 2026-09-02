@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
     <iq:application
-        id="64f9e95a-12ca-4a5a-b8d2-44df912aa1ad"
+        id="01619649-6bb2-40b8-9d45-c5a524217aad"
         type="watch-app"
-        name="@Strings.AppName"
+        name="@Strings.BetaAppName"
         entry="PanicApp"
         launcherIcon="@Drawables.LauncherIcon"
         minApiLevel="6.0.0">

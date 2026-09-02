@@ -22,6 +22,14 @@ An immutable retry retains every semantic value, including ID, timestamps,
 ciphertext, content tag, and request signature. Exact duplicates return the
 stored intake result. Reusing an ID for different semantics is a conflict.
 
+The blind-mailbox path applies the same rule to the complete fixed-size capsule:
+message ID, outer expiry, IV, ciphertext, content tag, and append capability are
+persisted before the first request and reused unchanged. The relay's response
+MAC proves only mailbox persistence. A stronger sender signal requires an ACK
+that the sender has decrypted and verified against the exact capsule hash and
+inner `(incident_id, sequence)`; merely storing an opaque ACK at the relay is
+insufficient.
+
 The relay commits a lease and attempt row before provider I/O. A transient
 failure retries with bounded exponential backoff. If a lease expires after an
 interruption, a new worker may retry while the incident remains active. That

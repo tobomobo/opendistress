@@ -38,8 +38,11 @@ because the Connect IQ SDK and hardware are not installed by this repository.
   claim its delivery or evidence work.
 - Keep watch recognition, relay intake, provider acceptance, transport delivery,
   per-recipient acknowledgment, and incident resolution as separate facts.
-- TEST contains no sensitive content. V2 LIVE and location content is encrypted
-  before platform networking with independent authentication, encryption, and
+- Normative TEST v1 contains no sensitive content. The explicitly
+  privacy-relaxed direct-provider beta may carry an opt-in profile and
+  post-acceptance GPS only outside v1, with the participating providers named
+  in the UI and documentation. V2 LIVE and location content is encrypted before
+  platform networking with independent authentication, encryption, and
   content-MAC keys. The relay never receives content keys.
 - Validate and authenticate before decrypting or persisting untrusted content.
 - Never log bodies, signature or authorization headers, credentials, locations,

@@ -29,6 +29,13 @@ Only the current default branch is supported.
   destination cannot claim old delivery, receipt, or cancellation work.
 - V2 content is authenticated before decryption. The relay never receives
   encryption or content-MAC keys and never logs or decrypts ciphertext.
+- Blind mailbox mode wraps the complete v2 event in a fixed-size independently
+  authenticated capsule. The relay stores only capability hashes, never raw
+  append/read/ACK capabilities or mailbox content keys. Unknown, disabled, and
+  wrong-capability mailboxes share one authentication failure.
+- A mailbox recipient ACK is independently encrypted and bound to the exact
+  capsule digest, inner incident, sequence, and message ID. Relay acceptance of
+  an ACK envelope is not proof that the sender verified that E2E binding.
 - Device, route, and SQLite files containing active configuration use mode 0600.
   Provider credentials never appear in logs or watch-facing URLs. Pushover's
   receipt API requires its application token in an outbound HTTPS query, so
@@ -42,6 +49,8 @@ Only the current default branch is supported.
 - Event rows and their cascading delivery evidence are deleted by event expiry
   plus 24 hours; encrypted location has the stricter privacy window documented
   in [`docs/privacy.md`](docs/privacy.md).
+- Mailbox quotas are capability-scoped and fixed. Proof-of-work is not permitted
+  on the activation path, and the reference relay records no usage analytics.
 - No compiler, provider, simulator, or physical-device result is claimed unless
   its evidence is recorded.
 

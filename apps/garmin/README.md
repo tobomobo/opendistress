@@ -1,24 +1,71 @@
 # Garmin app
 
-This foreground Connect IQ app implements the Garmin slices of the protocol:
+This foreground Connect IQ app implements the Garmin slices of the protocol
+and a bounded relay-free direct-provider TEST path:
 
 - non-sensitive TEST v1;
 - durable relay acceptance and immutable retry;
 - encrypted LIVE and encrypted cached/fresh/later location events;
 - an app-list entry, static glance, and published complication;
-- reported Wi-Fi/phone connection diagnostics without pretending to choose a
-  transport.
+- immediate phone/default-path submission plus one best-effort Wi-Fi check and
+  immutable retry when Garmin reports the phone path unavailable.
+- independent direct Grafana Cloud IRM formatted-webhook and Pushover emergency
+  TEST adapters using phone-editable app settings;
+- a bounded, explicitly privacy-relaxed direct-GPS drill after provider
+  acceptance.
 
-The default mode is TEST. MENU toggles between TEST and LIVE only while no
-event is queued; START deliberately creates or retries an event. LIVE events
-cannot be abandoned. A repeated LIVE START while the incident is active keeps
-the same incident rather than creating another logical alarm.
+When a valid Grafana webhook or valid Pushover settings are present, the top hardware button
+(`START`/`ENTER`) immediately creates and sends a clearly marked TESTNOTRUF.
+An optional protected-person name from phone-editable app settings is appended
+to the notification title. The same settings screen can hold an optional
+provider-neutral emergency card: home address, children/family information, a person
+description, background, responder instructions, and an HTTPS photo URL.
+Omitting any or all of it never blocks activation.
+DOWN is consumed without triggering. A fully provisioned personal build with
+no direct TEST settings remains LIVE-only: LIVE is committed only after the top
+button remains pressed for 1.5 seconds, and releasing sooner cancels without
+creating an event. There is no visible countdown or on-watch TEST/LIVE switch.
+
+At the hold threshold, the personal build persists the encrypted LIVE event,
+attempts one short haptic confirmation, and starts submission immediately.
+The haptic proves only that local persistence completed; it does not prove the
+relay or a recipient received anything. LIVE events cannot be abandoned, and
+reopening an active incident keeps the same incident rather than creating
+another logical alarm.
+
+Connect IQ cannot install a global third-party button listener. On fēnix 8,
+DOWN reaches the app only after Garmin has opened an allowed foreground
+surface. Pinning the app's glance or complication can shorten that route, and a
+firmware shortcut may be used only if that watch offers the installed app as a
+target. Neither the source nor the simulator proves a one-press global launch.
 
 The complete immutable queue and active-incident state are stored before the
 first request. The app removes only the queue head after an HTTP 202 response
 with the matching event ID and a valid response HMAC. `RELAY ACCEPTED` means
 relay persistence—not provider acceptance, device delivery, human
 acknowledgement, or resolution.
+
+The neutral analog cover is shown only after at least one direct provider
+accepts the TEST and that fact is stored. Pushover requires HTTP 200 plus its
+valid request reference and emergency receipt; Grafana requires an HTTP 2xx
+from the configured formatted webhook. A double haptic accompanies the first
+stored acceptance. The cover means only **a provider accepted the request**;
+it does not mean a receiver phone displayed or sounded it, a person ACKed it,
+or help is coming. The cover is an ordinary foreground app view, not a
+replacement system watch face. MENU clears accepted TEST evidence and returns
+to readiness.
+
+After that stored acceptance, and never before it, the beta requests a real
+watch position for up to one hour. Every provider that accepted the trigger is
+targeted sequentially for each fix. Pushover gets a separate high-priority
+first map-link message and normal-priority later moves. Grafana gets updates on
+the same alert UID, including the map link. Position acquisition and updates
+run only while the app is foreground. No synthetic unavailable record is sent,
+and simulator/mock fixes are not evidence that real GPS works. A pending fix
+and its remaining provider targets are stored before network calls, retried a
+bounded number of times, and resumed when the app is reopened. MENU or the
+one-hour expiry stops positioning and scrubs local coordinate records while
+retaining the provider-acceptance cover until MENU resets it.
 
 ## Memory and type safety
 
@@ -38,17 +85,129 @@ Response signatures retain a constant-work character comparison.
 
 ## Configure TEST
 
-These three ordinary app settings may be entered through Garmin Connect,
-Connect IQ, Garmin Express, or the simulator:
+The end-user TEST path needs at least one direct route:
 
-- `Relay HTTPS origin`: an origin such as `https://alerts.example`, with no
-  path, query, credentials, fragment, or trailing slash;
-- `Device ID`: the canonical 22-character base64url encoding of 16 random
-  bytes;
-- `Device HMAC key`: 32 random bytes as 64 lowercase hexadecimal characters.
+- a Grafana **Cloud IRM** formatted-webhook URL from a custom integration; or
+- the 30-character Pushover user/group key and 30-character application API
+  token.
 
-The app posts to `/v1/events` or `/v2/events` itself. The TEST setting channel
-and paired phone are trusted only for TEST; never reuse that HMAC key for LIVE.
+The Grafana URL must be HTTPS, end in a token plus `/`, and use a
+`*.grafana.net` host with `/integrations/v1/formatted_webhook/`. The URL is a
+credential. Do not paste it into logs, issues, screenshots, or this repository.
+Grafana OSS OnCall is archived and is not the supported receiver path here.
+Leave Grafana's optional **Require a Grafana service account token** switch off
+for this beta: the current watch setting contains the generated webhook URL but
+does not provision a separate `Authorization` bearer token.
+
+Install the Beta/App-Store artifact, then edit the route credentials, optional
+**Protected person name**, and optional **TEST emergency card** in the Connect
+IQ Store app, Garmin Connect, or Garmin Express. The card supports a home
+address, children/family information, a person description, relevant
+background, responder instructions, and an HTTPS photo URL. Garmin's standard
+settings UI cannot upload a photo, so the last field is a link that Grafana can
+render and Pushover can expose for deliberate opening. The image host sees
+retrieval. The watch receives the updated values through Garmin app settings
+and refreshes an idle setup screen
+without a reinstall. If a TEST is already pending after a rejected
+configuration, saving corrected valid values retries that same durable event
+automatically. A USB-sideloaded PRG does not provide this normal phone
+settings workflow, which is why `beta.jungle` and the separate beta application
+ID exist. Build the store artifact with:
+
+```sh
+monkeyc -e -f beta.jungle \
+  -o bin/PanicButton-TEST.iq \
+  -y private-resources/developer_key.der -l 1
+```
+
+The beta posts the TESTNOTRUF directly to Grafana, Pushover, or both. Its title
+always starts with `TESTNOTRUF`; its message always starts with
+`KEIN ECHTER NOTFALL`. If set, the optional display name appears only after the
+TEST marker. With both configured, the watch serializes provider calls through
+its one in-flight request gate: preferred Grafana is attempted first and
+Pushover is the independent fallback when Grafana is not definitely accepted.
+Success from either route is enough to start the acceptance cover and GPS
+drill. A fallback acceptance retains Grafana as a separately retryable route.
+
+[`source/DirectAlertProviders.mc`](source/DirectAlertProviders.mc) owns the
+shared emergency-profile model and the concrete Grafana and Pushover payload
+adapters. Watch activation, persistence, provider ordering, acceptance, and GPS
+state remain in `PanicApp.mc`; adding another direct service should map the
+shared profile at this adapter boundary without changing activation semantics.
+Because each provider has different acceptance and acknowledgement evidence,
+its pending/accepted state must still be added explicitly rather than hidden
+behind a false common `delivered` flag.
+
+Every accepted direct route stores a one-way credential/destination fingerprint.
+GPS is sent only while the current phone-synced provider settings match that
+fingerprint; changing a webhook, user key, or application token pauses that
+route rather than retargeting an accepted incident. A route changed while a fix
+is pending is dropped from that fix so it cannot stall another accepted route;
+restoring the original settings makes it eligible for subsequent fixes.
+Likewise, exhausting one route's bounded retry budget advances that target and
+continues any other accepted route instead of blocking the shared GPS slot.
+Pre-acceptance cached coordinates are rejected, so the first direct fix must
+have been captured at or after provider acceptance.
+
+Grafana's formatted webhook receives `alert_uid`, `title`, `state`, `message`,
+and the optional emergency-card fields; later GPS updates reuse the same
+`alert_uid` and repeat the current card so it remains available in the newest
+alert item. Configure Grafana's mobile template from `title` and `message` only,
+then render the optional fields in its web/detail template. This keeps sensitive
+profile text off the short lock-screen notification while still making it
+available after a responder deliberately opens the alert. A webhook HTTP 2xx is
+only Grafana ingestion acceptance. Grafana's mobile app may provide Important
+Push and receiver ACK after receiver-side setup, but this watch version neither
+polls nor displays that ACK. Pushover uses emergency priority `2`, a 30-second
+retry interval, and the remaining TEST lifetime as expiry. Its first location
+uses priority `1`; later locations use priority `0`.
+
+Use these Grafana **Mobile push notifications** templates:
+
+```jinja2
+Title:   {{ payload.get("title", "Garmin Panic Button") }}
+Message: {{ payload.get("message", "Open Grafana IRM for details.") }}
+```
+
+The Web message may conditionally render `person_name`, `home_address`,
+`children_info`, `person_description`, `background_info`,
+`response_instructions`, and `profile_photo_url`. Set the Web image URL to:
+
+```jinja2
+{{ payload.get("profile_photo_url", "") }}
+```
+
+Pushover receives the same non-photo profile fields as a bounded plain-text
+message and receives the HTTPS photo as its supplementary URL. Pushover does
+not provide a separate structured detail template: its client or the operating
+system may show some or all of that message on the lock screen. The adapter
+therefore enforces Pushover's 1,024-character limit and falls back to the fixed
+TEST message if an unexpected settings value would exceed it. Pushover does not
+fetch a remote photo as an attachment; the recipient deliberately opens the
+link instead.
+
+The initial TEST contains no location or LIVE payload, but its optional display
+name and emergency card are visible to Garmin and each configured provider.
+The fields are validated for bounded length and the optional photo must be an
+HTTPS URL without embedded credentials or a fragment; content correctness
+remains the owner's responsibility. After acceptance,
+the direct-GPS drill may send exact coordinates in a Google Maps URL to each
+accepted provider. Garmin, Grafana and/or Pushover, and Google can therefore
+observe data in this explicitly privacy-relaxed path. Ambiguous provider
+recovery may duplicate an alert or location. These credentials and coordinates
+plus the emergency-card content are private and are stored or processed through
+the participating services;
+this is acceptable only for the bounded personal POC, not production LIVE
+enrollment.
+
+Grafana rate limiting (`429`) remains retryable/pending rather than becoming a
+configuration failure. The watch performs only bounded immediate retries and
+otherwise retains state for reopen; it does not claim an offline delivery
+queue at the provider boundary.
+
+The older relay-backed v1 TEST path remains available to build-time/private
+configurations, but its relay URL, device ID, and HMAC key are no longer exposed
+as end-user phone settings.
 
 ## Provision LIVE
 
@@ -69,8 +228,12 @@ Put the real property overrides in the ignored
 `private.jungle` beside `monkey.jungle` with:
 
 ```text
-base.resourcePath = $(base.resourcePath);private-resources
+base.resourcePath = $(base.resourcePath);private-resources/properties
 ```
+
+Point at the properties directory rather than the private-resources root. This
+keeps an optional simulator-only private manifest from being parsed as an app
+resource.
 
 Pass `monkey.jungle:private.jungle` to `-f` on Linux so the private resource is
 last and has override precedence. USB sideload the resulting binary. Rebuild
@@ -79,15 +242,22 @@ with a higher key version to rotate content keys. Do not rotate
 active: v2 has no authentication-key version with which to retry the immutable
 request under its original key.
 
-The simulator run did not verify private resource-path precedence; confirm that
-gate before putting real keys into a build. If the SDK does not override the
-invalid defaults, stop: this source tree has no alternate secret-injection
-seam. Never move LIVE keys into app settings.
+SDK 9.2.0 on macOS verified that a later private resource path overrides the
+invalid LIVE defaults on a fresh simulator application. Application properties
+persist across rebuilds, however: installing a private binary over an existing
+unprovisioned app can retain the old blank values. Provision the personal build
+as a fresh install (or a distinct personal application ID), and never clear app
+data while a TEST is queued or a LIVE incident is active. Never move LIVE keys
+into app settings.
 
 LIVE encrypts before any communication call with the fixed v2 profile:
 AES-256-CBC over exactly one block with no padding, then HMAC-SHA256 over the
 authenticated envelope using a separate content-MAC key. The relay never gets
 the content keys.
+
+Before treating a personal build as usable, complete the receiver enrollment
+and locked/silent/Focus or DND drills in
+[`../../docs/receiver-enrollment.md`](../../docs/receiver-enrollment.md).
 
 ## Location and activation surfaces
 
@@ -99,7 +269,9 @@ stage is persisted with each location event, so opening an already-activated,
 unexpired incident resumes an unfinished position-callback acquisition after
 restart. A missing one-shot callback therefore cannot gate later acquisition.
 It never waits for GPS, starts GPS for an unactivated incident, sends plaintext
-coordinates, or invents a radius.
+coordinates, or invents a radius. That sentence describes the encrypted LIVE
+path. The explicitly separate direct-GPS drill described above relaxes the
+plaintext boundary only after direct Grafana or Pushover TEST acceptance.
 
 After the initial callback, continuous positioning runs only while this view is
 foreground and the incident is unexpired. A quality improvement queues
@@ -129,16 +301,46 @@ requests location. This remains a physical-test gate. A separate watch-face
 project is intentionally absent until measurements show the stock complication
 is inadequate.
 
-Before each request the UI reports whether the system currently reports Wi-Fi
-or phone connectivity. This is diagnostic evidence only. Connect IQ chooses
-the actual path, and the app neither gates the request on Wi-Fi nor claims it
-can force Wi-Fi over Bluetooth.
+Before each request the TEST UI reports whether the system currently reports
+Wi-Fi, LTE, or phone connectivity. This is diagnostic evidence only. Connect
+IQ chooses the actual web-request path; an LTE state is not treated as evidence
+that an arbitrary Connect IQ HTTPS request can use Garmin LTE.
 
-## Hardware target and build
+The persisted trigger always gets its first request immediately. It never
+waits for GPS or a Wi-Fi scan. If that request fails specifically because the
+BLE phone connection is unavailable or its Garmin host times out, the app calls
+`Communications.checkWifiConnection()` once for that queue head. When Garmin
+reports that an internet-enabled saved access point can be connected, the app
+retries the exact same immutable event. A failed or unavailable Wi-Fi check
+leaves the event durably queued and falls back to the existing bounded retries.
+The Wi-Fi callback has a ten-second watchdog, so a missing platform callback
+cannot block the queue indefinitely. Reopening the app automatically resumes a
+durably pending event, but opening an app with no pending event never creates
+one.
+The app never receives an SSID/BSSID, never scans arbitrary nearby networks,
+and never describes this best-effort retry as delivery evidence.
 
-The manifest currently targets `fenix847mm`. Confirm the physical watch's
-exact SDK profile—43 mm, Solar, and Pro variants can use different IDs—before
-compiling or sideloading.
+## Hardware targets and build
+
+The manifest targets these current SDK 9.2 profiles. One profile may represent
+multiple retail variants, as named by Garmin's device reference:
+
+| Family | Connect IQ profiles |
+| --- | --- |
+| fēnix 8 / tactix 8 / quatix 8 | `fenix843mm`, `fenix847mm` |
+| fēnix 8 Solar | `fenix8solar47mm`, `fenix8solar51mm` |
+| fēnix 8 Pro / quatix 8 Pro | `fenix8pro47mm` |
+| fēnix E | `fenixe` |
+| Forerunner 970 | `fr970` |
+| Instinct 3 AMOLED / Solar | `instinct3amoled45mm`, `instinct3amoled50mm`, `instinct3solar45mm` |
+| Venu 4 / D2 Air X15 | `venu441mm`, `venu445mm` |
+| Venu X1 | `venux1` |
+
+The status layout, glance, and analog cover use display-relative bounds. The
+matrix therefore includes small and large round AMOLED, round MIP, and the
+rectangular Venu X1 profile. A successful profile build is compatibility
+evidence only; button mapping, haptic behavior, foreground lifetime, Wi-Fi,
+GPS, and physical readability still require that exact hardware.
 
 The Connect IQ SDK is not vendored. With its `bin` directory on `PATH`, from
 this directory:
@@ -150,7 +352,10 @@ monkeyc -f monkey.jungle -d fenix847mm -o bin/SmartPanicButton.prg \
 ```
 
 For a provisioned personal LIVE build, replace `-f monkey.jungle` with
-`-f monkey.jungle:private.jungle`. Both private paths are gitignored.
+`-f monkey.jungle:private.jungle`. A reproducible local build can keep its
+developer key at the gitignored `private-resources/developer_key.der` with file
+mode `0600`; pass that path to `-y`. Both private paths and all `*.der` files
+are gitignored.
 
 Run the protocol vectors:
 
@@ -160,7 +365,8 @@ monkeyc -f monkey.jungle -d fenix847mm -o bin/SmartPanicButton-tests.prg \
 monkeydo bin/SmartPanicButton-tests.prg fenix847mm -t
 ```
 
-Keep signing keys and private resources outside the repository. Simulator and
+Keep signing keys and private resources outside tracked repository content.
+Simulator and
 physical validation still must cover settings, a successful strict `-l 3`
 build, queue restart, tampered results, app-list/glance/complication launch,
 indoor/no-fix location, Bluetooth loss, phone-off Wi-Fi, firmware/reboot
@@ -168,8 +374,9 @@ behavior, and the recorded activation/failure matrices in `tests/end-to-end/`.
 
 ## Simulator evidence
 
-On 2026-08-31, official Connect IQ SDK 9.2.0 compiled the complete
-`fenix847mm` app at `-l 1`. Four tests passed in the Garmin simulator:
+On 2026-09-01, official Connect IQ SDK 9.2.0 compiled the complete app at
+`-l 1` for every profile in the hardware table above. Four tests passed in the
+Garmin simulator on `fenix847mm`:
 `protocolConformance`, `protocolRejectsMalformedEvents`,
 `protocolRejectsUnsafeConfiguration`, and `protocolRejectsTamperedResults`.
 Together they execute the published v1 TEST, encrypted v2 LIVE, encrypted
@@ -182,15 +389,44 @@ the simulator test ran without network access. Garmin's runner returns process
 status 1 even when its structured result says
 `PASSED (passed=4, failed=0, errors=0)`, so automation must parse that result.
 
-An interactive foreground smoke launch is still unverified in this headless
-environment. The simulator process exited with status 139 while loading both
-this app and Garmin's bundled `Menu2Sample`. Its last log lines included
-`SetLayout`, but successful unit execution also emits that line, so it is not
-itself the failing operation. This is consistent with a shared headless
-simulator/environment failure and does not prove an app-specific crash.
-Settings, START/MENU input, persistence/restart, GPS, BLE, Wi-Fi, battery,
-timers, glance, complication, and network callbacks therefore remain
-unverified interactively. Strict `-l 3` currently fails with 295 compiler
-errors and remains a release gate. See the recorded
+The 2026-09-02 rerun also executed the Grafana formatted-webhook validator: one
+representative Cloud IRM URL passed, while HTTP, a non-Grafana host, a short
+token, and a query-suffixed credential failed closed. This is URL-validation
+and simulator evidence only; no Grafana endpoint, Important Push, receiver ACK,
+or GPS provider call was exercised.
+
+The review fix at `c8b4338` compiled for `fenix847mm` at `-l 1 -O 1` in the
+same pinned SDK image and ran five structured simulator tests. In addition to
+the four protocol tests above, `directProviderSafetyTransitions` executed
+provider-fingerprint mismatch, active-route, and post-acceptance GPS timestamp
+boundaries. The result was `PASSED (passed=5, failed=0, errors=0)`. This remains
+simulator evidence only; it does not replace physical GPS or provider delivery
+evidence.
+
+Earlier native macOS simulator runs verified the public setup state and the
+former pre-trigger cover behavior. That cover behavior was intentionally
+superseded by the direct-TEST acceptance UX above. The current fēnix 8 47 mm
+simulator shows readable `READY — TEST` copy with no cover, and one short
+upper-right START press immediately reached Pushover and displayed its expected
+configuration rejection when run with deliberately invalid 30-character test
+tokens. This proves the SDK input/callback path and visible error state, not
+provider acceptance or receiver delivery. The valid-receipt cover and every
+real-GPS behavior still need the supervised physical Pushover drill.
+
+The separate beta manifest also exported successfully at `-l 1` for all 17
+expanded device configurations. The automation API still cannot hold a
+simulated button for 1.5 seconds, so the positive private-LIVE hold remains
+unexecuted rather than inferred. Earlier simulator work also reproduced and
+removed a fourth-timer regression. All personal simulations used
+non-production keys; none proved relay acceptance or delivery.
+
+The earlier Linux headless process still exits 139 for both this app and
+Garmin's bundled `Menu2Sample`, so that remains a shared environment
+limitation. GPS, BLE, Wi-Fi, battery, haptic, glance, complication, long-hold,
+and real network callbacks remain unverified interactively. Mock simulator GPS
+must not be promoted to a PASS for any physical location row. Strict `-l 3`
+still fails on the broadly untyped legacy Monkey C boundaries and remains a
+release gate. See the
+recorded
 [`simulator-matrix.csv`](../../tests/end-to-end/simulator-matrix.csv); every
 physical row remains open.

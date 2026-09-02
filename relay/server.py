@@ -20,6 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .mailbox import MAX_BODY_BYTES as MAX_MAILBOX_BODY_BYTES
+from .mailbox import MailboxStore, load_mailboxes
 from .transports import (
     MAX_PROVIDER_RESPONSE_BYTES,
     NTFY_TOKEN_RE,
@@ -38,6 +40,9 @@ STATUS_MAX_SKEW = 300
 EVENT_PATH = "/v1/events"
 LIVE_EVENT_PATH = "/v2/events"
 STATUS_PATH = "/v2/status"
+MAILBOX_PATH_RE = re.compile(
+    r"^/mailbox/v1/([A-Za-z0-9_-]{22})/(messages|acknowledgements)$"
+)
 SCHEMA_VERSION = 5
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{22}$")
 SIGNATURE_RE = re.compile(r"^v1=([A-Za-z0-9_-]{43})$")
@@ -673,6 +678,7 @@ class Relay:
         routes: dict | None = None,
         transports: dict[tuple[str, str], object] | None = None,
         receipt_interval: int = 30,
+        mailboxes: dict[str, dict] | None = None,
     ):
         if not 0 <= max_clock_skew <= 3600:
             raise ValueError("max clock skew must be between 0 and 3600 seconds")
@@ -707,6 +713,7 @@ class Relay:
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
+        self.mailbox = MailboxStore(self.db, self.db_lock, mailboxes, clock)
         try:
             self._initialize_schema()
             self._validate_outstanding_routes()
@@ -911,6 +918,7 @@ class Relay:
                 ).fetchone():
                     self._migrate_phase1_locked()
                 self._create_recipient_schema_locked()
+                self.mailbox.initialize_schema_locked()
                 route_columns = {
                     row["name"]
                     for row in self.db.execute("PRAGMA table_info(incident_routes)")
@@ -1353,6 +1361,7 @@ class Relay:
                 )
                 self._clear_opaque_content_locked(now)
                 self._purge_retained_rows_locked(now)
+                self.mailbox.purge_locked(now)
                 self.db.commit()
             except sqlite3.Error:
                 self._rollback()
@@ -2567,6 +2576,47 @@ def make_server(host: str, port: int, relay: Relay) -> ThreadingHTTPServer:
             self.close_connection = True
 
         def do_POST(self):
+            mailbox_match = MAILBOX_PATH_RE.fullmatch(self.path)
+            if mailbox_match is not None:
+                mailbox_id, resource = mailbox_match.groups()
+                if self.headers.get("Transfer-Encoding") is not None:
+                    self._send(400, {"v": 1, "result": "configuration_failure", "code": "unsupported_transfer_encoding"})
+                    return
+                encodings = self.headers.get_all("Content-Encoding") or []
+                if len(encodings) > 1 or (encodings and encodings[0].lower() != "identity"):
+                    self._send(415, {"v": 1, "result": "configuration_failure", "code": "unsupported_content_encoding"})
+                    return
+                content_types = self.headers.get_all("Content-Type") or []
+                if len(content_types) != 1 or self.headers.get_content_type() != "application/json":
+                    self._send(415, {"v": 1, "result": "configuration_failure", "code": "invalid_content_type"})
+                    return
+                lengths = self.headers.get_all("Content-Length") or []
+                if len(lengths) != 1 or not re.fullmatch(r"[0-9]{1,10}", lengths[0]):
+                    self._send(411, {"v": 1, "result": "configuration_failure", "code": "invalid_content_length"})
+                    return
+                length = int(lengths[0])
+                if length < 1:
+                    self._send(400, {"v": 1, "result": "configuration_failure", "code": "empty_body"})
+                    return
+                if length > MAX_MAILBOX_BODY_BYTES:
+                    self._send(413, {"v": 1, "result": "configuration_failure", "code": "body_too_large"})
+                    return
+                authorizations = self.headers.get_all("Authorization") or []
+                authorization = authorizations[0] if len(authorizations) == 1 else None
+                try:
+                    body = self.rfile.read(length)
+                except OSError:
+                    self._send(408, {"v": 1, "result": "retryable_failure", "code": "request_incomplete"})
+                    return
+                if len(body) != length:
+                    self._send(408, {"v": 1, "result": "retryable_failure", "code": "request_incomplete"})
+                    return
+                if resource == "messages":
+                    status, payload = relay.mailbox.append(mailbox_id, body, authorization)
+                else:
+                    status, payload = relay.mailbox.acknowledge(mailbox_id, body, authorization)
+                self._send(status, payload)
+                return
             if self.path not in {EVENT_PATH, LIVE_EVENT_PATH, STATUS_PATH}:
                 self._send(404, response("configuration_failure", "unknown_endpoint"))
                 return
@@ -2667,7 +2717,18 @@ def make_server(host: str, port: int, relay: Relay) -> ThreadingHTTPServer:
             )
 
         def do_GET(self):
-            self._method_not_allowed()
+            mailbox_match = MAILBOX_PATH_RE.fullmatch(self.path)
+            if mailbox_match is None:
+                self._method_not_allowed()
+                return
+            mailbox_id, resource = mailbox_match.groups()
+            authorizations = self.headers.get_all("Authorization") or []
+            authorization = authorizations[0] if len(authorizations) == 1 else None
+            if resource == "messages":
+                status, payload = relay.mailbox.list_messages(mailbox_id, authorization)
+            else:
+                status, payload = relay.mailbox.list_acknowledgements(mailbox_id, authorization)
+            self._send(status, payload)
 
         def do_PUT(self):
             self._method_not_allowed()
@@ -2758,6 +2819,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Smart Panic Button relay")
     parser.add_argument("--devices", help="path to the device JSON file")
     parser.add_argument("--routes", help="path to the private route JSON file")
+    parser.add_argument(
+        "--mailboxes",
+        help="path to the hashed capability mailbox JSON file",
+    )
     parser.add_argument("--database", required=True, help="path to the SQLite idempotency ledger")
     parser.add_argument("--listen", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
@@ -2785,6 +2850,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("--devices and --routes are required when serving")
         devices = load_devices(args.devices)
         routes = load_routes(args.routes)
+        mailboxes = load_mailboxes(args.mailboxes) if args.mailboxes else {}
         transports = build_transports(
             routes,
             os.environ.get("PUSHOVER_APP_TOKEN", ""),
@@ -2799,6 +2865,7 @@ def main(argv: list[str] | None = None) -> int:
             routes=routes,
             transports=transports,
             receipt_interval=args.receipt_interval,
+            mailboxes=mailboxes,
         )
         server = make_server(args.listen, args.port, relay)
     except (OSError, ValueError, sqlite3.Error) as exc:

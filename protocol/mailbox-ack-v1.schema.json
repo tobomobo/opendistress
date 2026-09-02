@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smart-panic-button.invalid/protocol/mailbox-ack-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "message_id", "capsule_sha256", "payload"],
+  "properties": {
+    "v": { "const": 1 },
+    "message_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+    "capsule_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iv", "ciphertext", "tag"],
+      "properties": {
+        "iv": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+        "ciphertext": { "type": "string", "pattern": "^[A-Za-z0-9_-]{342}$" },
+        "tag": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+      }
+    }
+  }
+}

@@ -3,10 +3,12 @@
 import Toybox.Application;
 import Toybox.Application.Properties;
 import Toybox.Application.Storage;
+import Toybox.Attention;
 import Toybox.Communications;
 import Toybox.Complications;
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.PersistedContent;
 import Toybox.Position;
 import Toybox.System;
@@ -15,6 +17,8 @@ import Toybox.Timer;
 import Toybox.WatchUi;
 
 class PanicApp extends Application.AppBase {
+    var _view = null;
+
     function initialize() {
         AppBase.initialize();
         try {
@@ -28,8 +32,14 @@ class PanicApp extends Application.AppBase {
     }
 
     function getInitialView() {
-        var view = new PanicView();
-        return [view, new PanicDelegate(view)];
+        _view = new PanicView();
+        return [_view, new PanicDelegate(_view)];
+    }
+
+    function onSettingsChanged() {
+        if (_view != null) {
+            _view.settingsChanged();
+        }
     }
 
     (:glance)
@@ -47,14 +57,21 @@ class PanicGlanceView extends WatchUi.GlanceView {
     function onUpdate(dc) {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
         dc.clear();
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
-        dc.drawText(
-            dc.getWidth() / 2,
-            dc.getHeight() / 2,
-            Graphics.FONT_SMALL,
-            "OPEN PANIC APP",
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER
-        );
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var label = new WatchUi.TextArea({
+            :text => "OPEN PANIC",
+            :color => Graphics.COLOR_WHITE,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
+                Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => (width * 8) / 100,
+            :locY => (height * 20) / 100,
+            :width => (width * 84) / 100,
+            :height => (height * 60) / 100
+        });
+        label.draw(dc);
     }
 }
 
@@ -64,13 +81,66 @@ class PanicView extends WatchUi.View {
     const LIVE_EXPIRY_SECONDS = 3600;
     const MAX_QUEUE = 3;
     const MAX_INITIAL_RETRIES = 2;
+    const LIVE_ARM_HOLD_MS = 1500;
+    const COVER_REFRESH_MS = 60000;
     const RETRY_DELAY_MS = 5000;
+    const WIFI_CHECK_TIMEOUT_MS = 10000;
+    const PROVIDER_REFERENCE_ALPHABET =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
     const MATERIAL_MOVE_E7 = 5000;
     const LOW_BATTERY_PERCENT = 20;
     const FIRST_CADENCE_SECONDS = 30;
     const MIDDLE_CADENCE_SECONDS = 120;
     const LATE_CADENCE_SECONDS = 300;
-    const STATE_KEYS = ["queue", "active"];
+    const LEGACY_STATE_KEYS = ["queue", "active"];
+    const STATE_KEYS = ["queue", "active", "direct_result"];
+    const LEGACY_DIRECT_RESULT_KEYS = ["event_id", "request", "receipt"];
+    const LEGACY_DIRECT_TRACKING_KEYS = [
+        "event_id",
+        "request",
+        "receipt",
+        "tracking_expires_at",
+        "next_location_sequence",
+        "last_location_hex",
+        "last_location_queued_at",
+        "capture_stage",
+        "pending_location_hex"
+    ];
+    const UNBOUND_DIRECT_RESULT_KEYS = [
+        "event_id",
+        "request",
+        "receipt",
+        "pushover_accepted",
+        "grafana_accepted",
+        "grafana_alert_pending",
+        "tracking_expires_at",
+        "next_location_sequence",
+        "last_location_hex",
+        "last_location_queued_at",
+        "capture_stage",
+        "pending_location_hex",
+        "pending_location_pushover",
+        "pending_location_grafana"
+    ];
+    const DIRECT_RESULT_KEYS = [
+        "event_id",
+        "request",
+        "receipt",
+        "pushover_accepted",
+        "pushover_fingerprint",
+        "grafana_accepted",
+        "grafana_fingerprint",
+        "grafana_alert_pending",
+        "accepted_at",
+        "tracking_expires_at",
+        "next_location_sequence",
+        "last_location_hex",
+        "last_location_queued_at",
+        "capture_stage",
+        "pending_location_hex",
+        "pending_location_pushover",
+        "pending_location_grafana"
+    ];
     const ACTIVE_KEYS = [
         "incident_id",
         "expires_at",
@@ -81,20 +151,29 @@ class PanicView extends WatchUi.View {
     ];
 
     var _state = "READY — TEST";
-    var _detail = "MENU arms LIVE; START sends";
+    var _detail = "Top button sends TEST";
     var _queue = [];
     var _activeIncident = null;
+    var _directResult = null;
     var _displayEventId = null;
     var _mode = "TEST";
     var _inFlight = false;
     var _activeKeyHex = null;
     var _requestEventId = null;
+    var _requestProviderFingerprint = null;
     var _statusQuery = null;
     var _retryCount = 0;
     var _retryTimer;
     var _locationExpiryTimer;
     var _statusTimer;
     var _visible = false;
+    var _personalLive = false;
+    var _armingLive = false;
+    var _wifiCheckPending = false;
+    var _wifiFallbackEventId = null;
+    var _testStartDown = false;
+    var _directLocationRetryBlocked = false;
+    var _directGrafanaRetryBlocked = false;
 
     function initialize() {
         View.initialize();
@@ -102,19 +181,274 @@ class PanicView extends WatchUi.View {
         _locationExpiryTimer = new Timer.Timer();
         _statusTimer = new Timer.Timer();
         loadState();
+        selectStartupMode();
     }
 
     function onShow() {
         _visible = true;
-        resumeLocations();
+        _directLocationRetryBlocked = false;
+        _directGrafanaRetryBlocked = false;
+        if (_queue.size() > 0) {
+            sendPending();
+        }
+        if (_directResult != null) {
+            if (_directResult["grafana_alert_pending"]
+                && hasDirectGrafanaConfiguration()) {
+                sendDirectGrafanaAlert();
+            } else {
+                resumeDirectLocations();
+            }
+        } else {
+            resumeLocations();
+        }
+        scheduleIdleCoverRefresh();
     }
 
     function onHide() {
         _visible = false;
+        cancelLiveArm();
         stopLocations();
         try {
             _retryTimer.stop();
         } catch (error) {
+        }
+        _wifiCheckPending = false;
+    }
+
+    function shouldShowCover() {
+        return _directResult != null
+            && !PanicProtocol.stringEquals(_state, "LOCATION SCRUB UNSAVED")
+            && !PanicProtocol.stringEquals(_state, "LOCATION STATE UNSAVED")
+            && !PanicProtocol.stringEquals(_state, "ROUTE CHANGED");
+    }
+
+    function scheduleIdleCoverRefresh() {
+        if (!_visible || _directResult == null) {
+            return;
+        }
+        try {
+            _statusTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _statusTimer.start(method(:refreshIdleCover), COVER_REFRESH_MS, false);
+        } catch (error) {
+            // A frozen cover is safer than turning a timer failure into a trigger.
+        }
+    }
+
+    function refreshIdleCover() {
+        if (!_visible || _directResult == null) {
+            return;
+        }
+        WatchUi.requestUpdate();
+        scheduleIdleCoverRefresh();
+    }
+
+    function drawAnalogCover(dc) {
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var minSize = width < height ? width : height;
+        var compactRound = width == height && minSize < 220;
+        var centerX = compactRound ? (width * 43) / 100 : width / 2;
+        var centerY = compactRound ? (height * 57) / 100 : height / 2;
+        var edgePadding = minSize / 15;
+        if (edgePadding < 10) {
+            edgePadding = 10;
+        }
+        var radius = minSize / 2 - edgePadding - (compactRound ? minSize / 12 : 0);
+        var majorInset = radius / 10;
+        var minorInset = radius / 18;
+        var majorPen = minSize >= 400 ? 4 : 3;
+        var minorPen = minSize >= 300 ? 2 : 1;
+
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_BLACK);
+        dc.setPenWidth(minorPen);
+        dc.drawCircle(centerX, centerY, radius + edgePadding / 3);
+        for (var i = 0; i < 12; i += 1) {
+            var angle = (i / 12.0) * Math.PI * 2 - Math.PI / 2;
+            var inset = i % 3 == 0 ? majorInset : minorInset;
+            dc.setPenWidth(i % 3 == 0 ? majorPen : minorPen);
+            dc.drawLine(
+                centerX + (radius - inset) * Math.cos(angle),
+                centerY + (radius - inset) * Math.sin(angle),
+                centerX + radius * Math.cos(angle),
+                centerY + radius * Math.sin(angle)
+            );
+        }
+
+        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_BLACK);
+        var numberInset = radius / 6;
+        dc.drawText(centerX, centerY - radius + numberInset, Graphics.FONT_XTINY, "12",
+            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        if (minSize >= 220) {
+            dc.drawText(centerX + radius - numberInset, centerY, Graphics.FONT_XTINY, "3",
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            dc.drawText(centerX - radius + numberInset, centerY, Graphics.FONT_XTINY, "9",
+                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        }
+        dc.drawText(centerX, centerY + radius - numberInset, Graphics.FONT_XTINY, "6",
+            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+
+        var clock = System.getClockTime();
+        var minuteAngle = (clock.min / 60.0) * Math.PI * 2 - Math.PI / 2;
+        var hourAngle = ((((clock.hour % 12) * 60) + clock.min) / 720.0)
+            * Math.PI * 2 - Math.PI / 2;
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+        dc.setPenWidth(minSize >= 400 ? 7 : (minSize >= 260 ? 5 : 3));
+        drawHand(dc, centerX, centerY, hourAngle, radius * 0.50);
+        dc.setPenWidth(minSize >= 400 ? 4 : (minSize >= 260 ? 3 : 2));
+        drawHand(dc, centerX, centerY, minuteAngle, radius * 0.72);
+        dc.fillCircle(centerX, centerY, minSize >= 400 ? 7 : 4);
+        dc.setPenWidth(1);
+    }
+
+    function drawHand(dc, centerX, centerY, angle, length) {
+        dc.drawLine(
+            centerX,
+            centerY,
+            centerX + length * Math.cos(angle),
+            centerY + length * Math.sin(angle)
+        );
+    }
+
+    function selectStartupMode() {
+        refreshConfiguredMode();
+        if (!PanicProtocol.stringEquals(_state, "READY — TEST")
+            || _queue.size() > 0
+            || _activeIncident != null
+            || _directResult != null) {
+            return;
+        }
+        if (PanicProtocol.stringEquals(_mode, "DIRECT_TEST")) {
+            _state = "READY — TEST";
+            _detail = "Press top button to send";
+        } else if (_personalLive) {
+            _state = "READY — LIVE";
+            _detail = "Hold top button to trigger";
+        } else if (hasRelayTestConfiguration()) {
+            _detail = "Press top button to send TEST";
+        } else {
+            _state = "SETUP REQUIRED";
+            _detail = "Enter Grafana webhook or Pushover keys";
+        }
+    }
+
+    function refreshConfiguredMode() {
+        _personalLive = hasProvisionedLiveConfiguration();
+        _mode = hasDirectAlertConfiguration()
+            ? "DIRECT_TEST"
+            : (_personalLive ? "LIVE" : "TEST");
+    }
+
+    function settingsChanged() {
+        if (_activeIncident != null) {
+            return;
+        }
+        refreshConfiguredMode();
+        if (_directResult != null) {
+            if (_directResult["grafana_alert_pending"]
+                && hasDirectGrafanaConfiguration()
+                && !_inFlight) {
+                _directGrafanaRetryBlocked = false;
+                sendDirectGrafanaAlert();
+            } else if (_directResult["pending_location_hex"].length() > 0
+                && !_inFlight) {
+                _retryCount = 0;
+                _directLocationRetryBlocked = false;
+                sendDirectLocation();
+            } else if (!_inFlight) {
+                resumeDirectLocations();
+            }
+            return;
+        }
+        if (_queue.size() > 0) {
+            if (_queue[0]["v"] == 1 && !_inFlight) {
+                _retryCount = 0;
+                sendPending();
+            }
+            WatchUi.requestUpdate();
+            return;
+        }
+        _state = "READY — TEST";
+        _detail = "Press top button to send";
+        selectStartupMode();
+        WatchUi.requestUpdate();
+    }
+
+    function hasRelayTestConfiguration() {
+        try {
+            return PanicProtocol.isHttpsBaseUrl(Properties.getValue("relayBaseUrl"))
+                && PanicProtocol.isCanonicalId(Properties.getValue("deviceId"))
+                && PanicProtocol.isSafeAuthKey(Properties.getValue("hmacKeyHex"));
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function hasDirectPushoverConfiguration() {
+        try {
+            return DirectPushoverAdapter.isConfigured();
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function hasDirectGrafanaConfiguration() {
+        try {
+            return DirectGrafanaAdapter.isConfigured();
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function hasDirectAlertConfiguration() {
+        return hasDirectPushoverConfiguration() || hasDirectGrafanaConfiguration();
+    }
+
+    function hasBoundDirectPushover() as Lang.Boolean {
+        try {
+            return _directResult != null
+                && DirectAlertSafety.isActiveRoute(
+                    _directResult["pushover_accepted"],
+                    _directResult["pushover_fingerprint"],
+                    DirectPushoverAdapter.configurationFingerprint()
+                );
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function hasBoundDirectGrafana() as Lang.Boolean {
+        try {
+            return _directResult != null
+                && DirectAlertSafety.isActiveRoute(
+                    _directResult["grafana_accepted"],
+                    _directResult["grafana_fingerprint"],
+                    DirectGrafanaAdapter.configurationFingerprint()
+                );
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function hasBoundDirectProvider() as Lang.Boolean {
+        return hasBoundDirectPushover() || hasBoundDirectGrafana();
+    }
+
+    function hasProvisionedLiveConfiguration() {
+        try {
+            return PanicProtocol.isHttpsBaseUrl(Properties.getValue("relayBaseUrl"))
+                && PanicProtocol.isCanonicalId(Properties.getValue("deviceId"))
+                && PanicProtocol.isSafeLiveConfiguration(
+                    Properties.getValue("liveAuthKeyHex"),
+                    Properties.getValue("liveEncKeyHex"),
+                    Properties.getValue("liveMacKeyHex"),
+                    Properties.getValue("liveTemplateIdHex"),
+                    Properties.getValue("liveKeyVersion")
+                );
+        } catch (error) {
+            return false;
         }
     }
 
@@ -125,6 +459,46 @@ class PanicView extends WatchUi.View {
                 migrateLegacyTest();
                 return;
             }
+            if (PanicProtocol.hasExactKeys(stored, LEGACY_STATE_KEYS)) {
+                var legacyState = stored as Lang.Dictionary;
+                stored = {
+                    "queue" => legacyState["queue"],
+                    "active" => legacyState["active"],
+                    "direct_result" => null
+                };
+                Storage.setValue(STATE_KEY, stored);
+            }
+            var storedState = stored as Lang.Dictionary;
+            if (PanicProtocol.hasExactKeys(storedState, STATE_KEYS)
+                && storedState["direct_result"] != null
+                && PanicProtocol.hasExactKeys(
+                    storedState["direct_result"],
+                    LEGACY_DIRECT_RESULT_KEYS
+                )) {
+                clearPreviousDirectState();
+                return;
+            }
+            if (PanicProtocol.hasExactKeys(storedState, STATE_KEYS)
+                && storedState["direct_result"] != null
+                && PanicProtocol.hasExactKeys(
+                    storedState["direct_result"],
+                    LEGACY_DIRECT_TRACKING_KEYS
+                )) {
+                clearPreviousDirectState();
+                return;
+            }
+            if (PanicProtocol.hasExactKeys(storedState, STATE_KEYS)
+                && storedState["direct_result"] != null
+                && PanicProtocol.hasExactKeys(
+                    storedState["direct_result"],
+                    UNBOUND_DIRECT_RESULT_KEYS
+                )) {
+                // Pre-fingerprint beta state cannot safely retain or retarget GPS.
+                // Delete the whole mutually-exclusive direct state, including any
+                // plaintext coordinates, and require a fresh TEST activation.
+                clearPreviousDirectState();
+                return;
+            }
             if (!validStoredState(stored)) {
                 setState("CONFIGURATION FAILURE", "Stored event state is invalid");
                 return;
@@ -132,16 +506,31 @@ class PanicView extends WatchUi.View {
             var state = stored as Lang.Dictionary;
             _queue = state["queue"] as Lang.Array;
             _activeIncident = state["active"] as Lang.Dictionary or Null;
+            _directResult = state["direct_result"] as Lang.Dictionary or Null;
             if (_queue.size() > 0) {
                 _displayEventId = _queue[0]["event_id"];
-                setState("PENDING", "START retries immutable event");
+                setState(_queue[0]["v"] == 1 ? "TEST PENDING" : "PENDING",
+                    _queue[0]["v"] == 1
+                        ? "MENU clears; top button retries"
+                        : "Top button retries immutable event");
             } else if (_activeIncident != null) {
                 _displayEventId = _activeIncident["incident_id"];
                 setState("INCIDENT ACTIVE", "No event is waiting for relay");
+            } else if (_directResult != null) {
+                _displayEventId = _directResult["event_id"];
+                setState("PROVIDER ACCEPTED", "Human response remains unknown");
             }
         } catch (error) {
             setState("CONFIGURATION FAILURE", "Cannot read persistent storage");
         }
+    }
+
+    function clearPreviousDirectState() as Void {
+        Storage.deleteValue(STATE_KEY);
+        _queue = [];
+        _activeIncident = null;
+        _directResult = null;
+        setState("READY — TEST", "Previous beta GPS state cleared");
     }
 
     function migrateLegacyTest() {
@@ -155,18 +544,25 @@ class PanicView extends WatchUi.View {
         }
         var legacyEvent = legacy as Lang.Dictionary;
         var migrated = [legacyEvent];
-        Storage.setValue(STATE_KEY, {"queue" => migrated, "active" => null});
+        Storage.setValue(STATE_KEY, {
+            "queue" => migrated,
+            "active" => null,
+            "direct_result" => null
+        });
         Storage.deleteValue(LEGACY_PENDING_KEY);
         _queue = migrated;
         _displayEventId = legacyEvent["event_id"];
-        setState("PENDING", "Legacy TEST migrated; START retries");
+        setState("TEST PENDING", "MENU clears; top button retries");
     }
 
     function validStoredState(value) {
         if (!PanicProtocol.hasExactKeys(value, STATE_KEYS)
             || !(value["queue"] instanceof Lang.Array)
             || value["queue"].size() > MAX_QUEUE
-            || !validActive(value["active"])) {
+            || !validActive(value["active"])
+            || !validDirectResult(value["direct_result"])
+            || (value["direct_result"] != null
+                && (value["queue"].size() > 0 || value["active"] != null))) {
             return false;
         }
         var queue = value["queue"];
@@ -200,6 +596,145 @@ class PanicView extends WatchUi.View {
         return true;
     }
 
+    function validDirectResult(value) {
+        if (value == null) {
+            return true;
+        }
+        if (!PanicProtocol.hasExactKeys(value, DIRECT_RESULT_KEYS)) {
+            return false;
+        }
+        var result = value as Lang.Dictionary;
+        return validDirectAcceptance(result)
+            && validDirectTracking(result)
+            && validDirectPendingLocation(result);
+    }
+
+    function validDirectAcceptance(result) {
+        if (!PanicProtocol.isCanonicalId(result["event_id"])
+            || !(result["pushover_accepted"] instanceof Lang.Boolean)
+            || !(result["grafana_accepted"] instanceof Lang.Boolean)
+            || !(result["grafana_alert_pending"] instanceof Lang.Boolean)) {
+            return false;
+        }
+        if (!result["pushover_accepted"] && !result["grafana_accepted"]) {
+            return false;
+        }
+        if (result["pushover_accepted"]) {
+            if (!isProviderReference(result["request"])
+                || !DirectPushoverAdapter.isToken(result["receipt"])) {
+                return false;
+            }
+        } else if (!PanicProtocol.stringEquals(result["request"], "")
+            || !PanicProtocol.stringEquals(result["receipt"], "")) {
+            return false;
+        }
+        if (result["grafana_accepted"] && result["grafana_alert_pending"]) {
+            return false;
+        }
+        return validDirectProviderBindings(result);
+    }
+
+    function validDirectTracking(result) {
+        if (!(result["accepted_at"] instanceof Lang.Number)
+            || result["accepted_at"] < 0
+            || !(result["tracking_expires_at"] instanceof Lang.Number)
+            || result["tracking_expires_at"] < 0
+            || !validDirectTrackingWindow(result)
+            || !(result["next_location_sequence"] instanceof Lang.Number)
+            || result["next_location_sequence"] < 1
+            || !validLocationHex(result["last_location_hex"])
+            || !(result["last_location_queued_at"] instanceof Lang.Number)
+            || result["last_location_queued_at"] < 0) {
+            return false;
+        }
+        if (result["tracking_expires_at"] == 0) {
+            if (result["last_location_queued_at"] != 0) {
+                return false;
+            }
+        } else if (result["last_location_queued_at"] > result["tracking_expires_at"]) {
+            return false;
+        }
+        return result["capture_stage"] instanceof Lang.Number
+            && result["capture_stage"] >= 0
+            && result["capture_stage"] <= 3;
+    }
+
+    function validDirectPendingLocation(result) {
+        if (!(result["capture_stage"] instanceof Lang.Number)
+            || !validLocationHex(result["pending_location_hex"])
+            || !(result["pending_location_pushover"] instanceof Lang.Boolean)
+            || !(result["pending_location_grafana"] instanceof Lang.Boolean)) {
+            return false;
+        }
+        if ((result["pending_location_pushover"] && !result["pushover_accepted"])
+            || (result["pending_location_grafana"] && !result["grafana_accepted"])) {
+            return false;
+        }
+        var hasPendingLocation = result["pending_location_hex"].length() > 0;
+        var hasPendingTarget = result["pending_location_pushover"]
+            || result["pending_location_grafana"];
+        if (hasPendingLocation != hasPendingTarget) {
+            return false;
+        }
+        if ((result["capture_stage"] == 0 || result["capture_stage"] == 3)
+            && (result["last_location_hex"].length() > 0
+                || result["last_location_queued_at"] != 0
+                || hasPendingLocation)) {
+            return false;
+        }
+        return true;
+    }
+
+    function validDirectProviderBindings(value) {
+        var pushoverFingerprint = value["pushover_fingerprint"];
+        var grafanaFingerprint = value["grafana_fingerprint"];
+        if (value["pushover_accepted"]) {
+            if (!PanicProtocol.isCanonicalDigest(pushoverFingerprint)) {
+                return false;
+            }
+        } else if (!PanicProtocol.stringEquals(pushoverFingerprint, "")) {
+            return false;
+        }
+        if (value["grafana_accepted"]) {
+            if (!PanicProtocol.isCanonicalDigest(grafanaFingerprint)) {
+                return false;
+            }
+        } else if (!PanicProtocol.stringEquals(grafanaFingerprint, "")) {
+            return false;
+        }
+        return true;
+    }
+
+    function validDirectTrackingWindow(value) {
+        if (value["tracking_expires_at"] == 0) {
+            return value["accepted_at"] == 0;
+        }
+        return value["accepted_at"] > 0
+            && value["accepted_at"] <= PanicProtocol.MAX_TIME - LIVE_EXPIRY_SECONDS
+            && value["tracking_expires_at"]
+                == value["accepted_at"] + LIVE_EXPIRY_SECONDS;
+    }
+
+    function validLocationHex(value) {
+        return value instanceof Lang.String
+            && (value.length() == 0 || PanicProtocol.isLowerHex(value, 32));
+    }
+
+    function isProviderReference(value) {
+        if (!(value instanceof Lang.String)
+            || value.length() < 1
+            || value.length() > 128) {
+            return false;
+        }
+        var characters = value.toCharArray();
+        for (var i = 0; i < characters.size(); i += 1) {
+            if (PROVIDER_REFERENCE_ALPHABET.find(characters[i].toString()) == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     function validActive(value) {
         return value == null
             || (PanicProtocol.hasExactKeys(value, ACTIVE_KEYS)
@@ -226,36 +761,77 @@ class PanicView extends WatchUi.View {
     function onUpdate(dc) {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
         dc.clear();
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
-        var centerX = dc.getWidth() / 2;
-        var centerY = dc.getHeight() / 2;
-        dc.drawText(
-            centerX,
-            centerY - 50,
-            Graphics.FONT_SMALL,
-            _state,
-            Graphics.TEXT_JUSTIFY_CENTER
-        );
-        dc.drawText(
-            centerX,
-            centerY - 2,
-            Graphics.FONT_XTINY,
-            _detail,
-            Graphics.TEXT_JUSTIFY_CENTER
-        );
-        if (_displayEventId != null) {
-            dc.drawText(
-                centerX,
-                centerY + 36,
-                Graphics.FONT_XTINY,
-                _displayEventId,
-                Graphics.TEXT_JUSTIFY_CENTER
-            );
+        if (shouldShowCover()) {
+            drawAnalogCover(dc);
+            return;
         }
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var isRound = width == height;
+        var compactRound = isRound && width < 220;
+        var safeWidth = (width * (compactRound ? 62 : (isRound ? 76 : 88))) / 100;
+        var safeLeft = compactRound ? (width * 6) / 100 : (width - safeWidth) / 2;
+        var title = new WatchUi.TextArea({
+            :text => _state,
+            :color => Graphics.COLOR_WHITE,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM,
+                Graphics.FONT_SMALL, Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => safeLeft,
+            :locY => (height * (compactRound ? 14 : 18)) / 100,
+            :width => safeWidth,
+            :height => (height * (compactRound ? 34 : 27)) / 100
+        });
+        title.draw(dc);
+
+        var detail = new WatchUi.TextArea({
+            :text => _detail,
+            :color => Graphics.COLOR_LT_GRAY,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_SMALL, Graphics.FONT_TINY,
+                Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => safeLeft,
+            :locY => (height * (compactRound ? 50 : 47)) / 100,
+            :width => safeWidth,
+            :height => (height * (compactRound ? 34 : 29)) / 100
+        });
+        detail.draw(dc);
+        if (_displayEventId != null) {
+            var tracking = new WatchUi.TextArea({
+                :text => compactDisplayId(_displayEventId),
+                :color => Graphics.COLOR_DK_GRAY,
+                :backgroundColor => Graphics.COLOR_BLACK,
+                :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
+                :justification => Graphics.TEXT_JUSTIFY_CENTER,
+                :locX => safeLeft,
+                :locY => (height * (compactRound ? 86 : 80)) / 100,
+                :width => safeWidth,
+                :height => (height * 12) / 100
+            });
+            tracking.draw(dc);
+        }
+    }
+
+    function compactDisplayId(value) {
+        if (!(value instanceof Lang.String)) {
+            return "ID unavailable";
+        }
+        var id = value as Lang.String;
+        if (id.length() <= 10) {
+            return "ID " + id;
+        }
+        return "ID " + id.substring(0, 4) + "..."
+            + id.substring(id.length() - 4, id.length());
     }
 
     function activate() {
         if (_inFlight) {
+            return;
+        }
+        if (_directResult != null) {
             return;
         }
         if (_queue.size() > 0) {
@@ -269,7 +845,7 @@ class PanicView extends WatchUi.View {
             }
             if (now < _activeIncident["expires_at"]) {
                 _displayEventId = _activeIncident["incident_id"];
-                setState("INCIDENT ACTIVE", "Repeated START keeps the same incident");
+                setState("INCIDENT ACTIVE", "Repeated press keeps the same incident");
                 return;
             }
             expireLocations();
@@ -282,19 +858,98 @@ class PanicView extends WatchUi.View {
         }
     }
 
+    function startActionPressed() {
+        if (!PanicProtocol.stringEquals(_mode, "LIVE")) {
+            if (_testStartDown) {
+                return true;
+            }
+            _testStartDown = true;
+            activate();
+            return true;
+        }
+        if (_armingLive
+            || _inFlight
+            || _queue.size() > 0
+            || _activeIncident != null) {
+            return true;
+        }
+        _armingLive = true;
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _retryTimer.start(method(:commitArmedLive), LIVE_ARM_HOLD_MS, false);
+        } catch (error) {
+            _armingLive = false;
+        }
+        return true;
+    }
+
+    function startActionReleased() {
+        if (!PanicProtocol.stringEquals(_mode, "LIVE")) {
+            _testStartDown = false;
+            return true;
+        }
+        cancelLiveArm();
+        return true;
+    }
+
+    function cancelLiveArm() {
+        if (!_armingLive) {
+            return;
+        }
+        _armingLive = false;
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+    }
+
+    function commitArmedLive() {
+        if (!_armingLive) {
+            return;
+        }
+        _armingLive = false;
+        if (!_visible
+            || _inFlight
+            || _queue.size() > 0
+            || _activeIncident != null) {
+            return;
+        }
+        activateLive();
+    }
+
+    function selectAction() {
+        if (PanicProtocol.stringEquals(_mode, "LIVE")) {
+            return true;
+        }
+        activate();
+        return true;
+    }
+
+    function downAction() {
+        return true;
+    }
+
     function activateTest() {
         var baseUrl = Properties.getValue("relayBaseUrl");
         var deviceId = Properties.getValue("deviceId");
         var keyHex = Properties.getValue("hmacKeyHex");
-        if (!PanicProtocol.isHttpsBaseUrl(baseUrl)
+        var directAlert = hasDirectAlertConfiguration();
+        if (!directAlert
+            && (!PanicProtocol.isHttpsBaseUrl(baseUrl)
             || !PanicProtocol.isCanonicalId(deviceId)
-            || !PanicProtocol.isSafeAuthKey(keyHex)) {
-            setState("CONFIGURATION FAILURE", "Check TEST URL, device ID, and key");
+            || !PanicProtocol.isSafeAuthKey(keyHex))) {
+            setState("SETUP REQUIRED", "Enter Grafana webhook or Pushover keys");
             return;
         }
         var now = currentTime();
         if (now == null) {
             return;
+        }
+        if (directAlert) {
+            deviceId = PanicProtocol.randomId();
         }
         var event = PanicProtocol.newTestEvent(PanicProtocol.randomId(), deviceId, now);
         if (!PanicProtocol.isTestEvent(event)
@@ -314,7 +969,7 @@ class PanicView extends WatchUi.View {
         }
         if (_activeIncident != null && now < _activeIncident["expires_at"]) {
             _displayEventId = _activeIncident["incident_id"];
-            setState("INCIDENT ACTIVE", "Repeated START keeps the same incident");
+            setState("INCIDENT ACTIVE", "Repeated press keeps the same incident");
             return;
         }
         var config = liveConfiguration();
@@ -359,10 +1014,21 @@ class PanicView extends WatchUi.View {
         }
         _displayEventId = incidentId;
         _retryCount = 0;
+        confirmDurableTrigger();
 
         // The alert is durable and its network submission is started before GPS.
         sendPending();
         captureLocations();
+    }
+
+    function confirmDurableTrigger() {
+        try {
+            if (Attention has :vibrate) {
+                Attention.vibrate([new Attention.VibeProfile(25, 120)]);
+            }
+        } catch (error) {
+            // Haptic feedback is best-effort and never changes durable state.
+        }
     }
 
     function captureLocations() {
@@ -459,7 +1125,7 @@ class PanicView extends WatchUi.View {
 
     function expireLocations() {
         stopLocations();
-        _mode = "TEST";
+        refreshConfiguredMode();
         if (_activeIncident != null && !persistState(_queue, null)) {
             setState("LOCAL DISARM UNSAVED", "Expired location state could not be scrubbed");
             return;
@@ -467,7 +1133,315 @@ class PanicView extends WatchUi.View {
         setState(_queue.size() > 0 ? "RESULT UNKNOWN — EXPIRED" : "INCIDENT EXPIRED",
             _queue.size() > 0
                 ? "Encrypted pending events retained; MENU archives"
-                : "START defaults to TEST");
+                : (_personalLive ? "Hold top button for a new LIVE incident"
+                    : "Top button sends a non-sensitive TEST"));
+        scheduleIdleCoverRefresh();
+    }
+
+    function resumeDirectLocations() {
+        if (_directResult == null || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        var now = currentTime();
+        if (now == null) {
+            return;
+        }
+        if (now >= _directResult["tracking_expires_at"]) {
+            expireDirectLocations();
+            return;
+        }
+        captureDirectLocations();
+    }
+
+    function captureDirectLocations() {
+        if (!_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        if (!hasBoundDirectProvider()) {
+            stopLocations();
+            setState("ROUTE CHANGED", "Restore the accepted provider settings for GPS");
+            return;
+        }
+        var now = currentTime();
+        if (now == null) {
+            return;
+        }
+        if (now >= _directResult["tracking_expires_at"]) {
+            expireDirectLocations();
+            return;
+        }
+        scheduleDirectLocationExpiry(now);
+        if (_directResult["pending_location_hex"].length() > 0) {
+            sendDirectLocation();
+        } else if (_directResult["capture_stage"] == 0) {
+            var snapshot = null;
+            try {
+                snapshot = Position.getInfo();
+            } catch (error) {
+            }
+            if (!queueDirectLocation(snapshot, 0, 1)) {
+                if (!persistDirectTracking(
+                        _directResult["next_location_sequence"],
+                        _directResult["last_location_hex"],
+                        _directResult["last_location_queued_at"],
+                        1,
+                        "",
+                        false,
+                        false
+                    )) {
+                    _directLocationRetryBlocked = true;
+                    setState("LOCATION STATE UNSAVED", "Reopen to retry local GPS state");
+                    return;
+                }
+            }
+        }
+        startDirectContinuousLocations();
+    }
+
+    function startDirectContinuousLocations() {
+        if (!_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 0
+            || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        try {
+            Position.enableLocationEvents(Position.LOCATION_CONTINUOUS, method(:onPosition));
+        } catch (error) {
+            // The accepted alert remains valid; reopening retries real GPS acquisition.
+        }
+    }
+
+    function scheduleDirectLocationExpiry(now) {
+        try {
+            _locationExpiryTimer.stop();
+        } catch (error) {
+        }
+        var remaining = _directResult["tracking_expires_at"] - now;
+        if (remaining <= 0) {
+            expireDirectLocations();
+            return;
+        }
+        try {
+            _locationExpiryTimer.start(
+                method(:expireDirectLocations),
+                remaining * 1000,
+                false
+            );
+        } catch (error) {
+            // Every callback and reopen independently enforces the same expiry.
+        }
+    }
+
+    function expireDirectLocations() {
+        stopLocations();
+        if (_directResult == null || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        if (!persistDirectTracking(
+            _directResult["next_location_sequence"],
+            "",
+            0,
+            3,
+            "",
+            false,
+            false
+        )) {
+            setState("LOCATION SCRUB UNSAVED", "Retrying local coordinate removal");
+            try {
+                _retryTimer.stop();
+            } catch (error) {
+            }
+            try {
+                _retryTimer.start(method(:expireDirectLocations), RETRY_DELAY_MS, false);
+            } catch (error) {
+                // Reopening the app retries expiry and scrubbing.
+            }
+            return;
+        }
+        setState("PROVIDER ACCEPTED", "GPS expired; local coordinates scrubbed");
+        scheduleIdleCoverRefresh();
+    }
+
+    function queueDirectLocation(info, path, nextCaptureStage) {
+        if (_directResult == null
+            || _directResult["capture_stage"] == 3
+            || _directResult["pending_location_hex"].length() > 0
+            || !hasBoundDirectProvider()
+            || info == null
+            || info.position == null
+            || info.when == null
+            || info.accuracy == Position.QUALITY_NOT_AVAILABLE) {
+            return false;
+        }
+        var now = currentTime();
+        if (now == null
+            || now >= _directResult["tracking_expires_at"]
+            || !DirectAlertSafety.isFreshCapture(
+                _directResult["accepted_at"],
+                info.when.value(),
+                now
+            )) {
+            return false;
+        }
+        var record = PanicProtocol.locationRecord(info, path);
+        var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        if (captureAt == 0) {
+            return false;
+        }
+        var recordHex = PanicProtocol.bytesHex(record);
+        if (PanicProtocol.stringEquals(recordHex, _directResult["last_location_hex"])) {
+            return false;
+        }
+        var pendingPushover = hasBoundDirectPushover();
+        var pendingGrafana = hasBoundDirectGrafana();
+        if (!pendingPushover && !pendingGrafana) {
+            return false;
+        }
+        if (!persistDirectTracking(
+                _directResult["next_location_sequence"],
+                _directResult["last_location_hex"],
+                _directResult["last_location_queued_at"],
+                nextCaptureStage,
+                recordHex,
+                pendingPushover,
+                pendingGrafana
+            )) {
+            return false;
+        }
+        sendDirectLocation();
+        return true;
+    }
+
+    function shouldQueueDirectCadenceLocation(info, now) {
+        if (_directResult == null
+            || _directResult["pending_location_hex"].length() > 0
+            || !hasBoundDirectProvider()
+            || info == null
+            || info.position == null
+            || info.when == null
+            || info.accuracy == Position.QUALITY_NOT_AVAILABLE
+            || !DirectAlertSafety.isFreshCapture(
+                _directResult["accepted_at"],
+                info.when.value(),
+                now
+            )) {
+            return false;
+        }
+        if (_directResult["last_location_hex"].length() == 0) {
+            return true;
+        }
+        var record = PanicProtocol.locationRecord(info, 1);
+        var previous = PanicProtocol.hexBytes(_directResult["last_location_hex"]);
+        var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        if (captureAt == 0) {
+            return false;
+        }
+        if (record[14] > previous[14]) {
+            return true;
+        }
+        var lastQueuedAt = _directResult["last_location_queued_at"];
+        if (now < lastQueuedAt
+            || now - lastQueuedAt < cadenceSecondsForExpiry(
+                now,
+                _directResult["tracking_expires_at"]
+            )) {
+            return false;
+        }
+        var latitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 6,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var previousLatitude = previous.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 6,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var longitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 10,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var previousLongitude = previous.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 10,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        return coordinateChanged(latitude, previousLatitude)
+            || coordinateChanged(longitude, previousLongitude);
+    }
+
+    function persistDirectTracking(
+        nextSequence,
+        lastLocationHex,
+        lastLocationQueuedAt,
+        captureStage,
+        pendingLocationHex,
+        pendingLocationPushover,
+        pendingLocationGrafana
+    ) {
+        if (_directResult == null) {
+            return false;
+        }
+        return persistStateWithDirect(_queue, _activeIncident, {
+            "event_id" => _directResult["event_id"],
+            "request" => _directResult["request"],
+            "receipt" => _directResult["receipt"],
+            "pushover_accepted" => _directResult["pushover_accepted"],
+            "pushover_fingerprint" => _directResult["pushover_fingerprint"],
+            "grafana_accepted" => _directResult["grafana_accepted"],
+            "grafana_fingerprint" => _directResult["grafana_fingerprint"],
+            "grafana_alert_pending" => _directResult["grafana_alert_pending"],
+            "accepted_at" => _directResult["accepted_at"],
+            "tracking_expires_at" => _directResult["tracking_expires_at"],
+            "next_location_sequence" => nextSequence,
+            "last_location_hex" => lastLocationHex,
+            "last_location_queued_at" => lastLocationQueuedAt,
+            "capture_stage" => captureStage,
+            "pending_location_hex" => pendingLocationHex,
+            "pending_location_pushover" => pendingLocationPushover,
+            "pending_location_grafana" => pendingLocationGrafana
+        });
+    }
+
+    function persistDirectProviderState(
+        grafanaAccepted,
+        grafanaFingerprint,
+        grafanaAlertPending
+    ) {
+        if (_directResult == null) {
+            return false;
+        }
+        var pendingGrafana = _directResult["pending_location_grafana"];
+        if (grafanaAccepted && _directResult["pending_location_hex"].length() > 0) {
+            pendingGrafana = true;
+        }
+        return persistStateWithDirect(_queue, _activeIncident, {
+            "event_id" => _directResult["event_id"],
+            "request" => _directResult["request"],
+            "receipt" => _directResult["receipt"],
+            "pushover_accepted" => _directResult["pushover_accepted"],
+            "pushover_fingerprint" => _directResult["pushover_fingerprint"],
+            "grafana_accepted" => grafanaAccepted,
+            "grafana_fingerprint" => grafanaAccepted
+                ? grafanaFingerprint
+                : _directResult["grafana_fingerprint"],
+            "grafana_alert_pending" => grafanaAlertPending,
+            "accepted_at" => _directResult["accepted_at"],
+            "tracking_expires_at" => _directResult["tracking_expires_at"],
+            "next_location_sequence" => _directResult["next_location_sequence"],
+            "last_location_hex" => _directResult["last_location_hex"],
+            "last_location_queued_at" => _directResult["last_location_queued_at"],
+            "capture_stage" => _directResult["capture_stage"],
+            "pending_location_hex" => _directResult["pending_location_hex"],
+            "pending_location_pushover" => _directResult["pending_location_pushover"],
+            "pending_location_grafana" => pendingGrafana
+        });
     }
 
     function scheduleLocationExpiry(now) {
@@ -495,7 +1469,14 @@ class PanicView extends WatchUi.View {
     }
 
     function onPosition(info as Position.Info) as Void {
-        if (!_visible || _activeIncident == null) {
+        if (!_visible) {
+            return;
+        }
+        if (_directResult != null) {
+            onDirectPosition(info);
+            return;
+        }
+        if (_activeIncident == null) {
             return;
         }
         var now = currentTime();
@@ -515,6 +1496,32 @@ class PanicView extends WatchUi.View {
         }
         if (queued && !_inFlight && _queue.size() > 0) {
             sendPending();
+        }
+    }
+
+    function onDirectPosition(info) {
+        if (_directResult == null || _directResult["capture_stage"] == 3) {
+            return;
+        }
+        var now = currentTime();
+        if (now == null) {
+            return;
+        }
+        if (now >= _directResult["tracking_expires_at"]) {
+            expireDirectLocations();
+            return;
+        }
+        if (_directResult["pending_location_hex"].length() > 0) {
+            if (!_inFlight) {
+                sendDirectLocation();
+            }
+            return;
+        }
+        if (_directResult["capture_stage"] == 1) {
+            queueDirectLocation(info, 1, 2);
+        } else if (_directResult["capture_stage"] == 2
+            && shouldQueueDirectCadenceLocation(info, now)) {
+            queueDirectLocation(info, 1, 2);
         }
     }
 
@@ -576,7 +1583,10 @@ class PanicView extends WatchUi.View {
     }
 
     function cadenceSeconds(now) {
-        var expiresAt = _activeIncident["expires_at"];
+        return cadenceSecondsForExpiry(now, _activeIncident["expires_at"]);
+    }
+
+    function cadenceSecondsForExpiry(now, expiresAt) {
         var startedAt = expiresAt >= LIVE_EXPIRY_SECONDS
             ? expiresAt - LIVE_EXPIRY_SECONDS
             : 0;
@@ -619,6 +1629,7 @@ class PanicView extends WatchUi.View {
         if (!_visible || _activeIncident == null) {
             return;
         }
+        WatchUi.requestUpdate();
         var now = currentTime();
         if (now == null) {
             return;
@@ -810,7 +1821,7 @@ class PanicView extends WatchUi.View {
             }
         }
         stopLocations();
-        _mode = "TEST";
+        refreshConfiguredMode();
         try {
             _retryTimer.stop();
         } catch (error) {
@@ -823,7 +1834,10 @@ class PanicView extends WatchUi.View {
         setState(PanicProtocol.stringEquals(state, "resolved")
                 ? "INCIDENT RESOLVED"
                 : "INCIDENT EXPIRED",
-            "Signed relay status verified; START defaults to TEST");
+            _personalLive
+                ? "Signed relay status verified; hold top button for a new incident"
+                : "Signed relay status verified; top button sends TEST");
+        scheduleIdleCoverRefresh();
     }
 
     function appendLocation(info, path, nextCaptureStage) {
@@ -905,7 +1919,7 @@ class PanicView extends WatchUi.View {
                 templateId,
                 keyVersion
             )) {
-            setState("CONFIGURATION FAILURE", "LIVE build secrets are not provisioned");
+            setState("SETUP REQUIRED", "LIVE build secrets are not provisioned");
             return null;
         }
         return {
@@ -920,7 +1934,7 @@ class PanicView extends WatchUi.View {
     }
 
     function sendPending() {
-        if (_inFlight || _queue.size() == 0) {
+        if (_inFlight || _wifiCheckPending || _queue.size() == 0) {
             return;
         }
         try {
@@ -950,6 +1964,17 @@ class PanicView extends WatchUi.View {
             }
             return;
         }
+        if (event["v"] == 1
+            && _queue.size() == 1
+            && _activeIncident == null
+            && hasDirectAlertConfiguration()) {
+            if (hasDirectGrafanaConfiguration()) {
+                sendDirectGrafanaInitial(event);
+            } else {
+                sendDirectPushover(event, now);
+            }
+            return;
+        }
         if (!PanicProtocol.isHttpsBaseUrl(baseUrl)
             || !PanicProtocol.stringEquals(event["device_id"], deviceId)
             || !keyIsSafe) {
@@ -965,6 +1990,7 @@ class PanicView extends WatchUi.View {
         }
         _activeKeyHex = keyHex;
         _requestEventId = event["event_id"];
+        _requestProviderFingerprint = null;
         _inFlight = true;
         _displayEventId = event["event_id"];
         setState("SENDING", connectionSummary());
@@ -989,6 +2015,620 @@ class PanicView extends WatchUi.View {
             _activeKeyHex = null;
             _requestEventId = null;
             handleFailure("retryable_failure", "Request could not be queued");
+        }
+    }
+
+    function sendDirectPushover(event, now) {
+        var providerFingerprint = DirectPushoverAdapter.configurationFingerprint();
+        if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+            handleFailure("configuration_failure", "Pushover configuration changed");
+            return;
+        }
+        _requestEventId = event["event_id"];
+        _requestProviderFingerprint = providerFingerprint;
+        _inFlight = true;
+        _displayEventId = event["event_id"];
+        setState("SENDING TEST", connectionSummary());
+        var parameters = DirectPushoverAdapter.initialParameters(event, now);
+        var options = {
+            :method => Communications.HTTP_REQUEST_METHOD_POST,
+            :headers => {
+                "Content-Type" => Communications.REQUEST_CONTENT_TYPE_URL_ENCODED
+            },
+            :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON,
+            :context => event["event_id"]
+        };
+        try {
+            Communications.makeWebRequest(
+                DirectPushoverAdapter.ENDPOINT,
+                parameters,
+                options,
+                method(:onPushoverResponse)
+            );
+        } catch (error) {
+            _inFlight = false;
+            _requestEventId = null;
+            _requestProviderFingerprint = null;
+            if (hasDirectGrafanaConfiguration() && !_directGrafanaRetryBlocked) {
+                sendDirectGrafanaInitial(event);
+            } else {
+                handleFailure("retryable_failure", "Pushover request could not be queued");
+            }
+        }
+    }
+
+    function grafanaAlertPayload(eventId) {
+        return DirectGrafanaAdapter.initialPayload(eventId);
+    }
+
+    function sendDirectGrafanaInitial(event) {
+        sendDirectGrafanaRequest(event["event_id"]);
+    }
+
+    function sendDirectGrafanaAlert() {
+        if (_directResult == null
+            || !_directResult["grafana_alert_pending"]
+            || _directGrafanaRetryBlocked) {
+            return;
+        }
+        sendDirectGrafanaRequest(_directResult["event_id"]);
+    }
+
+    function sendDirectGrafanaRequest(eventId) {
+        if (_inFlight || !hasDirectGrafanaConfiguration()) {
+            return;
+        }
+        var providerFingerprint = DirectGrafanaAdapter.configurationFingerprint();
+        if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+            handleFailure("configuration_failure", "Grafana configuration changed");
+            return;
+        }
+        var requestContext = eventId + "-grafana-alert";
+        _requestEventId = requestContext;
+        _requestProviderFingerprint = providerFingerprint;
+        _inFlight = true;
+        _displayEventId = eventId;
+        setState("SENDING GRAFANA", connectionSummary());
+        var options = {
+            :method => Communications.HTTP_REQUEST_METHOD_POST,
+            :headers => {
+                "Content-Type" => Communications.REQUEST_CONTENT_TYPE_JSON
+            },
+            :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON,
+            :context => requestContext
+        };
+        try {
+            Communications.makeWebRequest(
+                DirectGrafanaAdapter.endpoint(),
+                grafanaAlertPayload(eventId),
+                options,
+                method(:onGrafanaAlertResponse)
+            );
+        } catch (error) {
+            _inFlight = false;
+            _requestEventId = null;
+            _requestProviderFingerprint = null;
+            if (_directResult != null) {
+                _directGrafanaRetryBlocked = true;
+                resumeDirectLocations();
+            } else if (hasDirectPushoverConfiguration()) {
+                _directGrafanaRetryBlocked = true;
+                var now = currentTime();
+                if (now != null && _queue.size() > 0) {
+                    sendDirectPushover(_queue[0], now);
+                }
+            } else {
+                handleFailure("retryable_failure", "Grafana request could not be queued");
+            }
+        }
+    }
+
+    function onGrafanaAlertResponse(
+        responseCode as Lang.Number,
+        data as Lang.Dictionary or Lang.String or PersistedContent.Iterator or Null,
+        requestContext as Lang.Object
+    ) as Void {
+        if (!_inFlight
+            || _statusQuery != null
+            || !PanicProtocol.stringEquals(requestContext, _requestEventId)) {
+            return;
+        }
+        var providerFingerprint = _requestProviderFingerprint;
+        _inFlight = false;
+        _requestEventId = null;
+        _requestProviderFingerprint = null;
+        if (responseCode >= 200 && responseCode < 300) {
+            if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+                setState("RESULT UNKNOWN", "Grafana accepted; route binding was lost");
+                return;
+            }
+            var acceptedFingerprint = providerFingerprint as Lang.String;
+            if (_directResult != null) {
+                if (!persistDirectProviderState(true, acceptedFingerprint, false)) {
+                    setState("RESULT UNKNOWN", "Grafana accepted; local evidence failed");
+                    return;
+                }
+                _directGrafanaRetryBlocked = false;
+                setState("PROVIDERS ACCEPTED", "Human acknowledgement remains separate");
+                resumeDirectLocations();
+                return;
+            }
+            if (_queue.size() == 0) {
+                setState("RESULT UNKNOWN", "Persistent queue changed during Grafana request");
+                return;
+            }
+            var event = _queue[0];
+            if (!beginAcceptedDirectTracking(
+                    event,
+                    "",
+                    "",
+                    false,
+                    "",
+                    true,
+                    acceptedFingerprint,
+                    false
+                )) {
+                return;
+            }
+            return;
+        }
+        if (_directResult != null) {
+            _directGrafanaRetryBlocked = true;
+            setState(responseCode >= 400 && responseCode < 500 && responseCode != 429
+                    ? "GRAFANA CONFIG ERROR"
+                    : "GRAFANA PENDING",
+                "Pushover accepted; Grafana will retry after reopen");
+            resumeDirectLocations();
+            return;
+        }
+        if (_queue.size() == 0) {
+            setState("RESULT UNKNOWN", "Persistent queue changed during Grafana request");
+            return;
+        }
+        var pending = _queue[0];
+        if (responseCode < 0 && beginWifiFallback(pending, responseCode)) {
+            return;
+        }
+        if (hasDirectPushoverConfiguration()) {
+            _directGrafanaRetryBlocked = true;
+            var now = currentTime();
+            if (now != null) {
+                sendDirectPushover(pending, now);
+                return;
+            }
+        }
+        handleFailure(responseCode >= 400 && responseCode < 500 && responseCode != 429
+                ? "configuration_failure"
+                : (responseCode < 0
+                    ? transportFailure(responseCode)
+                    : (responseCode == 429 ? "retryable_failure" : "result_unknown")),
+            "Grafana result unknown; pending TEST retained");
+    }
+
+    function beginAcceptedDirectTracking(
+        event,
+        request,
+        receipt,
+        pushoverAccepted,
+        pushoverFingerprint,
+        grafanaAccepted,
+        grafanaFingerprint,
+        grafanaAlertPending
+    ) {
+        var acceptedAt = currentTime();
+        var trackingExpiresAt = 0;
+        var captureStage = 3;
+        if (acceptedAt != null
+            && acceptedAt <= PanicProtocol.MAX_TIME - LIVE_EXPIRY_SECONDS) {
+            trackingExpiresAt = acceptedAt + LIVE_EXPIRY_SECONDS;
+            captureStage = 0;
+        }
+        var directResult = {
+            "event_id" => event["event_id"],
+            "request" => request,
+            "receipt" => receipt,
+            "pushover_accepted" => pushoverAccepted,
+            "pushover_fingerprint" => pushoverFingerprint,
+            "grafana_accepted" => grafanaAccepted,
+            "grafana_fingerprint" => grafanaFingerprint,
+            "grafana_alert_pending" => grafanaAlertPending,
+            "accepted_at" => acceptedAt == null ? 0 : acceptedAt,
+            "tracking_expires_at" => trackingExpiresAt,
+            "next_location_sequence" => 1,
+            "last_location_hex" => "",
+            "last_location_queued_at" => 0,
+            "capture_stage" => captureStage,
+            "pending_location_hex" => "",
+            "pending_location_pushover" => false,
+            "pending_location_grafana" => false
+        };
+        if (!persistStateWithDirect(copyQueue(1), _activeIncident, directResult)) {
+            setState("RESULT UNKNOWN", "Provider accepted; local evidence failed");
+            return false;
+        }
+        _retryCount = 0;
+        setState("PROVIDER ACCEPTED", "Human acknowledgement remains separate");
+        confirmProviderAcceptance();
+        scheduleIdleCoverRefresh();
+        if (grafanaAlertPending) {
+            sendDirectGrafanaAlert();
+        }
+        if (captureStage == 0) {
+            captureDirectLocations();
+        }
+        return true;
+    }
+
+    function onPushoverResponse(
+        responseCode as Lang.Number,
+        data as Lang.Dictionary or Lang.String or PersistedContent.Iterator or Null,
+        eventId as Lang.Object
+    ) as Void {
+        if (!_inFlight
+            || _statusQuery != null
+            || !PanicProtocol.stringEquals(eventId, _requestEventId)) {
+            return;
+        }
+        var providerFingerprint = _requestProviderFingerprint;
+        _inFlight = false;
+        if (_queue.size() == 0
+            || !PanicProtocol.stringEquals(_queue[0]["event_id"], _requestEventId)) {
+            _requestEventId = null;
+            _requestProviderFingerprint = null;
+            setState("RESULT UNKNOWN", "Persistent queue changed during Pushover request");
+            return;
+        }
+        var event = _queue[0];
+        _requestEventId = null;
+        _requestProviderFingerprint = null;
+        if (responseCode == 200 && isPushoverAcceptance(data)) {
+            if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+                setState("RESULT UNKNOWN", "Pushover accepted; route binding was lost");
+                return;
+            }
+            beginAcceptedDirectTracking(
+                event,
+                data["request"],
+                data["receipt"],
+                true,
+                providerFingerprint as Lang.String,
+                false,
+                "",
+                hasDirectGrafanaConfiguration()
+            );
+            return;
+        }
+        if (responseCode < 0 && beginWifiFallback(event, responseCode)) {
+            return;
+        }
+        if (hasDirectGrafanaConfiguration() && !_directGrafanaRetryBlocked) {
+            sendDirectGrafanaInitial(event);
+            return;
+        }
+        if (data instanceof Lang.Dictionary && data["status"] == 0) {
+            handleFailure("configuration_failure", "Pushover rejected TEST configuration");
+        } else if (responseCode >= 400 && responseCode < 500) {
+            handleFailure("configuration_failure", "Pushover rejected TEST request");
+        } else {
+            handleFailure(responseCode < 0
+                    ? transportFailure(responseCode)
+                    : "result_unknown",
+                "Pushover result unknown; pending TEST retained");
+        }
+    }
+
+    function isPushoverAcceptance(data) {
+        return data instanceof Lang.Dictionary
+            && data["status"] == 1
+            && isProviderReference(data["request"])
+            && DirectPushoverAdapter.isToken(data["receipt"]);
+    }
+
+    function confirmProviderAcceptance() {
+        try {
+            if (Attention has :vibrate) {
+                Attention.vibrate([
+                    new Attention.VibeProfile(25, 120),
+                    new Attention.VibeProfile(0, 80),
+                    new Attention.VibeProfile(25, 120)
+                ]);
+            }
+        } catch (error) {
+            // Provider acceptance is already durable; feedback remains best-effort.
+        }
+    }
+
+    function sendDirectLocation() {
+        if (_inFlight
+            || !_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 3
+            || _directResult["pending_location_hex"].length() == 0
+            || _directLocationRetryBlocked) {
+            return;
+        }
+        if (_directResult["grafana_alert_pending"]
+            && !_directGrafanaRetryBlocked
+            && hasDirectGrafanaConfiguration()) {
+            sendDirectGrafanaAlert();
+            return;
+        }
+        var now = currentTime();
+        if (now == null) {
+            return;
+        }
+        if (now >= _directResult["tracking_expires_at"]) {
+            expireDirectLocations();
+            return;
+        }
+        var sendPushover = _directResult["pending_location_pushover"]
+            && hasBoundDirectPushover();
+        var sendGrafana = _directResult["pending_location_grafana"]
+            && hasBoundDirectGrafana();
+        if (!sendPushover && !sendGrafana) {
+            _directLocationRetryBlocked = true;
+            setState("ROUTE CHANGED", "Restore the accepted provider settings for GPS");
+            return;
+        }
+        var record = PanicProtocol.hexBytes(
+            _directResult["pending_location_hex"]
+        );
+        var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var latitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 6,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        var longitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 10,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        if (captureAt == 0
+            || latitude < -900000000
+            || latitude > 900000000
+            || longitude < -1800000000
+            || longitude > 1800000000) {
+            return;
+        }
+        var sequence = _directResult["next_location_sequence"];
+        var latitudeText = coordinateE7Text(latitude);
+        var longitudeText = coordinateE7Text(longitude);
+        var requestContext = _directResult["event_id"]
+            + "-location-" + sequence.format("%d");
+        var mapUrl = "https://maps.google.com/?q="
+            + latitudeText + "," + longitudeText;
+        _requestEventId = requestContext;
+        _inFlight = true;
+        if (sendPushover) {
+            var parameters = DirectPushoverAdapter.locationParameters(
+                sequence,
+                captureAt,
+                mapUrl
+            );
+            var pushoverOptions = {
+                :method => Communications.HTTP_REQUEST_METHOD_POST,
+                :headers => {
+                    "Content-Type" => Communications.REQUEST_CONTENT_TYPE_URL_ENCODED
+                },
+                :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON,
+                :context => requestContext
+            };
+            try {
+                Communications.makeWebRequest(
+                    DirectPushoverAdapter.ENDPOINT,
+                    parameters,
+                    pushoverOptions,
+                    method(:onDirectLocationResponse)
+                );
+            } catch (error) {
+                _inFlight = false;
+                _requestEventId = null;
+                scheduleDirectLocationRetry(true);
+            }
+            return;
+        }
+        if (sendGrafana) {
+            var grafanaParameters = DirectGrafanaAdapter.locationPayload(
+                _directResult["event_id"],
+                sequence,
+                mapUrl
+            );
+            var grafanaOptions = {
+                :method => Communications.HTTP_REQUEST_METHOD_POST,
+                :headers => {
+                    "Content-Type" => Communications.REQUEST_CONTENT_TYPE_JSON
+                },
+                :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON,
+                :context => requestContext
+            };
+            try {
+                Communications.makeWebRequest(
+                    DirectGrafanaAdapter.endpoint(),
+                    grafanaParameters,
+                    grafanaOptions,
+                    method(:onGrafanaLocationResponse)
+                );
+            } catch (error) {
+                _inFlight = false;
+                _requestEventId = null;
+                scheduleDirectLocationRetry(false);
+            }
+            return;
+        }
+        _inFlight = false;
+        _requestEventId = null;
+        _directLocationRetryBlocked = true;
+    }
+
+    function coordinateE7Text(value) {
+        var negative = value < 0;
+        var magnitude = negative ? -value : value;
+        return (negative ? "-" : "")
+            + (magnitude / 10000000).format("%d")
+            + "." + (magnitude % 10000000).format("%07d");
+    }
+
+    function onDirectLocationResponse(
+        responseCode as Lang.Number,
+        data as Lang.Dictionary or Lang.String or PersistedContent.Iterator or Null,
+        requestContext as Lang.Object
+    ) as Void {
+        if (!_inFlight
+            || _statusQuery != null
+            || !PanicProtocol.stringEquals(requestContext, _requestEventId)) {
+            return;
+        }
+        _inFlight = false;
+        _requestEventId = null;
+        if (_directResult == null
+            || _directResult["pending_location_hex"].length() == 0) {
+            return;
+        }
+        if (responseCode == 200 && isPushoverMessageAcceptance(data)) {
+            completeDirectLocationProvider(true);
+            return;
+        }
+        if (data instanceof Lang.Dictionary && data["status"] == 0) {
+            rejectDirectLocationProvider(true);
+            return;
+        }
+        if (responseCode >= 400 && responseCode < 500) {
+            rejectDirectLocationProvider(true);
+            return;
+        }
+        scheduleDirectLocationRetry(true);
+    }
+
+    function onGrafanaLocationResponse(
+        responseCode as Lang.Number,
+        data as Lang.Dictionary or Lang.String or PersistedContent.Iterator or Null,
+        requestContext as Lang.Object
+    ) as Void {
+        if (!_inFlight
+            || _statusQuery != null
+            || !PanicProtocol.stringEquals(requestContext, _requestEventId)) {
+            return;
+        }
+        _inFlight = false;
+        _requestEventId = null;
+        if (_directResult == null
+            || _directResult["pending_location_hex"].length() == 0) {
+            return;
+        }
+        if (responseCode >= 200 && responseCode < 300) {
+            completeDirectLocationProvider(false);
+        } else if (responseCode == 429) {
+            scheduleDirectLocationRetry(false);
+        } else if (responseCode >= 400 && responseCode < 500) {
+            rejectDirectLocationProvider(false);
+        } else {
+            scheduleDirectLocationRetry(false);
+        }
+    }
+
+    function completeDirectLocationProvider(pushover) {
+        if (_directResult == null
+            || _directResult["pending_location_hex"].length() == 0) {
+            return;
+        }
+        var pendingPushover = _directResult["pending_location_pushover"];
+        var pendingGrafana = _directResult["pending_location_grafana"];
+        if (pushover) {
+            pendingPushover = false;
+        } else {
+            pendingGrafana = false;
+        }
+        pendingPushover = pendingPushover && hasBoundDirectPushover();
+        pendingGrafana = pendingGrafana && hasBoundDirectGrafana();
+        var recordHex = _directResult["pending_location_hex"];
+        if (pendingPushover || pendingGrafana) {
+            if (!persistDirectTracking(
+                    _directResult["next_location_sequence"],
+                    _directResult["last_location_hex"],
+                    _directResult["last_location_queued_at"],
+                    _directResult["capture_stage"],
+                    recordHex,
+                    pendingPushover,
+                    pendingGrafana
+                )) {
+                _directLocationRetryBlocked = true;
+                setState("LOCATION STATE UNSAVED", "Reopen to retry local GPS state");
+                return;
+            }
+            _retryCount = 0;
+            sendDirectLocation();
+            return;
+        }
+        var record = PanicProtocol.hexBytes(recordHex);
+        var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        if (!persistDirectTracking(
+                _directResult["next_location_sequence"] + 1,
+                recordHex,
+                captureAt,
+                _directResult["capture_stage"],
+                "",
+                false,
+                false
+            )) {
+            _directLocationRetryBlocked = true;
+            setState("LOCATION STATE UNSAVED", "Reopen to retry local GPS state");
+            return;
+        }
+        _retryCount = 0;
+        _directLocationRetryBlocked = false;
+        scheduleIdleCoverRefresh();
+    }
+
+    function rejectDirectLocationProvider(pushover) {
+        // A definite provider rejection is terminal for that target. Advance
+        // the single persisted fix just like a successful terminal outcome so
+        // it cannot block later fixes to another still-bound route.
+        completeDirectLocationProvider(pushover);
+    }
+
+    function isPushoverMessageAcceptance(data) {
+        return data instanceof Lang.Dictionary
+            && data["status"] == 1
+            && isProviderReference(data["request"]);
+    }
+
+    function scheduleDirectLocationRetry(pushover) {
+        if (!_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 3
+            || _directResult["pending_location_hex"].length() == 0) {
+            return;
+        }
+        if (_retryCount >= MAX_INITIAL_RETRIES) {
+            rejectDirectLocationProvider(pushover);
+            return;
+        }
+        _retryCount += 1;
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _retryTimer.start(
+                method(:retryDirectLocation),
+                RETRY_DELAY_MS,
+                false
+            );
+        } catch (error) {
+            // The durable pending fix is retried when the app is reopened.
+        }
+    }
+
+    function retryDirectLocation() {
+        if (!_inFlight
+            && _directResult != null
+            && _directResult["pending_location_hex"].length() > 0) {
+            sendDirectLocation();
         }
     }
 
@@ -1042,15 +2682,95 @@ class PanicView extends WatchUi.View {
         var result = responseCode < 0
             ? transportFailure(responseCode)
             : PanicProtocol.failureResult(data);
+        if (responseCode < 0 && beginWifiFallback(event, responseCode)) {
+            return;
+        }
         handleFailure(result, "Pending event retained");
     }
 
-    function handleFailure(result, detail) {
-        if (PanicProtocol.stringEquals(result, "configuration_failure")) {
-            setState("CONFIGURATION FAILURE", detail);
+    function beginWifiFallback(event, responseCode) {
+        if ((responseCode != Communications.BLE_CONNECTION_UNAVAILABLE
+                && responseCode != Communications.BLE_HOST_TIMEOUT)
+            || _wifiCheckPending
+            || PanicProtocol.stringEquals(_wifiFallbackEventId, event["event_id"])
+            || !(Communications has :checkWifiConnection)) {
+            return false;
+        }
+        _wifiFallbackEventId = event["event_id"];
+        _wifiCheckPending = true;
+        setState("TRYING WI-FI", "Phone unavailable; pending event retained");
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _retryTimer.start(method(:wifiCheckTimedOut), WIFI_CHECK_TIMEOUT_MS, false);
+            Communications.checkWifiConnection(method(:onWifiConnectionChecked));
+        } catch (error) {
+            try {
+                _retryTimer.stop();
+            } catch (stopError) {
+            }
+            _wifiCheckPending = false;
+            return false;
+        }
+        return true;
+    }
+
+    function onWifiConnectionChecked(
+        result as {
+            :wifiAvailable as Lang.Boolean,
+            :errorCode as Communications.WifiConnectionStatus
+        }
+    ) as Void {
+        if (!_wifiCheckPending) {
             return;
         }
-        if (PanicProtocol.stringEquals(result, "retryable_failure")) {
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+        _wifiCheckPending = false;
+        if (_queue.size() == 0
+            || !PanicProtocol.stringEquals(
+                _queue[0]["event_id"],
+                _wifiFallbackEventId
+            )) {
+            return;
+        }
+        var wifiAvailable = false;
+        try {
+            wifiAvailable = result[:wifiAvailable] == true;
+        } catch (error) {
+            wifiAvailable = false;
+        }
+        if (wifiAvailable) {
+            setState("RETRYING WI-FI", hasDirectAlertConfiguration()
+                ? "Pending until provider acceptance"
+                : "Pending until signed relay acceptance");
+            sendPending();
+        } else {
+            handleFailure("retryable_failure", "Wi-Fi unavailable; pending event retained");
+        }
+    }
+
+    function wifiCheckTimedOut() {
+        if (!_wifiCheckPending) {
+            return;
+        }
+        _wifiCheckPending = false;
+        handleFailure("retryable_failure", "Wi-Fi check timed out; pending event retained");
+    }
+
+    function handleFailure(result, detail) {
+        var testPending = _queue.size() > 0 && _queue[0]["v"] == 1;
+        if (PanicProtocol.stringEquals(result, "configuration_failure")) {
+            setState(testPending ? "TEST CONFIG ERROR" : "CONFIGURATION FAILURE", detail);
+            return;
+        }
+        if (testPending) {
+            setState("TEST PENDING", detail);
+        } else if (PanicProtocol.stringEquals(result, "retryable_failure")) {
             setState("RETRYABLE FAILURE", detail);
         } else {
             setState("RESULT UNKNOWN", detail);
@@ -1064,7 +2784,10 @@ class PanicView extends WatchUi.View {
             try {
                 _retryTimer.start(method(:retryPending), RETRY_DELAY_MS, false);
             } catch (error) {
-                setState("RETRYABLE FAILURE", "START retries immutable event");
+                setState(testPending ? "TEST PENDING" : "RETRYABLE FAILURE",
+                    testPending
+                        ? "Automatic retry unavailable; press top button"
+                        : "Top button retries immutable event");
             }
         }
     }
@@ -1077,7 +2800,8 @@ class PanicView extends WatchUi.View {
 
     function transportFailure(responseCode) {
         if (responseCode == Communications.BLE_QUEUE_FULL
-            || responseCode == Communications.BLE_CONNECTION_UNAVAILABLE) {
+            || responseCode == Communications.BLE_CONNECTION_UNAVAILABLE
+            || responseCode == Communications.BLE_HOST_TIMEOUT) {
             return "retryable_failure";
         }
         if (responseCode == Communications.BLE_REQUEST_TOO_LARGE
@@ -1097,6 +2821,10 @@ class PanicView extends WatchUi.View {
             var wifi = connections[:wifi];
             if (wifi != null && wifi.state == System.CONNECTION_STATE_CONNECTED) {
                 return "Wi-Fi reported connected; route not forced";
+            }
+            var lte = connections[:lte];
+            if (lte != null && lte.state == System.CONNECTION_STATE_CONNECTED) {
+                return "LTE reported connected; CIQ web route unclaimed";
             }
             if (settings.phoneConnected) {
                 return "Phone reported connected; route not forced";
@@ -1127,17 +2855,25 @@ class PanicView extends WatchUi.View {
     }
 
     function persistState(nextQueue, nextActive) {
+        return persistStateWithDirect(nextQueue, nextActive, _directResult);
+    }
+
+    function persistStateWithDirect(nextQueue, nextActive, nextDirectResult) {
         try {
             Storage.setValue(STATE_KEY, {
                 "queue" => nextQueue,
-                "active" => nextActive
+                "active" => nextActive,
+                "direct_result" => nextDirectResult
             });
             _queue = nextQueue;
             _activeIncident = nextActive;
+            _directResult = nextDirectResult;
             if (_queue.size() > 0) {
                 _displayEventId = _queue[0]["event_id"];
             } else if (_activeIncident != null) {
                 _displayEventId = _activeIncident["incident_id"];
+            } else if (_directResult != null) {
+                _displayEventId = _directResult["event_id"];
             } else {
                 _displayEventId = null;
             }
@@ -1187,7 +2923,7 @@ class PanicView extends WatchUi.View {
                 } catch (error) {
                 }
                 if (persistState(remaining, nextActive)) {
-                    _mode = "TEST";
+                    refreshConfiguredMode();
                     _retryCount = 0;
                     setState("RESULT UNKNOWN — EXPIRED", "Expired LIVE removed explicitly");
                 } else {
@@ -1196,16 +2932,31 @@ class PanicView extends WatchUi.View {
                 return true;
             }
             if (persistState([], _activeIncident)) {
-                setState("READY — TEST", "Pending TEST abandoned explicitly");
+                _state = "READY — TEST";
+                _detail = "Pending TEST abandoned explicitly";
+                selectStartupMode();
+                WatchUi.requestUpdate();
             } else {
                 setState("CONFIGURATION FAILURE", "Cannot abandon pending TEST");
             }
             return true;
         }
-        _mode = PanicProtocol.stringEquals(_mode, "TEST") ? "LIVE" : "TEST";
-        setState("READY — " + _mode, PanicProtocol.stringEquals(_mode, "LIVE")
-            ? "START creates encrypted LIVE incident"
-            : "START sends non-sensitive TEST");
+        if (_directResult != null) {
+            stopLocations();
+            if (persistStateWithDirect([], _activeIncident, null)) {
+                _state = "READY — TEST";
+                _detail = "Press top button to send";
+                selectStartupMode();
+                WatchUi.requestUpdate();
+            } else {
+                setState("CONFIGURATION FAILURE", "Cannot reset accepted TEST");
+            }
+            return true;
+        }
+        _state = "READY — TEST";
+        _detail = "Press top button to send";
+        selectStartupMode();
+        WatchUi.requestUpdate();
         return true;
     }
 
@@ -1225,8 +2976,27 @@ class PanicDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onSelect() {
-        _view.activate();
-        return true;
+        return _view.selectAction();
+    }
+
+    function onNextPage() {
+        return _view.downAction();
+    }
+
+    function onKeyPressed(event) {
+        var key = event.getKey();
+        if (key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER) {
+            return _view.startActionPressed();
+        }
+        return false;
+    }
+
+    function onKeyReleased(event) {
+        var key = event.getKey();
+        if (key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER) {
+            return _view.startActionReleased();
+        }
+        return false;
     }
 
     function onMenu() {

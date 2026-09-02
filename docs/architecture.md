@@ -9,6 +9,10 @@ reference relay
 trusted recipients
     -> authenticate/decrypt v2 content locally
     -> deliberate acknowledgement
+
+optional blind mailbox path
+    -> fixed-size encrypted v2 capsule per recipient mailbox
+    -> capability-authenticated poll and encrypted E2E acknowledgement
 ```
 
 The wire protocol is the shared seam. UI, lifecycle, permissions, persistence,
@@ -68,20 +72,81 @@ valid result. Acquisition stops at local expiry or after an exact signed
 `/v2/status` result reports relay-side resolution or expiry; acknowledgement
 alone does not stop it.
 
+The relay-free Garmin beta has a deliberately separate direct-GPS drill. It
+starts only after a direct TEST has received and durably stored valid Grafana
+Cloud IRM or Pushover acceptance. For up to one foreground hour it uses the real
+watch position API and sends a first post-acceptance fix plus materially changed
+later fixes to every provider whose current configuration matches the one-way
+fingerprint stored with its trigger acceptance. A pre-acceptance cached fix is
+rejected, and changing provider settings pauses rather than retargets GPS. A
+changed route or an exhausted per-target retry budget cannot retain the shared
+fix slot and starve another still-bound provider.
+Grafana updates share the trigger's
+alert UID; Pushover uses separate messages with map URLs. This is not a v1
+payload and does not alter the normative rule that TEST v1 is non-sensitive.
+It is also not v2: each selected direct provider and the map provider see the
+exact coordinate, and there is no relay resolution or direct-provider ACK
+polling. Pending fixes and remaining provider targets are persisted before
+submission; provider-call ambiguity may therefore produce a duplicate retry.
+
 ## Trust boundaries
 
 - Each sender has a per-device request HMAC key. V2 additionally uses separate
   encryption and content-MAC keys shared only with trusted recipients.
-- Garmin's ordinary settings path is trusted only for non-sensitive TEST.
-  LIVE credentials are supplied only in a private personal build.
+- Garmin's ordinary settings path is trusted only for TEST configuration.
+  The current beta stores a secret Grafana Cloud IRM webhook URL, Pushover
+  destination/application keys, or both there and sends a TEST directly to
+  those routes. It may also store an optional protected-person display name and
+  a provider-neutral emergency card containing home/family/person/background,
+  responder-instruction, and photo-link fields. The name is intentionally
+  included in provider-visible TEST titles. A shared profile module feeds
+  concrete adapters: Grafana receives structured fields while Pushover receives
+  bounded profile text and a supplementary photo link. Grafana's configured
+  mobile template uses only the short title and message; Pushover has no
+  equivalent detail-template boundary and may expose message text on the lock
+  screen. Garmin and each selected provider process their mapped fields. Those
+  values are not LIVE content/authentication keys. LIVE
+  credentials are supplied only in a private personal build.
 - The relay sees timing, opaque device/incident/route identifiers, event kind,
   sequence, expiry, ciphertext size, and provider metadata, but not v2 content.
 - Pushover and ntfy see the notification timing and opaque encrypted envelope.
   They are trusted only for evidence they originate; neither is evidence that a
   person is safe.
+- In the explicitly privacy-relaxed direct-GPS drill, Grafana and/or Pushover
+  plus the map-link provider additionally see exact coordinates. This exception
+  is limited to the personal beta and is not inherited by LIVE or the normative
+  protocol.
 - Public source builds contain unusable placeholder credentials. Personal
   native builds currently embed their locally supplied keys; hardware-backed
   enrollment is a production gate.
 
+The direct Garmin-to-provider TEST path intentionally sits beside, not inside,
+the normative event protocol. It is a low-setup transport proof: no relay is
+required, its optional provider-neutral emergency card is not a v1 TEST field, the TEST
+contains no location or LIVE content, and at least
+one validated provider acceptance is persisted before the analog acceptance
+cover appears or direct GPS begins. Grafana `2xx` proves webhook ingestion;
+Pushover requires its emergency receipt. Neither collapses transport delivery,
+recipient acknowledgement, or incident resolution into one fact.
+
 See [`threat-model.md`](threat-model.md), [`privacy.md`](privacy.md), and the
 normative [`../protocol/README.md`](../protocol/README.md).
+
+## Blind mailbox boundary
+
+The optional mailbox path wraps the entire v2 event in another fixed-size,
+encrypt-then-MAC capsule. This is separate from the frozen v2 wire endpoint:
+existing Garmin/Pushover tests continue unchanged while a future companion or
+native receiver can use a relay that cannot distinguish LIVE from location,
+recover incident/sequence metadata, or infer a recipient group from configured
+routes. Each recipient uses an independent random mailbox.
+
+The relay retains only hashed append/read/ACK capabilities, opaque capsules,
+their exact semantic digest, expiry, server acceptance time, and opaque ACK
+capsules. It still observes transport metadata such as source IP in memory,
+timing, size, mailbox pseudonyms, and polling/ACK activity. It is therefore
+content-blind, not anonymous or zero-knowledge.
+
+Recipient ACKs are encrypted with direction-specific keys and bind the exact
+capsule hash plus inner incident and sequence. Only that verified E2E evidence
+could justify stronger sender feedback. Mailbox persistence or HTTP 202 cannot.

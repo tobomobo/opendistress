@@ -22,11 +22,18 @@ acknowledgement, and incident resolution remain separate evidence.
 
 - A Garmin Connect IQ app in Monkey C with durable TEST/LIVE queues, encrypted
   foreground location updates, app-list/glance/complication launch surfaces,
-  and Wi-Fi/phone diagnostics.
+  responsive layouts for current fēnix, Forerunner, Instinct, and Venu
+  profiles, phone-configured direct Grafana Cloud IRM and optional Pushover
+  emergency TEST delivery, plus an immediate phone-path request and bounded
+  saved-Wi-Fi fallback that never delays the first attempt.
 - A stdlib-only Python relay with strict HMAC intake, SQLite leases and retry,
   recipient routes bound to their provider configuration, Pushover emergency
   receipts/cancellation, and authenticated ntfy publishing.
 - A Node 22 trusted-recipient CLI that authenticates and decrypts v2 events.
+- An optional content-blind mailbox transport with fixed-size encrypted v2
+  capsules, hashed per-mailbox capabilities, bounded storage, and encrypted
+  exact-capsule acknowledgements. The Node reference codec is implemented;
+  companion, Android receiver, and Garmin integration remain explicit gates.
 - Standalone Kotlin Wear OS and Swift watchOS apps using their native crypto,
   persistence, HTTPS, location, feedback, and accessibility APIs.
 - Frozen v1/v2 schemas and cross-runtime public vectors in
@@ -36,6 +43,36 @@ The conditional Garmin launcher face was not added because the stock launch
 routes have not yet been physically measured. Direct SMS/voice is also
 unclaimed: it needs a companion or provider plus real permission, SIM, carrier,
 and hardware testing.
+
+The relay-free Garmin path is deliberately a bounded TEST proof of concept. It
+sends a clearly marked TEST alert directly to a phone-configured Grafana Cloud
+IRM formatted webhook, Pushover, or both. Phone-editable settings can add an
+optional display name and a provider-neutral emergency card containing a home
+address, children/family information, a person description, background,
+responder instructions, and an HTTPS photo URL. Separate adapters render that
+model into Grafana's opened detail view or Pushover's bounded message plus
+supplementary photo link. Grafana keeps the lock-screen push short; Pushover may
+show its message content on the lock screen. These details sync through Garmin
+and are plaintext to the selected providers, so they are outside the privacy
+guarantees of the normative protocol. With both providers configured, the watch
+uses one network request at a time and attempts the preferred Grafana route
+first; Pushover is the independent fallback when Grafana is not definitely
+accepted. The first HTTP-level
+provider acceptance changes the foreground app to its neutral analog cover and
+triggers a double haptic. This proves neither phone delivery, Important/Critical
+Push behavior, human acknowledgement, nor that help is coming.
+
+Only after the first stored acceptance, the foreground beta starts the watch's
+real position API for up to one hour. A cached fix older than that acceptance is
+rejected. Each provider that accepted the trigger receives the first fresh fix
+and meaningful later movement, but only while its current credentials match the
+fingerprint stored at acceptance; Grafana updates reuse the
+same alert UID, while Pushover uses separate map-link messages. These GPS drill
+messages are outside v1 TEST and plaintext to Grafana and/or Pushover plus the
+map-link provider. Use them only with the owner's explicit consent. Simulator
+or mock coordinates never count as physical GPS evidence. Grafana's in-app ACK
+is useful receiver evidence but is not yet returned to or displayed by the
+watch.
 
 ## Run host checks
 
@@ -70,8 +107,23 @@ export PUSHOVER_APP_TOKEN='replace-me'
 python3 -m relay \
   --devices /tmp/smart-panic-devices.json \
   --routes /tmp/smart-panic-routes.json \
+  --mailboxes /tmp/smart-panic-mailboxes.json \
   --database /tmp/smart-panic-relay.sqlite3
 ```
+
+`--mailboxes` is optional. Create one private enrollment bundle and a server
+record containing only capability hashes with:
+
+```sh
+python3 scripts/mailbox_enroll.py \
+  --server-record /tmp/smart-panic-mailboxes.json \
+  --enrollment /private/path/recipient-mailbox.json
+```
+
+Both files are created with mode 0600 and existing files are never overwritten.
+The enrollment contains capabilities and content keys and must never be placed
+on the relay. The mailbox API and remaining metadata are documented in
+[`protocol/README.md`](protocol/README.md) and [`docs/privacy.md`](docs/privacy.md).
 
 The development listener is loopback plain HTTP. Put it behind one trusted HTTPS
 terminator, disable request/header/IP logging there, and never expose the Python
@@ -97,7 +149,9 @@ relay will not guess which credentials created it.
 
 The offline recipient command is documented in
 [`recipient/README.md`](recipient/README.md). Security constraints, architecture,
-and the still-`NOT_RUN` physical rows are in [`SECURITY.md`](SECURITY.md),
+receiver Critical Alert enrollment, and the still-`NOT_RUN` physical rows are
+in [`SECURITY.md`](SECURITY.md),
+[`docs/receiver-enrollment.md`](docs/receiver-enrollment.md),
 [`docs/`](docs/), and
 [`tests/end-to-end/physical-matrix.csv`](tests/end-to-end/physical-matrix.csv).
 
