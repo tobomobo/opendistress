@@ -121,4 +121,8 @@ test("ACK is encrypted and bound to incident, sequence, message, and exact capsu
         () => openAcknowledgement(ack, other, live, config),
         /not bound to this exact capsule/
     );
+    assert.throws(
+        () => createAcknowledgement(message, location, location.created_at + 30, config),
+        /does not match the authenticated capsule/
+    );
 });

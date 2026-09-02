@@ -183,12 +183,13 @@ class MailboxStoreTests(unittest.TestCase):
 
 class MailboxConfigTests(unittest.TestCase):
     def test_config_contains_only_capability_hashes_and_requires_private_mode(self):
+        private_caps = (bytes([0xD1]) * 32, bytes([0xD2]) * 32, bytes([0xD3]) * 32)
         raw = {
             MAILBOX_ID: {
                 "enabled": True,
-                "append_cap_sha256": hashlib.sha256(APPEND_CAP).hexdigest(),
-                "read_cap_sha256": hashlib.sha256(READ_CAP).hexdigest(),
-                "ack_cap_sha256": hashlib.sha256(ACK_CAP).hexdigest(),
+                "append_cap_sha256": hashlib.sha256(private_caps[0]).hexdigest(),
+                "read_cap_sha256": hashlib.sha256(private_caps[1]).hexdigest(),
+                "ack_cap_sha256": hashlib.sha256(private_caps[2]).hexdigest(),
             }
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -200,8 +201,28 @@ class MailboxConfigTests(unittest.TestCase):
                     load_mailboxes(path)
             os.chmod(path, 0o600)
             loaded = load_mailboxes(path)
-        self.assertEqual(loaded, mailbox_config())
-        self.assertNotIn(bearer(APPEND_CAP)[7:], json.dumps(raw))
+        self.assertEqual(
+            loaded,
+            {
+                MAILBOX_ID: {
+                    "enabled": True,
+                    "append": hashlib.sha256(private_caps[0]).digest(),
+                    "read": hashlib.sha256(private_caps[1]).digest(),
+                    "ack": hashlib.sha256(private_caps[2]).digest(),
+                }
+            },
+        )
+        self.assertNotIn(bearer(private_caps[0])[7:], json.dumps(raw))
+
+    def test_enabled_config_rejects_published_example_capabilities(self):
+        raw = json.loads((ROOT / "relay/mailboxes.example.json").read_text())
+        raw[MAILBOX_ID]["enabled"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "mailboxes.json"
+            path.write_text(json.dumps(raw))
+            os.chmod(path, 0o600)
+            with self.assertRaisesRegex(ValueError, "published example capability"):
+                load_mailboxes(path)
 
     def test_enrollment_generator_separates_server_hashes_from_private_secrets(self):
         with tempfile.TemporaryDirectory() as directory:

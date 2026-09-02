@@ -336,7 +336,8 @@ class GarminContractTests(unittest.TestCase):
         poll = source[source.index("function pollStatus()") : source.index("function canPollStatus()")]
         self.assertIn("WatchUi.requestUpdate();", poll)
         self.assertNotIn("_coverTimer", source)
-        self.assertNotIn("_state", cover)
+        self.assertIn('"LOCATION SCRUB UNSAVED"', cover)
+        self.assertNotIn('"READY', cover)
 
         pushover = source[
             source.index("function onPushoverResponse(")
@@ -504,6 +505,9 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("Position.", pushover_request)
         self.assertNotIn("Position.", grafana_request)
         self.assertIn('"tracking_expires_at" => trackingExpiresAt', acceptance)
+        self.assertIn('"accepted_at" => acceptedAt == null ? 0 : acceptedAt', acceptance)
+        self.assertIn('"pushover_fingerprint" => pushoverFingerprint', acceptance)
+        self.assertIn('"grafana_fingerprint" => grafanaFingerprint', acceptance)
         self.assertIn('"capture_stage" => captureStage', acceptance)
         self.assertLess(
             acceptance.index("persistStateWithDirect("),
@@ -513,6 +517,12 @@ class GarminContractTests(unittest.TestCase):
             acceptance.index("confirmProviderAcceptance();"),
             acceptance.index("captureDirectLocations();"),
         )
+        binding_validation = source[
+            source.index("function validDirectProviderBindings(")
+            : source.index("function validDirectTrackingWindow(")
+        ]
+        self.assertEqual(binding_validation.count("isCanonicalDigest"), 2)
+        self.assertNotIn("trackingDisabled", binding_validation)
 
     def test_grafana_formatted_webhook_is_validated_and_acceptance_is_not_ack(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
@@ -561,6 +571,11 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("hasDirectAlertConfiguration()", send)
         self.assertIn("hasDirectPushoverConfiguration()", send)
         self.assertIn("sendDirectGrafanaInitial(event);", send)
+        direct_choice = send[send.index('if (event["v"] == 1') :]
+        self.assertLess(
+            direct_choice.index("hasDirectGrafanaConfiguration()"),
+            direct_choice.index("sendDirectPushover(event, now)"),
+        )
         self.assertIn("hasDirectGrafanaConfiguration()", pushover_send)
         self.assertIn("sendDirectGrafanaInitial(event);", pushover_send)
         self.assertIn("hasDirectGrafanaConfiguration()", pushover)
@@ -580,6 +595,9 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("Position.getInfo()", direct)
         self.assertIn("Position.LOCATION_CONTINUOUS", direct)
         self.assertIn("Position.QUALITY_NOT_AVAILABLE", direct)
+        self.assertIn("DirectAlertSafety.isFreshCapture(", direct)
+        self.assertIn('info.when.value()', direct)
+        self.assertIn('_directResult["accepted_at"]', direct)
         self.assertNotIn("LOCATION_ONE_SHOT", direct)
         self.assertNotIn("mock", direct.lower())
         self.assertNotIn("fixture", direct.lower())
@@ -602,6 +620,23 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('"https://maps.google.com/?q="', send)
         self.assertIn("DirectPushoverAdapter.locationParameters(", send)
         self.assertIn("DirectGrafanaAdapter.locationPayload(", send)
+        self.assertIn("hasBoundDirectPushover()", send)
+        self.assertIn("hasBoundDirectGrafana()", send)
+        self.assertIn('setState("ROUTE CHANGED"', send)
+        queue = source[
+            source.index("function queueDirectLocation(")
+            : source.index("function shouldQueueDirectCadenceLocation(")
+        ]
+        completion = source[
+            source.index("function completeDirectLocationProvider(")
+            : source.index("function rejectDirectLocationProvider(")
+        ]
+        self.assertIn("var pendingPushover = hasBoundDirectPushover();", queue)
+        self.assertIn("var pendingGrafana = hasBoundDirectGrafana();", queue)
+        self.assertNotIn('_directResult["pushover_accepted"],', queue)
+        self.assertNotIn('_directResult["grafana_accepted"]', queue)
+        self.assertIn("pendingPushover && hasBoundDirectPushover()", completion)
+        self.assertIn("pendingGrafana && hasBoundDirectGrafana()", completion)
         self.assertEqual(providers.count("DirectAlertProfile.LOCATION_TITLE"), 2)
         self.assertIn("DirectAlertProfile.LOCATION_MESSAGE", providers)
         self.assertIn('"priority" => sequence == 1 ? "1" : "0"', providers)
@@ -634,9 +669,21 @@ class GarminContractTests(unittest.TestCase):
 
         self.assertIn("resumeDirectLocations();", on_show)
         self.assertIn('if (_directResult["pending_location_hex"].length() > 0)', source)
-        self.assertIn("scheduleDirectLocationRetry();", source)
+        self.assertIn("scheduleDirectLocationRetry(true);", source)
+        self.assertIn("scheduleDirectLocationRetry(false);", source)
+        self.assertIn("rejectDirectLocationProvider(pushover);", source)
         self.assertIn("method(:retryDirectLocation)", source)
         self.assertIn("_directLocationRetryBlocked = true", source)
+        self.assertIn('setState("LOCATION SCRUB UNSAVED"', expiry)
+        self.assertIn('"LOCATION STATE UNSAVED"', source)
+        self.assertIn('"ROUTE CHANGED"', source)
+        cover = source[
+            source.index("function shouldShowCover()")
+            : source.index("function scheduleIdleCoverRefresh()")
+        ]
+        self.assertIn('"LOCATION STATE UNSAVED"', cover)
+        self.assertIn('"ROUTE CHANGED"', cover)
+        self.assertIn("method(:expireDirectLocations)", expiry)
         self.assertIn("_directLocationRetryBlocked = false", on_show)
         self.assertIn("stopLocations();", expiry)
         self.assertIn('persistDirectTracking(', expiry)

@@ -106,13 +106,32 @@ class PanicView extends WatchUi.View {
         "capture_stage",
         "pending_location_hex"
     ];
-    const DIRECT_RESULT_KEYS = [
+    const UNBOUND_DIRECT_RESULT_KEYS = [
         "event_id",
         "request",
         "receipt",
         "pushover_accepted",
         "grafana_accepted",
         "grafana_alert_pending",
+        "tracking_expires_at",
+        "next_location_sequence",
+        "last_location_hex",
+        "last_location_queued_at",
+        "capture_stage",
+        "pending_location_hex",
+        "pending_location_pushover",
+        "pending_location_grafana"
+    ];
+    const DIRECT_RESULT_KEYS = [
+        "event_id",
+        "request",
+        "receipt",
+        "pushover_accepted",
+        "pushover_fingerprint",
+        "grafana_accepted",
+        "grafana_fingerprint",
+        "grafana_alert_pending",
+        "accepted_at",
         "tracking_expires_at",
         "next_location_sequence",
         "last_location_hex",
@@ -141,6 +160,7 @@ class PanicView extends WatchUi.View {
     var _inFlight = false;
     var _activeKeyHex = null;
     var _requestEventId = null;
+    var _requestProviderFingerprint = null;
     var _statusQuery = null;
     var _retryCount = 0;
     var _retryTimer;
@@ -196,7 +216,10 @@ class PanicView extends WatchUi.View {
     }
 
     function shouldShowCover() {
-        return _directResult != null;
+        return _directResult != null
+            && !PanicProtocol.stringEquals(_state, "LOCATION SCRUB UNSAVED")
+            && !PanicProtocol.stringEquals(_state, "LOCATION STATE UNSAVED")
+            && !PanicProtocol.stringEquals(_state, "ROUTE CHANGED");
     }
 
     function scheduleIdleCoverRefresh() {
@@ -334,6 +357,8 @@ class PanicView extends WatchUi.View {
                 _retryCount = 0;
                 _directLocationRetryBlocked = false;
                 sendDirectLocation();
+            } else if (!_inFlight) {
+                resumeDirectLocations();
             }
             return;
         }
@@ -381,6 +406,36 @@ class PanicView extends WatchUi.View {
         return hasDirectPushoverConfiguration() || hasDirectGrafanaConfiguration();
     }
 
+    function hasBoundDirectPushover() as Lang.Boolean {
+        try {
+            return _directResult != null
+                && DirectAlertSafety.isActiveRoute(
+                    _directResult["pushover_accepted"],
+                    _directResult["pushover_fingerprint"],
+                    DirectPushoverAdapter.configurationFingerprint()
+                );
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function hasBoundDirectGrafana() as Lang.Boolean {
+        try {
+            return _directResult != null
+                && DirectAlertSafety.isActiveRoute(
+                    _directResult["grafana_accepted"],
+                    _directResult["grafana_fingerprint"],
+                    DirectGrafanaAdapter.configurationFingerprint()
+                );
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function hasBoundDirectProvider() as Lang.Boolean {
+        return hasBoundDirectPushover() || hasBoundDirectGrafana();
+    }
+
     function hasProvisionedLiveConfiguration() {
         try {
             return PanicProtocol.isHttpsBaseUrl(Properties.getValue("relayBaseUrl"))
@@ -420,59 +475,29 @@ class PanicView extends WatchUi.View {
                     storedState["direct_result"],
                     LEGACY_DIRECT_RESULT_KEYS
                 )) {
-                var legacyDirect = storedState["direct_result"] as Lang.Dictionary;
-                stored = {
-                    "queue" => storedState["queue"],
-                    "active" => storedState["active"],
-                    "direct_result" => {
-                        "event_id" => legacyDirect["event_id"],
-                        "request" => legacyDirect["request"],
-                        "receipt" => legacyDirect["receipt"],
-                        "pushover_accepted" => true,
-                        "grafana_accepted" => false,
-                        "grafana_alert_pending" => false,
-                        "tracking_expires_at" => 0,
-                        "next_location_sequence" => 1,
-                        "last_location_hex" => "",
-                        "last_location_queued_at" => 0,
-                        "capture_stage" => 3,
-                        "pending_location_hex" => "",
-                        "pending_location_pushover" => false,
-                        "pending_location_grafana" => false
-                    }
-                };
-                Storage.setValue(STATE_KEY, stored);
+                clearPreviousDirectState();
+                return;
             }
-            storedState = stored as Lang.Dictionary;
             if (PanicProtocol.hasExactKeys(storedState, STATE_KEYS)
                 && storedState["direct_result"] != null
                 && PanicProtocol.hasExactKeys(
                     storedState["direct_result"],
                     LEGACY_DIRECT_TRACKING_KEYS
                 )) {
-                var legacyTracking = storedState["direct_result"] as Lang.Dictionary;
-                var hasPendingLocation = legacyTracking["pending_location_hex"].length() > 0;
-                stored = {
-                    "queue" => storedState["queue"],
-                    "active" => storedState["active"],
-                    "direct_result" => {
-                        "event_id" => legacyTracking["event_id"],
-                        "request" => legacyTracking["request"],
-                        "receipt" => legacyTracking["receipt"],
-                        "pushover_accepted" => true,
-                        "grafana_accepted" => false,
-                        "grafana_alert_pending" => false,
-                        "tracking_expires_at" => legacyTracking["tracking_expires_at"],
-                        "next_location_sequence" => legacyTracking["next_location_sequence"],
-                        "last_location_hex" => legacyTracking["last_location_hex"],
-                        "last_location_queued_at" => legacyTracking["last_location_queued_at"],
-                        "capture_stage" => legacyTracking["capture_stage"],
-                        "pending_location_hex" => legacyTracking["pending_location_hex"],
-                        "pending_location_pushover" => hasPendingLocation,
-                        "pending_location_grafana" => false
-                    }
-                };
-                Storage.setValue(STATE_KEY, stored);
+                clearPreviousDirectState();
+                return;
+            }
+            if (PanicProtocol.hasExactKeys(storedState, STATE_KEYS)
+                && storedState["direct_result"] != null
+                && PanicProtocol.hasExactKeys(
+                    storedState["direct_result"],
+                    UNBOUND_DIRECT_RESULT_KEYS
+                )) {
+                // Pre-fingerprint beta state cannot safely retain or retarget GPS.
+                // Delete the whole mutually-exclusive direct state, including any
+                // plaintext coordinates, and require a fresh TEST activation.
+                clearPreviousDirectState();
+                return;
             }
             if (!validStoredState(stored)) {
                 setState("CONFIGURATION FAILURE", "Stored event state is invalid");
@@ -498,6 +523,14 @@ class PanicView extends WatchUi.View {
         } catch (error) {
             setState("CONFIGURATION FAILURE", "Cannot read persistent storage");
         }
+    }
+
+    function clearPreviousDirectState() as Void {
+        Storage.deleteValue(STATE_KEY);
+        _queue = [];
+        _activeIncident = null;
+        _directResult = null;
+        setState("READY — TEST", "Previous beta GPS state cleared");
     }
 
     function migrateLegacyTest() {
@@ -564,55 +597,122 @@ class PanicView extends WatchUi.View {
     }
 
     function validDirectResult(value) {
-        return value == null
-            || (PanicProtocol.hasExactKeys(value, DIRECT_RESULT_KEYS)
-                && PanicProtocol.isCanonicalId(value["event_id"])
-                && value["pushover_accepted"] instanceof Lang.Boolean
-                && value["grafana_accepted"] instanceof Lang.Boolean
-                && value["grafana_alert_pending"] instanceof Lang.Boolean
-                && (value["pushover_accepted"] || value["grafana_accepted"])
-                && (!value["pushover_accepted"]
-                    ? PanicProtocol.stringEquals(value["request"], "")
-                        && PanicProtocol.stringEquals(value["receipt"], "")
-                    : isProviderReference(value["request"])
-                        && DirectPushoverAdapter.isToken(value["receipt"]))
-                && (!value["grafana_accepted"] || !value["grafana_alert_pending"])
-                && value["tracking_expires_at"] instanceof Lang.Number
-                && value["tracking_expires_at"] >= 0
-                && value["next_location_sequence"] instanceof Lang.Number
-                && value["next_location_sequence"] >= 1
-                && validLocationHex(value["last_location_hex"])
-                && value["last_location_queued_at"] instanceof Lang.Number
-                && value["last_location_queued_at"] >= 0
-                && (value["tracking_expires_at"] == 0
-                    ? value["last_location_queued_at"] == 0
-                    : value["last_location_queued_at"]
-                        <= value["tracking_expires_at"])
-                && value["capture_stage"] instanceof Lang.Number
-                && value["capture_stage"] >= 0
-                && value["capture_stage"] <= 3
-                && validLocationHex(value["pending_location_hex"])
-                && value["pending_location_pushover"] instanceof Lang.Boolean
-                && value["pending_location_grafana"] instanceof Lang.Boolean
-                && (!value["pending_location_pushover"]
-                    || value["pushover_accepted"])
-                && (!value["pending_location_grafana"]
-                    || value["grafana_accepted"])
-                && (value["pending_location_hex"].length() == 0
-                    ? !value["pending_location_pushover"]
-                        && !value["pending_location_grafana"]
-                    : value["pending_location_pushover"]
-                        || value["pending_location_grafana"])
-                && (value["capture_stage"] == 0
-                    ? value["last_location_hex"].length() == 0
-                        && value["last_location_queued_at"] == 0
-                        && value["pending_location_hex"].length() == 0
-                    : true)
-                && (value["capture_stage"] == 3
-                    ? value["last_location_hex"].length() == 0
-                        && value["last_location_queued_at"] == 0
-                        && value["pending_location_hex"].length() == 0
-                    : true));
+        if (value == null) {
+            return true;
+        }
+        if (!PanicProtocol.hasExactKeys(value, DIRECT_RESULT_KEYS)) {
+            return false;
+        }
+        var result = value as Lang.Dictionary;
+        return validDirectAcceptance(result)
+            && validDirectTracking(result)
+            && validDirectPendingLocation(result);
+    }
+
+    function validDirectAcceptance(result) {
+        if (!PanicProtocol.isCanonicalId(result["event_id"])
+            || !(result["pushover_accepted"] instanceof Lang.Boolean)
+            || !(result["grafana_accepted"] instanceof Lang.Boolean)
+            || !(result["grafana_alert_pending"] instanceof Lang.Boolean)) {
+            return false;
+        }
+        if (!result["pushover_accepted"] && !result["grafana_accepted"]) {
+            return false;
+        }
+        if (result["pushover_accepted"]) {
+            if (!isProviderReference(result["request"])
+                || !DirectPushoverAdapter.isToken(result["receipt"])) {
+                return false;
+            }
+        } else if (!PanicProtocol.stringEquals(result["request"], "")
+            || !PanicProtocol.stringEquals(result["receipt"], "")) {
+            return false;
+        }
+        if (result["grafana_accepted"] && result["grafana_alert_pending"]) {
+            return false;
+        }
+        return validDirectProviderBindings(result);
+    }
+
+    function validDirectTracking(result) {
+        if (!(result["accepted_at"] instanceof Lang.Number)
+            || result["accepted_at"] < 0
+            || !(result["tracking_expires_at"] instanceof Lang.Number)
+            || result["tracking_expires_at"] < 0
+            || !validDirectTrackingWindow(result)
+            || !(result["next_location_sequence"] instanceof Lang.Number)
+            || result["next_location_sequence"] < 1
+            || !validLocationHex(result["last_location_hex"])
+            || !(result["last_location_queued_at"] instanceof Lang.Number)
+            || result["last_location_queued_at"] < 0) {
+            return false;
+        }
+        if (result["tracking_expires_at"] == 0) {
+            if (result["last_location_queued_at"] != 0) {
+                return false;
+            }
+        } else if (result["last_location_queued_at"] > result["tracking_expires_at"]) {
+            return false;
+        }
+        return result["capture_stage"] instanceof Lang.Number
+            && result["capture_stage"] >= 0
+            && result["capture_stage"] <= 3;
+    }
+
+    function validDirectPendingLocation(result) {
+        if (!(result["capture_stage"] instanceof Lang.Number)
+            || !validLocationHex(result["pending_location_hex"])
+            || !(result["pending_location_pushover"] instanceof Lang.Boolean)
+            || !(result["pending_location_grafana"] instanceof Lang.Boolean)) {
+            return false;
+        }
+        if ((result["pending_location_pushover"] && !result["pushover_accepted"])
+            || (result["pending_location_grafana"] && !result["grafana_accepted"])) {
+            return false;
+        }
+        var hasPendingLocation = result["pending_location_hex"].length() > 0;
+        var hasPendingTarget = result["pending_location_pushover"]
+            || result["pending_location_grafana"];
+        if (hasPendingLocation != hasPendingTarget) {
+            return false;
+        }
+        if ((result["capture_stage"] == 0 || result["capture_stage"] == 3)
+            && (result["last_location_hex"].length() > 0
+                || result["last_location_queued_at"] != 0
+                || hasPendingLocation)) {
+            return false;
+        }
+        return true;
+    }
+
+    function validDirectProviderBindings(value) {
+        var pushoverFingerprint = value["pushover_fingerprint"];
+        var grafanaFingerprint = value["grafana_fingerprint"];
+        if (value["pushover_accepted"]) {
+            if (!PanicProtocol.isCanonicalDigest(pushoverFingerprint)) {
+                return false;
+            }
+        } else if (!PanicProtocol.stringEquals(pushoverFingerprint, "")) {
+            return false;
+        }
+        if (value["grafana_accepted"]) {
+            if (!PanicProtocol.isCanonicalDigest(grafanaFingerprint)) {
+                return false;
+            }
+        } else if (!PanicProtocol.stringEquals(grafanaFingerprint, "")) {
+            return false;
+        }
+        return true;
+    }
+
+    function validDirectTrackingWindow(value) {
+        if (value["tracking_expires_at"] == 0) {
+            return value["accepted_at"] == 0;
+        }
+        return value["accepted_at"] > 0
+            && value["accepted_at"] <= PanicProtocol.MAX_TIME - LIVE_EXPIRY_SECONDS
+            && value["tracking_expires_at"]
+                == value["accepted_at"] + LIVE_EXPIRY_SECONDS;
     }
 
     function validLocationHex(value) {
@@ -1059,6 +1159,11 @@ class PanicView extends WatchUi.View {
             || _directResult["capture_stage"] == 3) {
             return;
         }
+        if (!hasBoundDirectProvider()) {
+            stopLocations();
+            setState("ROUTE CHANGED", "Restore the accepted provider settings for GPS");
+            return;
+        }
         var now = currentTime();
         if (now == null) {
             return;
@@ -1077,15 +1182,19 @@ class PanicView extends WatchUi.View {
             } catch (error) {
             }
             if (!queueDirectLocation(snapshot, 0, 1)) {
-                persistDirectTracking(
-                    _directResult["next_location_sequence"],
-                    _directResult["last_location_hex"],
-                    _directResult["last_location_queued_at"],
-                    1,
-                    "",
-                    false,
-                    false
-                );
+                if (!persistDirectTracking(
+                        _directResult["next_location_sequence"],
+                        _directResult["last_location_hex"],
+                        _directResult["last_location_queued_at"],
+                        1,
+                        "",
+                        false,
+                        false
+                    )) {
+                    _directLocationRetryBlocked = true;
+                    setState("LOCATION STATE UNSAVED", "Reopen to retry local GPS state");
+                    return;
+                }
             }
         }
         startDirectContinuousLocations();
@@ -1131,7 +1240,7 @@ class PanicView extends WatchUi.View {
         if (_directResult == null || _directResult["capture_stage"] == 3) {
             return;
         }
-        persistDirectTracking(
+        if (!persistDirectTracking(
             _directResult["next_location_sequence"],
             "",
             0,
@@ -1139,7 +1248,20 @@ class PanicView extends WatchUi.View {
             "",
             false,
             false
-        );
+        )) {
+            setState("LOCATION SCRUB UNSAVED", "Retrying local coordinate removal");
+            try {
+                _retryTimer.stop();
+            } catch (error) {
+            }
+            try {
+                _retryTimer.start(method(:expireDirectLocations), RETRY_DELAY_MS, false);
+            } catch (error) {
+                // Reopening the app retries expiry and scrubbing.
+            }
+            return;
+        }
+        setState("PROVIDER ACCEPTED", "GPS expired; local coordinates scrubbed");
         scheduleIdleCoverRefresh();
     }
 
@@ -1147,6 +1269,7 @@ class PanicView extends WatchUi.View {
         if (_directResult == null
             || _directResult["capture_stage"] == 3
             || _directResult["pending_location_hex"].length() > 0
+            || !hasBoundDirectProvider()
             || info == null
             || info.position == null
             || info.when == null
@@ -1156,7 +1279,11 @@ class PanicView extends WatchUi.View {
         var now = currentTime();
         if (now == null
             || now >= _directResult["tracking_expires_at"]
-            || info.when.value() > now) {
+            || !DirectAlertSafety.isFreshCapture(
+                _directResult["accepted_at"],
+                info.when.value(),
+                now
+            )) {
             return false;
         }
         var record = PanicProtocol.locationRecord(info, path);
@@ -1171,14 +1298,19 @@ class PanicView extends WatchUi.View {
         if (PanicProtocol.stringEquals(recordHex, _directResult["last_location_hex"])) {
             return false;
         }
+        var pendingPushover = hasBoundDirectPushover();
+        var pendingGrafana = hasBoundDirectGrafana();
+        if (!pendingPushover && !pendingGrafana) {
+            return false;
+        }
         if (!persistDirectTracking(
                 _directResult["next_location_sequence"],
                 _directResult["last_location_hex"],
                 _directResult["last_location_queued_at"],
                 nextCaptureStage,
                 recordHex,
-                _directResult["pushover_accepted"],
-                _directResult["grafana_accepted"]
+                pendingPushover,
+                pendingGrafana
             )) {
             return false;
         }
@@ -1189,11 +1321,16 @@ class PanicView extends WatchUi.View {
     function shouldQueueDirectCadenceLocation(info, now) {
         if (_directResult == null
             || _directResult["pending_location_hex"].length() > 0
+            || !hasBoundDirectProvider()
             || info == null
             || info.position == null
             || info.when == null
             || info.accuracy == Position.QUALITY_NOT_AVAILABLE
-            || info.when.value() > now) {
+            || !DirectAlertSafety.isFreshCapture(
+                _directResult["accepted_at"],
+                info.when.value(),
+                now
+            )) {
             return false;
         }
         if (_directResult["last_location_hex"].length() == 0) {
@@ -1256,8 +1393,11 @@ class PanicView extends WatchUi.View {
             "request" => _directResult["request"],
             "receipt" => _directResult["receipt"],
             "pushover_accepted" => _directResult["pushover_accepted"],
+            "pushover_fingerprint" => _directResult["pushover_fingerprint"],
             "grafana_accepted" => _directResult["grafana_accepted"],
+            "grafana_fingerprint" => _directResult["grafana_fingerprint"],
             "grafana_alert_pending" => _directResult["grafana_alert_pending"],
+            "accepted_at" => _directResult["accepted_at"],
             "tracking_expires_at" => _directResult["tracking_expires_at"],
             "next_location_sequence" => nextSequence,
             "last_location_hex" => lastLocationHex,
@@ -1269,7 +1409,11 @@ class PanicView extends WatchUi.View {
         });
     }
 
-    function persistDirectProviderState(grafanaAccepted, grafanaAlertPending) {
+    function persistDirectProviderState(
+        grafanaAccepted,
+        grafanaFingerprint,
+        grafanaAlertPending
+    ) {
         if (_directResult == null) {
             return false;
         }
@@ -1282,8 +1426,13 @@ class PanicView extends WatchUi.View {
             "request" => _directResult["request"],
             "receipt" => _directResult["receipt"],
             "pushover_accepted" => _directResult["pushover_accepted"],
+            "pushover_fingerprint" => _directResult["pushover_fingerprint"],
             "grafana_accepted" => grafanaAccepted,
+            "grafana_fingerprint" => grafanaAccepted
+                ? grafanaFingerprint
+                : _directResult["grafana_fingerprint"],
             "grafana_alert_pending" => grafanaAlertPending,
+            "accepted_at" => _directResult["accepted_at"],
             "tracking_expires_at" => _directResult["tracking_expires_at"],
             "next_location_sequence" => _directResult["next_location_sequence"],
             "last_location_hex" => _directResult["last_location_hex"],
@@ -1819,10 +1968,10 @@ class PanicView extends WatchUi.View {
             && _queue.size() == 1
             && _activeIncident == null
             && hasDirectAlertConfiguration()) {
-            if (hasDirectPushoverConfiguration()) {
-                sendDirectPushover(event, now);
-            } else {
+            if (hasDirectGrafanaConfiguration()) {
                 sendDirectGrafanaInitial(event);
+            } else {
+                sendDirectPushover(event, now);
             }
             return;
         }
@@ -1841,6 +1990,7 @@ class PanicView extends WatchUi.View {
         }
         _activeKeyHex = keyHex;
         _requestEventId = event["event_id"];
+        _requestProviderFingerprint = null;
         _inFlight = true;
         _displayEventId = event["event_id"];
         setState("SENDING", connectionSummary());
@@ -1869,7 +2019,13 @@ class PanicView extends WatchUi.View {
     }
 
     function sendDirectPushover(event, now) {
+        var providerFingerprint = DirectPushoverAdapter.configurationFingerprint();
+        if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+            handleFailure("configuration_failure", "Pushover configuration changed");
+            return;
+        }
         _requestEventId = event["event_id"];
+        _requestProviderFingerprint = providerFingerprint;
         _inFlight = true;
         _displayEventId = event["event_id"];
         setState("SENDING TEST", connectionSummary());
@@ -1892,7 +2048,8 @@ class PanicView extends WatchUi.View {
         } catch (error) {
             _inFlight = false;
             _requestEventId = null;
-            if (hasDirectGrafanaConfiguration()) {
+            _requestProviderFingerprint = null;
+            if (hasDirectGrafanaConfiguration() && !_directGrafanaRetryBlocked) {
                 sendDirectGrafanaInitial(event);
             } else {
                 handleFailure("retryable_failure", "Pushover request could not be queued");
@@ -1921,8 +2078,14 @@ class PanicView extends WatchUi.View {
         if (_inFlight || !hasDirectGrafanaConfiguration()) {
             return;
         }
+        var providerFingerprint = DirectGrafanaAdapter.configurationFingerprint();
+        if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+            handleFailure("configuration_failure", "Grafana configuration changed");
+            return;
+        }
         var requestContext = eventId + "-grafana-alert";
         _requestEventId = requestContext;
+        _requestProviderFingerprint = providerFingerprint;
         _inFlight = true;
         _displayEventId = eventId;
         setState("SENDING GRAFANA", connectionSummary());
@@ -1944,9 +2107,16 @@ class PanicView extends WatchUi.View {
         } catch (error) {
             _inFlight = false;
             _requestEventId = null;
+            _requestProviderFingerprint = null;
             if (_directResult != null) {
                 _directGrafanaRetryBlocked = true;
                 resumeDirectLocations();
+            } else if (hasDirectPushoverConfiguration()) {
+                _directGrafanaRetryBlocked = true;
+                var now = currentTime();
+                if (now != null && _queue.size() > 0) {
+                    sendDirectPushover(_queue[0], now);
+                }
             } else {
                 handleFailure("retryable_failure", "Grafana request could not be queued");
             }
@@ -1963,11 +2133,18 @@ class PanicView extends WatchUi.View {
             || !PanicProtocol.stringEquals(requestContext, _requestEventId)) {
             return;
         }
+        var providerFingerprint = _requestProviderFingerprint;
         _inFlight = false;
         _requestEventId = null;
+        _requestProviderFingerprint = null;
         if (responseCode >= 200 && responseCode < 300) {
+            if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+                setState("RESULT UNKNOWN", "Grafana accepted; route binding was lost");
+                return;
+            }
+            var acceptedFingerprint = providerFingerprint as Lang.String;
             if (_directResult != null) {
-                if (!persistDirectProviderState(true, false)) {
+                if (!persistDirectProviderState(true, acceptedFingerprint, false)) {
                     setState("RESULT UNKNOWN", "Grafana accepted; local evidence failed");
                     return;
                 }
@@ -1981,7 +2158,16 @@ class PanicView extends WatchUi.View {
                 return;
             }
             var event = _queue[0];
-            if (!beginAcceptedDirectTracking(event, "", "", false, true, false)) {
+            if (!beginAcceptedDirectTracking(
+                    event,
+                    "",
+                    "",
+                    false,
+                    "",
+                    true,
+                    acceptedFingerprint,
+                    false
+                )) {
                 return;
             }
             return;
@@ -2003,6 +2189,14 @@ class PanicView extends WatchUi.View {
         if (responseCode < 0 && beginWifiFallback(pending, responseCode)) {
             return;
         }
+        if (hasDirectPushoverConfiguration()) {
+            _directGrafanaRetryBlocked = true;
+            var now = currentTime();
+            if (now != null) {
+                sendDirectPushover(pending, now);
+                return;
+            }
+        }
         handleFailure(responseCode >= 400 && responseCode < 500 && responseCode != 429
                 ? "configuration_failure"
                 : (responseCode < 0
@@ -2016,7 +2210,9 @@ class PanicView extends WatchUi.View {
         request,
         receipt,
         pushoverAccepted,
+        pushoverFingerprint,
         grafanaAccepted,
+        grafanaFingerprint,
         grafanaAlertPending
     ) {
         var acceptedAt = currentTime();
@@ -2032,8 +2228,11 @@ class PanicView extends WatchUi.View {
             "request" => request,
             "receipt" => receipt,
             "pushover_accepted" => pushoverAccepted,
+            "pushover_fingerprint" => pushoverFingerprint,
             "grafana_accepted" => grafanaAccepted,
+            "grafana_fingerprint" => grafanaFingerprint,
             "grafana_alert_pending" => grafanaAlertPending,
+            "accepted_at" => acceptedAt == null ? 0 : acceptedAt,
             "tracking_expires_at" => trackingExpiresAt,
             "next_location_sequence" => 1,
             "last_location_hex" => "",
@@ -2070,22 +2269,31 @@ class PanicView extends WatchUi.View {
             || !PanicProtocol.stringEquals(eventId, _requestEventId)) {
             return;
         }
+        var providerFingerprint = _requestProviderFingerprint;
         _inFlight = false;
         if (_queue.size() == 0
             || !PanicProtocol.stringEquals(_queue[0]["event_id"], _requestEventId)) {
             _requestEventId = null;
+            _requestProviderFingerprint = null;
             setState("RESULT UNKNOWN", "Persistent queue changed during Pushover request");
             return;
         }
         var event = _queue[0];
         _requestEventId = null;
+        _requestProviderFingerprint = null;
         if (responseCode == 200 && isPushoverAcceptance(data)) {
+            if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+                setState("RESULT UNKNOWN", "Pushover accepted; route binding was lost");
+                return;
+            }
             beginAcceptedDirectTracking(
                 event,
                 data["request"],
                 data["receipt"],
                 true,
+                providerFingerprint as Lang.String,
                 false,
+                "",
                 hasDirectGrafanaConfiguration()
             );
             return;
@@ -2093,7 +2301,7 @@ class PanicView extends WatchUi.View {
         if (responseCode < 0 && beginWifiFallback(event, responseCode)) {
             return;
         }
-        if (hasDirectGrafanaConfiguration()) {
+        if (hasDirectGrafanaConfiguration() && !_directGrafanaRetryBlocked) {
             sendDirectGrafanaInitial(event);
             return;
         }
@@ -2153,6 +2361,15 @@ class PanicView extends WatchUi.View {
             expireDirectLocations();
             return;
         }
+        var sendPushover = _directResult["pending_location_pushover"]
+            && hasBoundDirectPushover();
+        var sendGrafana = _directResult["pending_location_grafana"]
+            && hasBoundDirectGrafana();
+        if (!sendPushover && !sendGrafana) {
+            _directLocationRetryBlocked = true;
+            setState("ROUTE CHANGED", "Restore the accepted provider settings for GPS");
+            return;
+        }
         var record = PanicProtocol.hexBytes(
             _directResult["pending_location_hex"]
         );
@@ -2184,8 +2401,7 @@ class PanicView extends WatchUi.View {
             + latitudeText + "," + longitudeText;
         _requestEventId = requestContext;
         _inFlight = true;
-        if (_directResult["pending_location_pushover"]
-            && hasDirectPushoverConfiguration()) {
+        if (sendPushover) {
             var parameters = DirectPushoverAdapter.locationParameters(
                 sequence,
                 captureAt,
@@ -2209,12 +2425,11 @@ class PanicView extends WatchUi.View {
             } catch (error) {
                 _inFlight = false;
                 _requestEventId = null;
-                scheduleDirectLocationRetry();
+                scheduleDirectLocationRetry(true);
             }
             return;
         }
-        if (_directResult["pending_location_grafana"]
-            && hasDirectGrafanaConfiguration()) {
+        if (sendGrafana) {
             var grafanaParameters = DirectGrafanaAdapter.locationPayload(
                 _directResult["event_id"],
                 sequence,
@@ -2238,7 +2453,7 @@ class PanicView extends WatchUi.View {
             } catch (error) {
                 _inFlight = false;
                 _requestEventId = null;
-                scheduleDirectLocationRetry();
+                scheduleDirectLocationRetry(false);
             }
             return;
         }
@@ -2283,7 +2498,7 @@ class PanicView extends WatchUi.View {
             rejectDirectLocationProvider(true);
             return;
         }
-        scheduleDirectLocationRetry();
+        scheduleDirectLocationRetry(true);
     }
 
     function onGrafanaLocationResponse(
@@ -2305,11 +2520,11 @@ class PanicView extends WatchUi.View {
         if (responseCode >= 200 && responseCode < 300) {
             completeDirectLocationProvider(false);
         } else if (responseCode == 429) {
-            scheduleDirectLocationRetry();
+            scheduleDirectLocationRetry(false);
         } else if (responseCode >= 400 && responseCode < 500) {
             rejectDirectLocationProvider(false);
         } else {
-            scheduleDirectLocationRetry();
+            scheduleDirectLocationRetry(false);
         }
     }
 
@@ -2325,6 +2540,8 @@ class PanicView extends WatchUi.View {
         } else {
             pendingGrafana = false;
         }
+        pendingPushover = pendingPushover && hasBoundDirectPushover();
+        pendingGrafana = pendingGrafana && hasBoundDirectGrafana();
         var recordHex = _directResult["pending_location_hex"];
         if (pendingPushover || pendingGrafana) {
             if (!persistDirectTracking(
@@ -2336,7 +2553,8 @@ class PanicView extends WatchUi.View {
                     pendingPushover,
                     pendingGrafana
                 )) {
-                scheduleDirectLocationRetry();
+                _directLocationRetryBlocked = true;
+                setState("LOCATION STATE UNSAVED", "Reopen to retry local GPS state");
                 return;
             }
             _retryCount = 0;
@@ -2357,7 +2575,8 @@ class PanicView extends WatchUi.View {
                 false,
                 false
             )) {
-            scheduleDirectLocationRetry();
+            _directLocationRetryBlocked = true;
+            setState("LOCATION STATE UNSAVED", "Reopen to retry local GPS state");
             return;
         }
         _retryCount = 0;
@@ -2366,34 +2585,10 @@ class PanicView extends WatchUi.View {
     }
 
     function rejectDirectLocationProvider(pushover) {
-        if (_directResult == null) {
-            return;
-        }
-        var pendingPushover = _directResult["pending_location_pushover"];
-        var pendingGrafana = _directResult["pending_location_grafana"];
-        if (pushover) {
-            pendingPushover = false;
-        } else {
-            pendingGrafana = false;
-        }
-        if (!pendingPushover && !pendingGrafana) {
-            _directLocationRetryBlocked = true;
-            return;
-        }
-        if (!persistDirectTracking(
-                _directResult["next_location_sequence"],
-                _directResult["last_location_hex"],
-                _directResult["last_location_queued_at"],
-                _directResult["capture_stage"],
-                _directResult["pending_location_hex"],
-                pendingPushover,
-                pendingGrafana
-            )) {
-            _directLocationRetryBlocked = true;
-            return;
-        }
-        _retryCount = 0;
-        sendDirectLocation();
+        // A definite provider rejection is terminal for that target. Advance
+        // the single persisted fix just like a successful terminal outcome so
+        // it cannot block later fixes to another still-bound route.
+        completeDirectLocationProvider(pushover);
     }
 
     function isPushoverMessageAcceptance(data) {
@@ -2402,7 +2597,7 @@ class PanicView extends WatchUi.View {
             && isProviderReference(data["request"]);
     }
 
-    function scheduleDirectLocationRetry() {
+    function scheduleDirectLocationRetry(pushover) {
         if (!_visible
             || _directResult == null
             || _directResult["capture_stage"] == 3
@@ -2410,7 +2605,7 @@ class PanicView extends WatchUi.View {
             return;
         }
         if (_retryCount >= MAX_INITIAL_RETRIES) {
-            _directLocationRetryBlocked = true;
+            rejectDirectLocationProvider(pushover);
             return;
         }
         _retryCount += 1;

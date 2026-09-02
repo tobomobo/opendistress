@@ -124,10 +124,10 @@ The beta posts the TESTNOTRUF directly to Grafana, Pushover, or both. Its title
 always starts with `TESTNOTRUF`; its message always starts with
 `KEIN ECHTER NOTFALL`. If set, the optional display name appears only after the
 TEST marker. With both configured, the watch serializes provider calls through
-its one in-flight request gate: Pushover is attempted first, while Grafana is
-persisted as a separate pending route and also serves as fallback after a
-definite Pushover rejection. Success from either route is enough to start the
-acceptance cover and GPS drill; the second route continues independently.
+its one in-flight request gate: preferred Grafana is attempted first and
+Pushover is the independent fallback when Grafana is not definitely accepted.
+Success from either route is enough to start the acceptance cover and GPS
+drill. A fallback acceptance retains Grafana as a separately retryable route.
 
 [`source/DirectAlertProviders.mc`](source/DirectAlertProviders.mc) owns the
 shared emergency-profile model and the concrete Grafana and Pushover payload
@@ -137,6 +137,17 @@ shared profile at this adapter boundary without changing activation semantics.
 Because each provider has different acceptance and acknowledgement evidence,
 its pending/accepted state must still be added explicitly rather than hidden
 behind a false common `delivered` flag.
+
+Every accepted direct route stores a one-way credential/destination fingerprint.
+GPS is sent only while the current phone-synced provider settings match that
+fingerprint; changing a webhook, user key, or application token pauses that
+route rather than retargeting an accepted incident. A route changed while a fix
+is pending is dropped from that fix so it cannot stall another accepted route;
+restoring the original settings makes it eligible for subsequent fixes.
+Likewise, exhausting one route's bounded retry budget advances that target and
+continues any other accepted route instead of blocking the shared GPS slot.
+Pre-acceptance cached coordinates are rejected, so the first direct fix must
+have been captured at or after provider acceptance.
 
 Grafana's formatted webhook receives `alert_uid`, `title`, `state`, `message`,
 and the optional emergency-card fields; later GPS updates reuse the same

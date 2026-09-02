@@ -1,7 +1,74 @@
 // SPDX-License-Identifier: MIT
 
 import Toybox.Application.Properties;
+import Toybox.Cryptography;
 import Toybox.Lang;
+import Toybox.StringUtil;
+
+module DirectAlertSafety {
+    function fingerprint(
+        domain as Lang.String,
+        keyText as Lang.String,
+        valueText as Lang.String
+    ) as Lang.String {
+        if (domain.length() < 1
+            || keyText.length() < 1) {
+            return "";
+        }
+        var keyBytes = StringUtil.convertEncodedString(keyText, {
+            :fromRepresentation => StringUtil.REPRESENTATION_STRING_PLAIN_TEXT,
+            :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY,
+            :encoding => StringUtil.CHAR_ENCODING_UTF8
+        });
+        var messageBytes = StringUtil.convertEncodedString(
+            domain + "\n" + valueText,
+            {
+                :fromRepresentation => StringUtil.REPRESENTATION_STRING_PLAIN_TEXT,
+                :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY,
+                :encoding => StringUtil.CHAR_ENCODING_UTF8
+            }
+        );
+        var hmac = new Cryptography.HashBasedMessageAuthenticationCode({
+            :algorithm => Cryptography.HASH_SHA256,
+            :key => keyBytes
+        });
+        hmac.update(messageBytes);
+        return PanicProtocol.base64Url(hmac.digest());
+    }
+
+    function isBound(storedFingerprint, currentFingerprint) {
+        if (!PanicProtocol.isCanonicalDigest(storedFingerprint)) {
+            return false;
+        }
+        if (!PanicProtocol.isCanonicalDigest(currentFingerprint)) {
+            return false;
+        }
+        return PanicProtocol.secureEquals(storedFingerprint, currentFingerprint);
+    }
+
+    function isActiveRoute(
+        accepted,
+        storedFingerprint,
+        currentFingerprint
+    ) {
+        if (!(accepted instanceof Lang.Boolean) || !accepted) {
+            return false;
+        }
+        return isBound(storedFingerprint, currentFingerprint);
+    }
+
+    function isFreshCapture(acceptedAt, captureAt, now) {
+        if (!(acceptedAt instanceof Lang.Number)
+            || !(captureAt instanceof Lang.Number)
+            || !(now instanceof Lang.Number)) {
+            return false;
+        }
+        if (acceptedAt <= 0 || captureAt < acceptedAt) {
+            return false;
+        }
+        return captureAt <= now;
+    }
+}
 
 module DirectAlertProfile {
     const TEST_MESSAGE =
@@ -104,6 +171,26 @@ module DirectPushoverAdapter {
         return true;
     }
 
+    function configurationFingerprint() as Lang.String {
+        return configurationFingerprintFor(
+            Properties.getValue("pushoverUserKey"),
+            Properties.getValue("pushoverApiToken")
+        );
+    }
+
+    function configurationFingerprintFor(userKey, apiToken) as Lang.String {
+        if (!isToken(userKey) || !isToken(apiToken)) {
+            return "";
+        }
+        var validatedUserKey = userKey as Lang.String;
+        var validatedApiToken = apiToken as Lang.String;
+        return DirectAlertSafety.fingerprint(
+            "spb.direct.pushover.config.v1",
+            validatedApiToken,
+            "user=" + validatedUserKey + "\ntoken=" + validatedApiToken + "\n"
+        );
+    }
+
     function initialParameters(event, now) {
         var parameters = {
             "token" => Properties.getValue("pushoverApiToken"),
@@ -150,6 +237,22 @@ module DirectGrafanaAdapter {
         return Properties.getValue("grafanaWebhookUrl");
     }
 
+    function configurationFingerprint() as Lang.String {
+        return configurationFingerprintFor(endpoint());
+    }
+
+    function configurationFingerprintFor(webhookUrl) as Lang.String {
+        if (!PanicProtocol.isGrafanaWebhookUrl(webhookUrl)) {
+            return "";
+        }
+        var validatedWebhookUrl = webhookUrl as Lang.String;
+        return DirectAlertSafety.fingerprint(
+            "spb.direct.grafana.config.v1",
+            validatedWebhookUrl,
+            "webhook=" + validatedWebhookUrl + "\n"
+        );
+    }
+
     function initialPayload(eventId) {
         var profile = DirectAlertProfile.fields();
         return profilePayload(
@@ -192,4 +295,74 @@ module DirectGrafanaAdapter {
         }
         return payload;
     }
+}
+
+(:test)
+function directProviderSafetyTransitions(logger) {
+    var userKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    var firstToken = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+    var secondToken = "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
+    var firstPushover = DirectPushoverAdapter.configurationFingerprintFor(
+        userKey,
+        firstToken
+    );
+    var secondPushover = DirectPushoverAdapter.configurationFingerprintFor(
+        userKey,
+        secondToken
+    );
+    var firstGrafana = DirectGrafanaAdapter.configurationFingerprintFor(
+        "https://oncall-prod-eu-west-0.grafana.net/oncall/"
+        + "integrations/v1/formatted_webhook/"
+        + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/"
+    );
+    var secondGrafana = DirectGrafanaAdapter.configurationFingerprintFor(
+        "https://oncall-prod-eu-west-0.grafana.net/oncall/"
+        + "integrations/v1/formatted_webhook/"
+        + "ZyXwVuTsRqPoNmLkJiHgFeDcBa543210/"
+    );
+    if (!DirectAlertSafety.isBound(firstPushover, firstPushover)) {
+        logger.error("Pushover self-binding failed");
+        return false;
+    }
+    if (DirectAlertSafety.isBound(firstPushover, secondPushover)) {
+        logger.error("Pushover destination change remained bound");
+        return false;
+    }
+    if (!DirectAlertSafety.isBound(firstGrafana, firstGrafana)) {
+        logger.error("Grafana self-binding failed");
+        return false;
+    }
+    if (DirectAlertSafety.isBound(firstGrafana, secondGrafana)) {
+        logger.error("Grafana destination change remained bound");
+        return false;
+    }
+    if (!DirectAlertSafety.isActiveRoute(true, firstGrafana, firstGrafana)) {
+        logger.error("Accepted matching route was not active");
+        return false;
+    }
+    if (DirectAlertSafety.isActiveRoute(true, firstGrafana, secondGrafana)) {
+        logger.error("Changed route remained active");
+        return false;
+    }
+    if (DirectAlertSafety.isActiveRoute(false, firstGrafana, firstGrafana)) {
+        logger.error("Direct-provider destination binding failed");
+        return false;
+    }
+    if (DirectAlertSafety.isFreshCapture(100, 99, 101)) {
+        logger.error("Pre-acceptance position was treated as fresh");
+        return false;
+    }
+    if (!DirectAlertSafety.isFreshCapture(100, 100, 101)) {
+        logger.error("Acceptance-time position was rejected");
+        return false;
+    }
+    if (!DirectAlertSafety.isFreshCapture(100, 101, 101)) {
+        logger.error("Current position was rejected");
+        return false;
+    }
+    if (DirectAlertSafety.isFreshCapture(100, 102, 101)) {
+        logger.error("Direct-provider fresh-position boundary failed");
+        return false;
+    }
+    return true;
 }

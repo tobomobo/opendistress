@@ -75,8 +75,13 @@ alone does not stop it.
 The relay-free Garmin beta has a deliberately separate direct-GPS drill. It
 starts only after a direct TEST has received and durably stored valid Grafana
 Cloud IRM or Pushover acceptance. For up to one foreground hour it uses the real
-watch position API and sends a first fix plus materially changed later fixes to
-every provider that accepted the trigger. Grafana updates share the trigger's
+watch position API and sends a first post-acceptance fix plus materially changed
+later fixes to every provider whose current configuration matches the one-way
+fingerprint stored with its trigger acceptance. A pre-acceptance cached fix is
+rejected, and changing provider settings pauses rather than retargets GPS. A
+changed route or an exhausted per-target retry budget cannot retain the shared
+fix slot and starve another still-bound provider.
+Grafana updates share the trigger's
 alert UID; Pushover uses separate messages with map URLs. This is not a v1
 payload and does not alter the normative rule that TEST v1 is non-sensitive.
 It is also not v2: each selected direct provider and the map provider see the

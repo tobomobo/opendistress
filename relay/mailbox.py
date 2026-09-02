@@ -28,6 +28,10 @@ MAX_LIFETIME_SECONDS = 86_400
 RETENTION_SECONDS = 86_400
 MESSAGE_CIPHERTEXT_BYTES = 512
 ACK_CIPHERTEXT_BYTES = 256
+PUBLIC_CAPABILITY_HASHES = frozenset(
+    hashlib.sha256(bytes([fill]) * 32).digest()
+    for fill in (0xA1, 0xB2, 0xC3)
+)
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{22}$")
 CAPABILITY_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 HEX_32_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -184,6 +188,10 @@ def load_mailboxes(path: str | os.PathLike[str]) -> dict[str, dict]:
             hashes.append(bytes.fromhex(value))
         if len(set(hashes)) != 3:
             raise ValueError(f"mailbox {mailbox_id!r} must use distinct capabilities")
+        if record["enabled"] and any(value in PUBLIC_CAPABILITY_HASHES for value in hashes):
+            raise ValueError(
+                f"mailbox {mailbox_id!r} uses a published example capability"
+            )
         result[mailbox_id] = {
             "enabled": record["enabled"],
             "append": hashes[0],

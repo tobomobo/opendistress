@@ -55,16 +55,18 @@ supplementary photo link. Grafana keeps the lock-screen push short; Pushover may
 show its message content on the lock screen. These details sync through Garmin
 and are plaintext to the selected providers, so they are outside the privacy
 guarantees of the normative protocol. With both providers configured, the watch
-uses
-one network request at a time but records each provider independently; Pushover
-is attempted first and Grafana remains a separate route. The first HTTP-level
+uses one network request at a time and attempts the preferred Grafana route
+first; Pushover is the independent fallback when Grafana is not definitely
+accepted. The first HTTP-level
 provider acceptance changes the foreground app to its neutral analog cover and
 triggers a double haptic. This proves neither phone delivery, Important/Critical
 Push behavior, human acknowledgement, nor that help is coming.
 
 Only after the first stored acceptance, the foreground beta starts the watch's
-real position API for up to one hour. Each provider that accepted the trigger
-receives the first fix and meaningful later movement; Grafana updates reuse the
+real position API for up to one hour. A cached fix older than that acceptance is
+rejected. Each provider that accepted the trigger receives the first fresh fix
+and meaningful later movement, but only while its current credentials match the
+fingerprint stored at acceptance; Grafana updates reuse the
 same alert UID, while Pushover uses separate map-link messages. These GPS drill
 messages are outside v1 TEST and plaintext to Grafana and/or Pushover plus the
 map-link provider. Use them only with the owner's explicit consent. Simulator

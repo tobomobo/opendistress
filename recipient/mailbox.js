@@ -319,6 +319,10 @@ function openMessage(message, config) {
 function createAcknowledgement(message, event, acknowledgedAt, config, options = {}) {
     validateMessage(message);
     validateEvent(event);
+    const recoveredEvent = openMessage(message, config);
+    if (canonicalInnerEvent(recoveredEvent) !== canonicalInnerEvent(event)) {
+        throw new Error("acknowledged event does not match the authenticated capsule");
+    }
     if (!Number.isInteger(acknowledgedAt)
         || acknowledgedAt < 0
         || acknowledgedAt > 2147483647) {

@@ -135,8 +135,10 @@ GPS, and foreground lifetime remain device-specific gates.
 ## 2026-09-01 — Add a phone-configured direct Pushover TEST before the relay
 
 The private beta accepts a Pushover user/group key and application token through
-Garmin's password-type app settings and sends the fixed non-sensitive TEST
-directly from the foreground watch app. This deliberately avoids requiring an
+Garmin's password-type app settings and sends a clearly marked TEST request
+directly from the foreground watch app. Its fixed core text is non-sensitive;
+the later phone-configured emergency card is an explicit, opt-in direct-provider
+exception outside normative TEST v1. This deliberately avoids requiring an
 operator-run relay for the first end-to-end physical proof. A distinct beta app
 ID is required so Garmin Connect/Connect IQ can deliver settings without
 publishing the production listing.
@@ -191,19 +193,22 @@ work, deployment, and physical drills remain separate gates.
 ## 2026-09-02 — Add Grafana Cloud IRM as a relay-free receiver route
 
 The Garmin beta accepts one secret Grafana Cloud IRM formatted-webhook URL via
-Garmin's password-type phone settings. It sends the same fixed non-sensitive
-TEST used by the Pushover proof, with the event ID as Grafana `alert_uid`.
+Garmin's password-type phone settings. It sends the same clearly marked TEST
+core used by the Pushover proof, plus any opt-in emergency-card fields, with the
+event ID as Grafana `alert_uid`.
 Grafana can be the only route or can coexist with Pushover. The watch keeps its
-single in-flight request boundary: it attempts Pushover first when configured,
-persists Grafana as a separate pending provider, and uses Grafana as fallback
-after a definite Pushover rejection. Acceptance by either provider starts the
-analog cover, double haptic, and bounded foreground GPS drill.
+single in-flight request boundary: it attempts preferred Grafana first and uses
+Pushover as an independent fallback when Grafana is not definitely accepted.
+A Pushover fallback acceptance preserves Grafana as a separately retryable
+provider. Acceptance by either provider starts the analog cover, double haptic,
+and bounded foreground GPS drill.
 
 Grafana HTTP 2xx is recorded only as provider ingestion acceptance. Important
 Push, OS interruption, in-app ACK, escalation, and human response remain
 separate receiver evidence; the watch does not query or display Grafana ACKs.
-GPS updates reuse the same alert UID and are sent to every provider whose
-trigger acceptance was stored. Their remaining targets are persisted with the
-fix before submission. This adds no Grafana route to encrypted relay LIVE and
+GPS updates reuse the same alert UID and are sent only to accepted provider
+configurations whose current credential/destination fingerprint still matches.
+Pre-acceptance cached fixes are rejected. Remaining targets are persisted with
+the fix before submission. This adds no Grafana route to encrypted relay LIVE and
 does not change the frozen v1/v2 wire contracts. Grafana OSS OnCall is excluded;
 the implemented target is Grafana Cloud IRM.
