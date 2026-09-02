@@ -85,15 +85,6 @@ class PanicView extends WatchUi.View {
     const COVER_REFRESH_MS = 60000;
     const RETRY_DELAY_MS = 5000;
     const WIFI_CHECK_TIMEOUT_MS = 10000;
-    const PUSHOVER_URL = "https://api.pushover.net/1/messages.json";
-    const DIRECT_TEST_MESSAGE =
-        "KEIN ECHTER NOTFALL. Garmin Testausloesung; keine Hilfeleistung erforderlich.";
-    const DIRECT_LOCATION_MESSAGE =
-        "KEIN ECHTER NOTFALL. Aktueller Garmin GPS-Teststandort.";
-    const DIRECT_TEST_TITLE = "TESTNOTRUF";
-    const DIRECT_LOCATION_TITLE = "TESTNOTRUF — GPS";
-    const PUSHOVER_TOKEN_ALPHABET =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     const PROVIDER_REFERENCE_ALPHABET =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
     const MATERIAL_MOVE_E7 = 5000;
@@ -372,8 +363,7 @@ class PanicView extends WatchUi.View {
 
     function hasDirectPushoverConfiguration() {
         try {
-            return isPushoverToken(Properties.getValue("pushoverUserKey"))
-                && isPushoverToken(Properties.getValue("pushoverApiToken"));
+            return DirectPushoverAdapter.isConfigured();
         } catch (error) {
             return false;
         }
@@ -381,9 +371,7 @@ class PanicView extends WatchUi.View {
 
     function hasDirectGrafanaConfiguration() {
         try {
-            return PanicProtocol.isGrafanaWebhookUrl(
-                Properties.getValue("grafanaWebhookUrl")
-            );
+            return DirectGrafanaAdapter.isConfigured();
         } catch (error) {
             return false;
         }
@@ -391,19 +379,6 @@ class PanicView extends WatchUi.View {
 
     function hasDirectAlertConfiguration() {
         return hasDirectPushoverConfiguration() || hasDirectGrafanaConfiguration();
-    }
-
-    function isPushoverToken(value) {
-        if (!(value instanceof Lang.String) || value.length() != 30) {
-            return false;
-        }
-        var characters = value.toCharArray();
-        for (var i = 0; i < characters.size(); i += 1) {
-            if (PUSHOVER_TOKEN_ALPHABET.find(characters[i].toString()) == null) {
-                return false;
-            }
-        }
-        return true;
     }
 
     function hasProvisionedLiveConfiguration() {
@@ -600,7 +575,7 @@ class PanicView extends WatchUi.View {
                     ? PanicProtocol.stringEquals(value["request"], "")
                         && PanicProtocol.stringEquals(value["receipt"], "")
                     : isProviderReference(value["request"])
-                        && isPushoverToken(value["receipt"]))
+                        && DirectPushoverAdapter.isToken(value["receipt"]))
                 && (!value["grafana_accepted"] || !value["grafana_alert_pending"])
                 && value["tracking_expires_at"] instanceof Lang.Number
                 && value["tracking_expires_at"] >= 0
@@ -658,48 +633,6 @@ class PanicView extends WatchUi.View {
             }
         }
         return true;
-    }
-
-    function protectedPersonName() {
-        return optionalProfileText("protectedPersonName", 40);
-    }
-
-    function optionalProfileText(propertyKey, maxLength) {
-        var value = Properties.getValue(propertyKey);
-        if (!(value instanceof Lang.String)
-            || value.length() < 1
-            || value.length() > maxLength) {
-            return "";
-        }
-        return value as Lang.String;
-    }
-
-    function profilePhotoUrl() {
-        var value = optionalProfileText("profilePhotoUrl", 512);
-        if (value.length() < 9
-            || value.find("https://") != 0
-            || value.find("@") != null
-            || value.find("#") != null) {
-            return "";
-        }
-        return value;
-    }
-
-    function grafanaProfileFields() {
-        return {
-            "person_name" => protectedPersonName(),
-            "home_address" => optionalProfileText("homeAddress", 160),
-            "children_info" => optionalProfileText("childrenInfo", 240),
-            "person_description" => optionalProfileText("personDescription", 240),
-            "background_info" => optionalProfileText("backgroundInfo", 320),
-            "response_instructions" => optionalProfileText("responseInstructions", 240),
-            "profile_photo_url" => profilePhotoUrl()
-        };
-    }
-
-    function personalizedTestTitle(baseTitle) {
-        var name = protectedPersonName();
-        return name.length() > 0 ? baseTitle + " — " + name : baseTitle;
     }
 
     function validActive(value) {
@@ -1940,15 +1873,7 @@ class PanicView extends WatchUi.View {
         _inFlight = true;
         _displayEventId = event["event_id"];
         setState("SENDING TEST", connectionSummary());
-        var parameters = {
-            "token" => Properties.getValue("pushoverApiToken"),
-            "user" => Properties.getValue("pushoverUserKey"),
-            "title" => personalizedTestTitle(DIRECT_TEST_TITLE),
-            "message" => DIRECT_TEST_MESSAGE,
-            "priority" => "2",
-            "retry" => "30",
-            "expire" => (event["expires_at"] - now).toString()
-        };
+        var parameters = DirectPushoverAdapter.initialParameters(event, now);
         var options = {
             :method => Communications.HTTP_REQUEST_METHOD_POST,
             :headers => {
@@ -1959,7 +1884,7 @@ class PanicView extends WatchUi.View {
         };
         try {
             Communications.makeWebRequest(
-                PUSHOVER_URL,
+                DirectPushoverAdapter.ENDPOINT,
                 parameters,
                 options,
                 method(:onPushoverResponse)
@@ -1976,20 +1901,7 @@ class PanicView extends WatchUi.View {
     }
 
     function grafanaAlertPayload(eventId) {
-        var profile = grafanaProfileFields();
-        return {
-            "alert_uid" => eventId,
-            "title" => personalizedTestTitle(DIRECT_TEST_TITLE),
-            "state" => "alerting",
-            "message" => DIRECT_TEST_MESSAGE,
-            "person_name" => profile["person_name"],
-            "home_address" => profile["home_address"],
-            "children_info" => profile["children_info"],
-            "person_description" => profile["person_description"],
-            "background_info" => profile["background_info"],
-            "response_instructions" => profile["response_instructions"],
-            "profile_photo_url" => profile["profile_photo_url"]
-        };
+        return DirectGrafanaAdapter.initialPayload(eventId);
     }
 
     function sendDirectGrafanaInitial(event) {
@@ -2024,7 +1936,7 @@ class PanicView extends WatchUi.View {
         };
         try {
             Communications.makeWebRequest(
-                Properties.getValue("grafanaWebhookUrl"),
+                DirectGrafanaAdapter.endpoint(),
                 grafanaAlertPayload(eventId),
                 options,
                 method(:onGrafanaAlertResponse)
@@ -2201,7 +2113,7 @@ class PanicView extends WatchUi.View {
         return data instanceof Lang.Dictionary
             && data["status"] == 1
             && isProviderReference(data["request"])
-            && isPushoverToken(data["receipt"]);
+            && DirectPushoverAdapter.isToken(data["receipt"]);
     }
 
     function confirmProviderAcceptance() {
@@ -2274,17 +2186,11 @@ class PanicView extends WatchUi.View {
         _inFlight = true;
         if (_directResult["pending_location_pushover"]
             && hasDirectPushoverConfiguration()) {
-            var parameters = {
-                "token" => Properties.getValue("pushoverApiToken"),
-                "user" => Properties.getValue("pushoverUserKey"),
-                "title" => personalizedTestTitle(DIRECT_LOCATION_TITLE),
-                "message" => DIRECT_LOCATION_MESSAGE
-                    + " Update " + sequence.format("%d") + ".",
-                "priority" => sequence == 1 ? "1" : "0",
-                "timestamp" => captureAt.format("%d"),
-                "url" => mapUrl,
-                "url_title" => "Open current location"
-            };
+            var parameters = DirectPushoverAdapter.locationParameters(
+                sequence,
+                captureAt,
+                mapUrl
+            );
             var pushoverOptions = {
                 :method => Communications.HTTP_REQUEST_METHOD_POST,
                 :headers => {
@@ -2295,7 +2201,7 @@ class PanicView extends WatchUi.View {
             };
             try {
                 Communications.makeWebRequest(
-                    PUSHOVER_URL,
+                    DirectPushoverAdapter.ENDPOINT,
                     parameters,
                     pushoverOptions,
                     method(:onDirectLocationResponse)
@@ -2309,22 +2215,11 @@ class PanicView extends WatchUi.View {
         }
         if (_directResult["pending_location_grafana"]
             && hasDirectGrafanaConfiguration()) {
-            var profile = grafanaProfileFields();
-            var grafanaParameters = {
-                "alert_uid" => _directResult["event_id"],
-                "title" => personalizedTestTitle(DIRECT_LOCATION_TITLE),
-                "state" => "alerting",
-                "message" => DIRECT_LOCATION_MESSAGE
-                    + " Update " + sequence.format("%d") + ". " + mapUrl,
-                "link_to_upstream_details" => mapUrl,
-                "person_name" => profile["person_name"],
-                "home_address" => profile["home_address"],
-                "children_info" => profile["children_info"],
-                "person_description" => profile["person_description"],
-                "background_info" => profile["background_info"],
-                "response_instructions" => profile["response_instructions"],
-                "profile_photo_url" => profile["profile_photo_url"]
-            };
+            var grafanaParameters = DirectGrafanaAdapter.locationPayload(
+                _directResult["event_id"],
+                sequence,
+                mapUrl
+            );
             var grafanaOptions = {
                 :method => Communications.HTTP_REQUEST_METHOD_POST,
                 :headers => {
@@ -2335,7 +2230,7 @@ class PanicView extends WatchUi.View {
             };
             try {
                 Communications.makeWebRequest(
-                    Properties.getValue("grafanaWebhookUrl"),
+                    DirectGrafanaAdapter.endpoint(),
                     grafanaParameters,
                     grafanaOptions,
                     method(:onGrafanaLocationResponse)

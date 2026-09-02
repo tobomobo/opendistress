@@ -27,10 +27,13 @@ its optional protected-person display name and emergency-card fields synchronize
 through Garmin and are stored on the watch. The display name appears in TEST
 titles sent to each selected provider. The home address, children/family
 information, person description, background, responder instructions, and
-optional HTTPS photo URL are sent only to Grafana in the webhook payload. A
-short Grafana mobile template can keep those fields off the lock screen, but
-Grafana still receives them and an image host learns when the photo URL is
-retrieved.
+optional HTTPS photo URL are mapped independently for each direct provider.
+Grafana receives structured fields in the webhook payload; its short mobile
+template can keep them off the lock screen. Pushover receives bounded profile
+text in the notification message and the photo URL as a supplementary link, so
+its app or the receiver OS may expose the text on the lock screen. Each selected
+provider receives its mapped content, and an image host learns when the photo
+URL is retrieved.
 After the clearly marked TEST alert receives valid Grafana Cloud IRM or
 Pushover acceptance, a one-hour foreground GPS drill can send exact coordinates
 to every direct provider that accepted the trigger and in Google Maps URLs.

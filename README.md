@@ -47,12 +47,15 @@ and hardware testing.
 The relay-free Garmin path is deliberately a bounded TEST proof of concept. It
 sends a clearly marked TEST alert directly to a phone-configured Grafana Cloud
 IRM formatted webhook, Pushover, or both. Phone-editable settings can add an
-optional display name and a Grafana-only emergency card containing a home
+optional display name and a provider-neutral emergency card containing a home
 address, children/family information, a person description, background,
-responder instructions, and an HTTPS photo URL. The lock-screen push stays
-short; the card appears only after opening the Grafana alert. These details
-sync through Garmin and are plaintext to Grafana, so they are outside the
-privacy guarantees of the normative protocol. With both providers configured, the watch uses
+responder instructions, and an HTTPS photo URL. Separate adapters render that
+model into Grafana's opened detail view or Pushover's bounded message plus
+supplementary photo link. Grafana keeps the lock-screen push short; Pushover may
+show its message content on the lock screen. These details sync through Garmin
+and are plaintext to the selected providers, so they are outside the privacy
+guarantees of the normative protocol. With both providers configured, the watch
+uses
 one network request at a time but records each provider independently; Pushover
 is attempted first and Grafana remains a separate route. The first HTTP-level
 provider acceptance changes the foreground app to its neutral analog cover and

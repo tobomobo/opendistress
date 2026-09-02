@@ -53,7 +53,11 @@ notification, sound, or battery-management settings.
 For the relay-free Garmin beta POC, enter the Pushover user/group key and a
 dedicated test application token in the Garmin app settings instead of changing
 the relay route. One top-button press sends the same explicitly non-sensitive
-emergency TEST. The watch's double haptic and analog cover record provider API
+emergency TEST plus any optional shared emergency-card text and photo link. The
+card is outside normative v1 TEST and visible to Garmin and Pushover. Confirm
+with the receiver locked that the device's preview policy is acceptable; unlike
+Grafana, Pushover has no separate rich-detail template that guarantees the card
+appears only after opening the app. The watch's double haptic and analog cover record provider API
 acceptance only; this beta does not poll the receipt, so acknowledgement must be
 verified directly on the receiver and in Pushover during the supervised drill.
 Only after that acceptance the foreground beta may send separate real-GPS

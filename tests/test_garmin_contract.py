@@ -360,15 +360,21 @@ class GarminContractTests(unittest.TestCase):
 
     def test_direct_pushover_test_is_emergency_and_contains_no_live_payload(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
+        providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         direct = source[
             source.index("function sendDirectPushover(")
             : source.index("function grafanaAlertPayload(")
         ]
 
-        self.assertIn('PUSHOVER_URL = "https://api.pushover.net/1/messages.json"', source)
-        self.assertIn("DIRECT_TEST_MESSAGE", direct)
-        self.assertIn('"priority" => "2"', direct)
-        self.assertIn('"retry" => "30"', direct)
+        self.assertIn(
+            'const ENDPOINT = "https://api.pushover.net/1/messages.json"',
+            providers,
+        )
+        self.assertIn("DirectPushoverAdapter.ENDPOINT", direct)
+        self.assertIn("DirectPushoverAdapter.initialParameters(event, now)", direct)
+        self.assertIn("TEST_MESSAGE", providers)
+        self.assertIn('"priority" => "2"', providers)
+        self.assertIn('"retry" => "30"', providers)
         self.assertIn("REQUEST_CONTENT_TYPE_URL_ENCODED", direct)
         self.assertIn("method(:onPushoverResponse)", direct)
         self.assertNotIn("location", direct.lower())
@@ -376,6 +382,7 @@ class GarminContractTests(unittest.TestCase):
 
     def test_direct_test_identity_is_phone_editable_optional_and_test_only(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
+        providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         properties = ET.parse(GARMIN / "resources/properties/properties.xml").getroot()
         settings = ET.parse(GARMIN / "resources/settings/settings.xml").getroot()
         property_ids = {item.attrib["id"] for item in properties.findall("./property")}
@@ -389,29 +396,30 @@ class GarminContractTests(unittest.TestCase):
         config = identity_setting.find("./settingConfig")
         self.assertEqual(config.attrib["required"], "false")
         self.assertEqual(config.attrib["maxLength"], "40")
-        self.assertIn('const DIRECT_TEST_TITLE = "TESTNOTRUF"', source)
-        self.assertIn('const DIRECT_LOCATION_TITLE = "TESTNOTRUF — GPS"', source)
-        self.assertIn("KEIN ECHTER NOTFALL", source)
-        self.assertIn('optionalProfileText("protectedPersonName", 40)', source)
-        self.assertIn("function personalizedTestTitle(baseTitle)", source)
+        self.assertIn('const TEST_TITLE = "TESTNOTRUF"', providers)
+        self.assertIn('const LOCATION_TITLE = "TESTNOTRUF — GPS"', providers)
+        self.assertIn("KEIN ECHTER NOTFALL", providers)
+        self.assertIn('optionalText("protectedPersonName", 40)', providers)
+        self.assertIn("function personalizedTitle(baseTitle)", providers)
         self.assertEqual(
-            source.count('"title" => personalizedTestTitle(DIRECT_TEST_TITLE)'),
+            providers.count("DirectAlertProfile.TEST_TITLE"),
             2,
         )
         self.assertEqual(
-            source.count('"title" => personalizedTestTitle(DIRECT_LOCATION_TITLE)'),
+            providers.count("DirectAlertProfile.LOCATION_TITLE"),
             2,
         )
 
-    def test_optional_emergency_profile_is_phone_editable_and_grafana_only(self):
+    def test_optional_emergency_profile_is_shared_by_provider_adapters(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
+        providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         settings = ET.parse(GARMIN / "resources/settings/settings.xml").getroot()
         profile_limits = {
-            "@Properties.homeAddress": ("alphaNumeric", "160"),
-            "@Properties.childrenInfo": ("alphaNumeric", "240"),
-            "@Properties.personDescription": ("alphaNumeric", "240"),
-            "@Properties.backgroundInfo": ("alphaNumeric", "320"),
-            "@Properties.responseInstructions": ("alphaNumeric", "240"),
+            "@Properties.homeAddress": ("alphaNumeric", "120"),
+            "@Properties.childrenInfo": ("alphaNumeric", "150"),
+            "@Properties.personDescription": ("alphaNumeric", "150"),
+            "@Properties.backgroundInfo": ("alphaNumeric", "180"),
+            "@Properties.responseInstructions": ("alphaNumeric", "180"),
             "@Properties.profilePhotoUrl": ("url", None),
         }
         configs = {
@@ -428,18 +436,15 @@ class GarminContractTests(unittest.TestCase):
             else:
                 self.assertEqual(configs[key]["maxLength"], max_length)
 
-        pushover = source[
-            source.index("function sendDirectPushover(")
-            : source.index("function grafanaAlertPayload(")
+        profile = providers[
+            providers.index("module DirectAlertProfile")
+            : providers.index("module DirectPushoverAdapter")
         ]
-        initial_grafana = source[
-            source.index("function grafanaAlertPayload(")
-            : source.index("function sendDirectGrafanaInitial(")
+        pushover = providers[
+            providers.index("module DirectPushoverAdapter")
+            : providers.index("module DirectGrafanaAdapter")
         ]
-        location_grafana = source[
-            source.index('var grafanaParameters = {')
-            : source.index('var grafanaOptions = {')
-        ]
+        grafana = providers[providers.index("module DirectGrafanaAdapter") :]
         profile_fields = (
             "person_name",
             "home_address",
@@ -451,12 +456,35 @@ class GarminContractTests(unittest.TestCase):
         )
 
         for field in profile_fields:
-            self.assertNotIn(field, pushover)
-            self.assertIn(f'"{field}"', initial_grafana)
-            self.assertIn(f'"{field}"', location_grafana)
-        self.assertIn('value.find("https://") != 0', source)
-        self.assertIn('value.find("@") != null', source)
-        self.assertIn('value.find("#") != null', source)
+            self.assertIn(f'"{field}"', profile)
+            self.assertIn(f'profile["{field}"]', grafana)
+        self.assertIn("DirectAlertProfile.pushoverMessage()", pushover)
+        self.assertIn('parameters["url"] = photoUrl', pushover)
+        self.assertIn('parameters["url_title"] = "Open profile photo"', pushover)
+        self.assertIn("PUSHOVER_MAX_MESSAGE_CHARACTERS = 1024", profile)
+        self.assertIn("message.length() <= PUSHOVER_MAX_MESSAGE_CHARACTERS", profile)
+        maximum_profile_message = (
+            len("KEIN ECHTER NOTFALL. Garmin Testausloesung; keine Hilfeleistung erforderlich.")
+            + sum(
+                len(label)
+                for label in (
+                    "\n\nPERSON\n",
+                    "\n\nHEIMADRESSE\n",
+                    "\n\nKINDER / FAMILIE\n",
+                    "\n\nPERSONENBESCHREIBUNG\n",
+                    "\n\nHINTERGRUND\n",
+                    "\n\nHINWEISE FUER HELFER\n",
+                )
+            )
+            + 40
+            + sum(int(length) for _, length in profile_limits.values() if length)
+        )
+        self.assertLessEqual(maximum_profile_message, 1024)
+        self.assertIn('value.find("https://") != 0', providers)
+        self.assertIn('value.find("@") != null', providers)
+        self.assertIn('value.find("#") != null', providers)
+        self.assertIn("DirectPushoverAdapter.initialParameters(event, now)", source)
+        self.assertIn("DirectGrafanaAdapter.initialPayload(eventId)", source)
 
     def test_direct_gps_starts_only_after_a_provider_acceptance(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
@@ -488,6 +516,7 @@ class GarminContractTests(unittest.TestCase):
 
     def test_grafana_formatted_webhook_is_validated_and_acceptance_is_not_ack(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
+        providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
         request = source[
             source.index("function grafanaAlertPayload(")
@@ -507,8 +536,9 @@ class GarminContractTests(unittest.TestCase):
             : protocol.index("function randomId()")
         ]
         self.assertIn('value.find("@") != null', validator)
-        self.assertIn('"alert_uid" => eventId', request)
-        self.assertIn('"state" => "alerting"', request)
+        self.assertIn("DirectGrafanaAdapter.initialPayload(eventId)", request)
+        self.assertIn('"alert_uid" => eventId', providers)
+        self.assertIn('"state" => "alerting"', providers)
         self.assertIn("REQUEST_CONTENT_TYPE_JSON", request)
         self.assertIn("responseCode >= 200 && responseCode < 300", response)
         self.assertIn("responseCode != 429", response)
@@ -558,6 +588,7 @@ class GarminContractTests(unittest.TestCase):
 
     def test_direct_gps_sends_real_map_link_and_requires_provider_acceptance(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
+        providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         send = source[
             source.index("function sendDirectLocation()")
             : source.index("function coordinateE7Text(")
@@ -569,17 +600,16 @@ class GarminContractTests(unittest.TestCase):
 
         self.assertIn("Lang.NUMBER_FORMAT_SINT32", send)
         self.assertIn('"https://maps.google.com/?q="', send)
-        self.assertEqual(
-            send.count('"title" => personalizedTestTitle(DIRECT_LOCATION_TITLE)'),
-            2,
-        )
-        self.assertIn("DIRECT_LOCATION_MESSAGE", send)
-        self.assertIn('"priority" => sequence == 1 ? "1" : "0"', send)
-        self.assertIn('"timestamp" => captureAt.format("%d")', send)
+        self.assertIn("DirectPushoverAdapter.locationParameters(", send)
+        self.assertIn("DirectGrafanaAdapter.locationPayload(", send)
+        self.assertEqual(providers.count("DirectAlertProfile.LOCATION_TITLE"), 2)
+        self.assertIn("DirectAlertProfile.LOCATION_MESSAGE", providers)
+        self.assertIn('"priority" => sequence == 1 ? "1" : "0"', providers)
+        self.assertIn('"timestamp" => captureAt.format("%d")', providers)
         self.assertIn("method(:onDirectLocationResponse)", send)
-        self.assertIn('"alert_uid" => _directResult["event_id"]', send)
-        self.assertIn('"state" => "alerting"', send)
-        self.assertIn('"link_to_upstream_details" => mapUrl', send)
+        self.assertIn('"alert_uid" => eventId', providers)
+        self.assertIn('"state" => "alerting"', providers)
+        self.assertIn('payload["link_to_upstream_details"] = sourceLink', providers)
         self.assertIn("method(:onGrafanaLocationResponse)", send)
         self.assertIn("responseCode == 200 && isPushoverMessageAcceptance(data)", response)
         self.assertIn("responseCode >= 200 && responseCode < 300", response)

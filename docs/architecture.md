@@ -92,11 +92,14 @@ submission; provider-call ambiguity may therefore produce a duplicate retry.
   The current beta stores a secret Grafana Cloud IRM webhook URL, Pushover
   destination/application keys, or both there and sends a TEST directly to
   those routes. It may also store an optional protected-person display name and
-  a Grafana-only emergency card containing home/family/person/background,
+  a provider-neutral emergency card containing home/family/person/background,
   responder-instruction, and photo-link fields. The name is intentionally
-  included in provider-visible TEST titles. Grafana receives the full card in
-  its webhook body while the configured mobile template uses only the short
-  title and message. Garmin and Grafana still process every card field. Those
+  included in provider-visible TEST titles. A shared profile module feeds
+  concrete adapters: Grafana receives structured fields while Pushover receives
+  bounded profile text and a supplementary photo link. Grafana's configured
+  mobile template uses only the short title and message; Pushover has no
+  equivalent detail-template boundary and may expose message text on the lock
+  screen. Garmin and each selected provider process their mapped fields. Those
   values are not LIVE content/authentication keys. LIVE
   credentials are supplied only in a private personal build.
 - The relay sees timing, opaque device/incident/route identifiers, event kind,
@@ -114,7 +117,7 @@ submission; provider-call ambiguity may therefore produce a duplicate retry.
 
 The direct Garmin-to-provider TEST path intentionally sits beside, not inside,
 the normative event protocol. It is a low-setup transport proof: no relay is
-required, its optional Grafana emergency card is not a v1 TEST field, the TEST
+required, its optional provider-neutral emergency card is not a v1 TEST field, the TEST
 contains no location or LIVE content, and at least
 one validated provider acceptance is persisted before the analog acceptance
 cover appears or direct GPS begins. Grafana `2xx` proves webhook ingestion;

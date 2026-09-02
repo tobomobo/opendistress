@@ -9,8 +9,8 @@ and a bounded relay-free direct-provider TEST path:
 - an app-list entry, static glance, and published complication;
 - immediate phone/default-path submission plus one best-effort Wi-Fi check and
   immutable retry when Garmin reports the phone path unavailable.
-- direct Grafana Cloud IRM formatted-webhook TEST submission and optional
-  Pushover emergency TEST fallback using phone-editable app settings;
+- independent direct Grafana Cloud IRM formatted-webhook and Pushover emergency
+  TEST adapters using phone-editable app settings;
 - a bounded, explicitly privacy-relaxed direct-GPS drill after provider
   acceptance.
 
@@ -18,7 +18,7 @@ When a valid Grafana webhook or valid Pushover settings are present, the top har
 (`START`/`ENTER`) immediately creates and sends a clearly marked TESTNOTRUF.
 An optional protected-person name from phone-editable app settings is appended
 to the notification title. The same settings screen can hold an optional
-Grafana emergency card: home address, children/family information, a person
+provider-neutral emergency card: home address, children/family information, a person
 description, background, responder instructions, and an HTTPS photo URL.
 Omitting any or all of it never blocks activation.
 DOWN is consumed without triggering. A fully provisioned personal build with
@@ -87,10 +87,9 @@ Response signatures retain a constant-work character comparison.
 
 The end-user TEST path needs at least one direct route:
 
-- preferred: a Grafana **Cloud IRM** formatted-webhook URL from a custom
-  integration;
-- optional fallback: the 30-character Pushover user/group key and 30-character
-  application API token.
+- a Grafana **Cloud IRM** formatted-webhook URL from a custom integration; or
+- the 30-character Pushover user/group key and 30-character application API
+  token.
 
 The Grafana URL must be HTTPS, end in a token plus `/`, and use a
 `*.grafana.net` host with `/integrations/v1/formatted_webhook/`. The URL is a
@@ -105,9 +104,10 @@ Install the Beta/App-Store artifact, then edit the route credentials, optional
 IQ Store app, Garmin Connect, or Garmin Express. The card supports a home
 address, children/family information, a person description, relevant
 background, responder instructions, and an HTTPS photo URL. Garmin's standard
-settings UI cannot upload a photo, so the last field is a link to an image that
-Grafana and the image host can retrieve. The watch receives the updated values through Garmin app
-settings and refreshes an idle setup screen
+settings UI cannot upload a photo, so the last field is a link that Grafana can
+render and Pushover can expose for deliberate opening. The image host sees
+retrieval. The watch receives the updated values through Garmin app settings
+and refreshes an idle setup screen
 without a reinstall. If a TEST is already pending after a rejected
 configuration, saving corrected valid values retries that same durable event
 automatically. A USB-sideloaded PRG does not provide this normal phone
@@ -128,6 +128,15 @@ its one in-flight request gate: Pushover is attempted first, while Grafana is
 persisted as a separate pending route and also serves as fallback after a
 definite Pushover rejection. Success from either route is enough to start the
 acceptance cover and GPS drill; the second route continues independently.
+
+[`source/DirectAlertProviders.mc`](source/DirectAlertProviders.mc) owns the
+shared emergency-profile model and the concrete Grafana and Pushover payload
+adapters. Watch activation, persistence, provider ordering, acceptance, and GPS
+state remain in `PanicApp.mc`; adding another direct service should map the
+shared profile at this adapter boundary without changing activation semantics.
+Because each provider has different acceptance and acknowledgement evidence,
+its pending/accepted state must still be added explicitly rather than hidden
+behind a false common `delivered` flag.
 
 Grafana's formatted webhook receives `alert_uid`, `title`, `state`, `message`,
 and the optional emergency-card fields; later GPS updates reuse the same
@@ -157,17 +166,26 @@ The Web message may conditionally render `person_name`, `home_address`,
 {{ payload.get("profile_photo_url", "") }}
 ```
 
+Pushover receives the same non-photo profile fields as a bounded plain-text
+message and receives the HTTPS photo as its supplementary URL. Pushover does
+not provide a separate structured detail template: its client or the operating
+system may show some or all of that message on the lock screen. The adapter
+therefore enforces Pushover's 1,024-character limit and falls back to the fixed
+TEST message if an unexpected settings value would exceed it. Pushover does not
+fetch a remote photo as an attachment; the recipient deliberately opens the
+link instead.
+
 The initial TEST contains no location or LIVE payload, but its optional display
-name is visible to Garmin and each selected provider. Its optional emergency
-card is sent only to Grafana, not Pushover. The fields are validated only for
-bounded length and the optional photo must be an HTTPS URL without embedded
-credentials or a fragment; content correctness remains the owner's
-responsibility. After acceptance,
+name and emergency card are visible to Garmin and each configured provider.
+The fields are validated for bounded length and the optional photo must be an
+HTTPS URL without embedded credentials or a fragment; content correctness
+remains the owner's responsibility. After acceptance,
 the direct-GPS drill may send exact coordinates in a Google Maps URL to each
 accepted provider. Garmin, Grafana and/or Pushover, and Google can therefore
 observe data in this explicitly privacy-relaxed path. Ambiguous provider
 recovery may duplicate an alert or location. These credentials and coordinates
-plus the emergency-card content are private and are stored or processed through the participating services;
+plus the emergency-card content are private and are stored or processed through
+the participating services;
 this is acceptable only for the bounded personal POC, not production LIVE
 enrollment.
 

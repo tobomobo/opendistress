@@ -27,8 +27,10 @@
   those settings without releasing the app publicly; a bare USB PRG sideload
   is not the end-user configuration path. The settings UI supports text and URL
   values but not a photo-file upload. The beta therefore accepts only an
-  optional HTTPS photo URL for its Grafana emergency card; Garmin, Grafana, and
-  the image host remain in that privacy boundary.
+  optional HTTPS photo URL for its shared emergency card. Grafana can render
+  that URL as an image; Pushover can only expose it as a supplementary link
+  unless the sender uploads image bytes. Garmin, each provider, and the image
+  host remain in that privacy boundary.
 - The public communications API does not let an app select BLE/phone versus
   watch Wi-Fi for a normal web request. The app submits immediately, then on a
   specific unavailable/timeout phone result asks Garmin once whether a saved
@@ -68,6 +70,10 @@
   alarm/DND behavior depend on recipient-side app and OS permissions and remain
   unproven until the locked/silent physical rows pass. ntfy priority has no
   equivalent Critical Alert guarantee here.
+- Pushover has no independent rich-detail template. The beta maps the shared
+  emergency card into its bounded message body and photo link, so the receiver
+  OS may expose sensitive profile text on the lock screen. Grafana can keep its
+  mobile push short and show structured detail only after opening the alert.
 - The direct settings store either a secret Grafana formatted-webhook URL,
   private Pushover keys, or both in Garmin app properties and on the watch;
   Garmin services carry the settings sync. Grafana Cloud IRM can generate

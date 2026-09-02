@@ -6,7 +6,7 @@
     <string id="ProtectedPersonNameTitle">Protected person name</string>
     <string id="ProtectedPersonNamePrompt">For example: Alex</string>
     <string id="EmergencyProfileGroupTitle">TEST emergency card</string>
-    <string id="EmergencyProfileGroupDescription">Optional details shown only inside the opened Grafana alert, not in the short lock-screen push. All entries sync through Garmin services, are stored on the watch, and are sent unencrypted to Grafana. Leave fields blank when unnecessary.</string>
+    <string id="EmergencyProfileGroupDescription">Optional shared alert details. Grafana shows them in the opened alert; Pushover includes them in its message and may expose them on the lock screen. All entries sync through Garmin services, are stored on the watch, and are sent unencrypted to configured providers.</string>
     <string id="HomeAddressTitle">Home address</string>
     <string id="HomeAddressPrompt">Address and apartment or access details</string>
     <string id="ChildrenInfoTitle">Children and family</string>
@@ -18,9 +18,9 @@
     <string id="ResponseInstructionsTitle">Instructions for responders</string>
     <string id="ResponseInstructionsPrompt">Who to contact and what to do first</string>
     <string id="ProfilePhotoUrlTitle">Photo HTTPS URL (advanced)</string>
-    <string id="ProfilePhotoUrlPrompt">Publicly reachable https:// image URL; Grafana and the image host can see access</string>
+    <string id="ProfilePhotoUrlPrompt">Publicly reachable https:// image URL; Grafana or Pushover links it and the image host can see access</string>
     <string id="PushoverGroupTitle">Pushover TEST setup</string>
-    <string id="PushoverGroupDescription">Optional fallback TEST delivery. After acceptance, real GPS is shared with Pushover and Google Maps for up to one hour. Settings sync through Garmin services and are stored on the watch.</string>
+    <string id="PushoverGroupDescription">Optional independent TEST route. Emergency profile text and its photo link are visible to Pushover and may appear on the lock screen. After acceptance, real GPS is shared with Pushover and Google Maps for up to one hour.</string>
     <string id="PushoverUserKeyTitle">Pushover User Key</string>
     <string id="PushoverUserKeyPrompt">30 characters from the receiving Pushover account</string>
     <string id="PushoverApiTokenTitle">Pushover API Token</string>
