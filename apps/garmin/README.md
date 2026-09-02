@@ -146,21 +146,30 @@ is pending is dropped from that fix so it cannot stall another accepted route;
 restoring the original settings makes it eligible for subsequent fixes.
 Likewise, exhausting one route's bounded retry budget advances that target and
 continues any other accepted route instead of blocking the shared GPS slot.
-Pre-acceptance cached coordinates are rejected, so the first direct fix must
-have been captured at or after provider acceptance.
+Position timestamps from before provider acceptance are rejected. The initial
+`Position.getInfo()` result is nevertheless only Garmin's last-known snapshot;
+its timestamp alone cannot prove that the coordinates are spatially current.
+That first update is therefore always labeled `WARNUNG: letzter bekannter ...;
+moeglicherweise veraltet` and includes its send-time age in seconds. Continuous
+location callbacks are labeled as live callbacks, but receive the same warning
+once their reported timestamp is more than 30 seconds old.
 
 Grafana's formatted webhook receives `alert_uid`, `title`, `state`, `message`,
 and the optional emergency-card fields; later GPS updates reuse the same
 `alert_uid` and repeat the current card so it remains available in the newest
-alert item. Configure Grafana's mobile template from `title` and `message` only,
-then render the optional fields in its web/detail template. This keeps sensitive
-profile text off the short lock-screen notification while still making it
-available after a responder deliberately opens the alert. A webhook HTTP 2xx is
-only Grafana ingestion acceptance. Grafana's mobile app may provide Important
-Push and receiver ACK after receiver-side setup, but this watch version neither
-polls nor displays that ACK. Pushover uses emergency priority `2`, a 30-second
+alert item. GPS updates additionally expose numeric `gps_capture_time` and
+`gps_age_seconds`, `gps_fix_kind` (`last_known` or `live_callback`), and boolean
+`gps_may_be_stale`. Configure Grafana's mobile template from `title` and
+`message` only, then render the optional fields in its web/detail template. This
+keeps sensitive profile text off the short lock-screen notification while still
+making it available after a responder deliberately opens the alert. A webhook
+HTTP 2xx is only Grafana ingestion acceptance. Grafana's mobile app may provide
+Important Push and receiver ACK after receiver-side setup, but this watch
+version neither polls nor displays that ACK. Pushover uses emergency priority `2`, a 30-second
 retry interval, and the remaining TEST lifetime as expiry. Its first location
-uses priority `1`; later locations use priority `0`.
+uses priority `1`; later locations use priority `0`. Its location text includes
+the same last-known/stale warning and age, while its provider timestamp remains
+the Garmin capture time rather than the later delivery-attempt time.
 
 Use these Grafana **Mobile push notifications** templates:
 
@@ -396,12 +405,12 @@ and simulator evidence only; no Grafana endpoint, Important Push, receiver ACK,
 or GPS provider call was exercised.
 
 The review fix at `c8b4338` compiled for `fenix847mm` at `-l 1 -O 1` in the
-same pinned SDK image and ran five structured simulator tests. In addition to
-the four protocol tests above, `directProviderSafetyTransitions` executed
-provider-fingerprint mismatch, active-route, and post-acceptance GPS timestamp
-boundaries. The result was `PASSED (passed=5, failed=0, errors=0)`. This remains
-simulator evidence only; it does not replace physical GPS or provider delivery
-evidence.
+same pinned SDK image and ran five structured simulator tests. A later restart
+and GPS-age regression run on the current worktree added a valid Grafana
+storage roundtrip, narrow invalid direct-TEST recovery, and last-known/live GPS
+age boundaries plus a queued-state fail-closed control. Its result was
+`PASSED (passed=8, failed=0, errors=0)`. This remains simulator evidence only;
+it does not replace physical GPS or provider delivery evidence.
 
 Earlier native macOS simulator runs verified the public setup state and the
 former pre-trigger cover behavior. That cover behavior was intentionally

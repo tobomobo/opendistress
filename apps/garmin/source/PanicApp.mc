@@ -500,6 +500,10 @@ class PanicView extends WatchUi.View {
                 return;
             }
             if (!validStoredState(stored)) {
+                if (isRecoverableInvalidDirectTestState(stored)) {
+                    clearInvalidDirectTestState();
+                    return;
+                }
                 setState("CONFIGURATION FAILURE", "Stored event state is invalid");
                 return;
             }
@@ -531,6 +535,22 @@ class PanicView extends WatchUi.View {
         _activeIncident = null;
         _directResult = null;
         setState("READY — TEST", "Previous beta GPS state cleared");
+    }
+
+    function isRecoverableInvalidDirectTestState(value) {
+        return PanicProtocol.hasExactKeys(value, STATE_KEYS)
+            && value["queue"] instanceof Lang.Array
+            && value["queue"].size() == 0
+            && value["active"] == null
+            && value["direct_result"] != null;
+    }
+
+    function clearInvalidDirectTestState() as Void {
+        Storage.deleteValue(STATE_KEY);
+        _queue = [];
+        _activeIncident = null;
+        _directResult = null;
+        setState("READY — TEST", "Invalid previous TEST state cleared");
     }
 
     function migrateLegacyTest() {
@@ -2377,6 +2397,8 @@ class PanicView extends WatchUi.View {
             :offset => 2,
             :endianness => Lang.ENDIAN_BIG
         });
+        var path = record[15];
+        var ageSeconds = DirectAlertSafety.captureAgeSeconds(captureAt, now);
         var latitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
             :offset => 6,
             :endianness => Lang.ENDIAN_BIG
@@ -2386,6 +2408,8 @@ class PanicView extends WatchUi.View {
             :endianness => Lang.ENDIAN_BIG
         });
         if (captureAt == 0
+            || (path != 0 && path != 1)
+            || ageSeconds < 0
             || latitude < -900000000
             || latitude > 900000000
             || longitude < -1800000000
@@ -2405,6 +2429,8 @@ class PanicView extends WatchUi.View {
             var parameters = DirectPushoverAdapter.locationParameters(
                 sequence,
                 captureAt,
+                path,
+                ageSeconds,
                 mapUrl
             );
             var pushoverOptions = {
@@ -2433,6 +2459,9 @@ class PanicView extends WatchUi.View {
             var grafanaParameters = DirectGrafanaAdapter.locationPayload(
                 _directResult["event_id"],
                 sequence,
+                captureAt,
+                path,
+                ageSeconds,
                 mapUrl
             );
             var grafanaOptions = {
@@ -3002,4 +3031,103 @@ class PanicDelegate extends WatchUi.BehaviorDelegate {
     function onMenu() {
         return _view.menuAction();
     }
+}
+
+(:test)
+function directValidRestartStateRoundTrips(logger) {
+    var eventId = "AAECAwQFBgcICQoLDA0ODw";
+    var grafanaFingerprint = DirectGrafanaAdapter.configurationFingerprintFor(
+        "https://oncall-prod-eu-west-0.grafana.net/oncall/"
+        + "integrations/v1/formatted_webhook/"
+        + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/"
+    );
+    var locationHex = "01020000006400000000000000000200";
+    Storage.setValue("event_state_v2", {
+        "queue" => [],
+        "active" => null,
+        "direct_result" => {
+            "event_id" => eventId,
+            "request" => "",
+            "receipt" => "",
+            "pushover_accepted" => false,
+            "pushover_fingerprint" => "",
+            "grafana_accepted" => true,
+            "grafana_fingerprint" => grafanaFingerprint,
+            "grafana_alert_pending" => false,
+            "accepted_at" => 100,
+            "tracking_expires_at" => 3700,
+            "next_location_sequence" => 2,
+            "last_location_hex" => locationHex,
+            "last_location_queued_at" => 100,
+            "capture_stage" => 1,
+            "pending_location_hex" => "",
+            "pending_location_pushover" => false,
+            "pending_location_grafana" => false
+        }
+    });
+
+    var reloaded = new PanicView();
+    var survived = PanicProtocol.stringEquals(reloaded._state, "PROVIDER ACCEPTED")
+        && reloaded._directResult != null
+        && PanicProtocol.stringEquals(reloaded._directResult["event_id"], eventId);
+    Storage.deleteValue("event_state_v2");
+    if (!survived) {
+        logger.error("Valid Grafana direct state did not survive storage roundtrip");
+        return false;
+    }
+    return true;
+}
+
+(:test)
+function directInvalidRestartStateRecovers(logger) {
+    Storage.setValue("event_state_v2", {
+        "queue" => [],
+        "active" => null,
+        "direct_result" => {
+            "event_id" => "AAECAwQFBgcICQoLDA0ODw"
+        }
+    });
+
+    var reloaded = new PanicView();
+    var recovered = !PanicProtocol.stringEquals(
+            reloaded._state,
+            "CONFIGURATION FAILURE"
+        )
+        && reloaded._directResult == null
+        && Storage.getValue("event_state_v2") == null;
+    Storage.deleteValue("event_state_v2");
+    if (!recovered) {
+        logger.error("Invalid direct TEST state locked the app after restart");
+        return false;
+    }
+    return true;
+}
+
+(:test)
+function directInvalidQueuedStateFailsClosed(logger) {
+    var event = PanicProtocol.newTestEvent(
+        "AAECAwQFBgcICQoLDA0ODw",
+        "EBESExQVFhcYGRobHB0eHw",
+        1788105600
+    );
+    Storage.setValue("event_state_v2", {
+        "queue" => [event],
+        "active" => null,
+        "direct_result" => {
+            "event_id" => "AAECAwQFBgcICQoLDA0ODw"
+        }
+    });
+
+    var reloaded = new PanicView();
+    var retained = PanicProtocol.stringEquals(
+            reloaded._state,
+            "CONFIGURATION FAILURE"
+        )
+        && Storage.getValue("event_state_v2") != null;
+    Storage.deleteValue("event_state_v2");
+    if (!retained) {
+        logger.error("Invalid state with a pending event was auto-cleared");
+        return false;
+    }
+    return true;
 }

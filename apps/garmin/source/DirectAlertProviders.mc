@@ -6,6 +6,8 @@ import Toybox.Lang;
 import Toybox.StringUtil;
 
 module DirectAlertSafety {
+    const GPS_STALE_AFTER_SECONDS = 30;
+
     function fingerprint(
         domain as Lang.String,
         keyText as Lang.String,
@@ -68,13 +70,29 @@ module DirectAlertSafety {
         }
         return captureAt <= now;
     }
+
+    function captureAgeSeconds(captureAt, now) {
+        if (!(captureAt instanceof Lang.Number)
+            || !(now instanceof Lang.Number)
+            || captureAt <= 0
+            || captureAt > now) {
+            return -1;
+        }
+        return now - captureAt;
+    }
+
+    function isPossiblyStaleLocation(path, ageSeconds) {
+        return !(path instanceof Lang.Number)
+            || path != 1
+            || !(ageSeconds instanceof Lang.Number)
+            || ageSeconds < 0
+            || ageSeconds > GPS_STALE_AFTER_SECONDS;
+    }
 }
 
 module DirectAlertProfile {
     const TEST_MESSAGE =
         "KEIN ECHTER NOTFALL. Garmin Testausloesung; keine Hilfeleistung erforderlich.";
-    const LOCATION_MESSAGE =
-        "KEIN ECHTER NOTFALL. Aktueller Garmin GPS-Teststandort.";
     const TEST_TITLE = "TESTNOTRUF";
     const LOCATION_TITLE = "TESTNOTRUF — GPS";
     const PUSHOVER_MAX_MESSAGE_CHARACTERS = 1024;
@@ -119,6 +137,21 @@ module DirectAlertProfile {
     function personalizedTitle(baseTitle) {
         var name = personName();
         return name.length() > 0 ? baseTitle + " — " + name : baseTitle;
+    }
+
+    function locationMessage(sequence, path, ageSeconds) {
+        var message;
+        if (path != 1) {
+            message = "KEIN ECHTER NOTFALL. WARNUNG: letzter bekannter "
+                + "Garmin-GPS-Teststandort; moeglicherweise veraltet.";
+        } else if (DirectAlertSafety.isPossiblyStaleLocation(path, ageSeconds)) {
+            message = "KEIN ECHTER NOTFALL. WARNUNG: Garmin-GPS-Teststandort "
+                + "ist moeglicherweise veraltet.";
+        } else {
+            message = "KEIN ECHTER NOTFALL. Garmin GPS-Teststandort.";
+        }
+        return message + " Alter laut Uhr: " + ageSeconds.format("%d")
+            + " s. Update " + sequence.format("%d") + ".";
     }
 
     function appendSection(message, label, value) {
@@ -209,19 +242,28 @@ module DirectPushoverAdapter {
         return parameters;
     }
 
-    function locationParameters(sequence, captureAt, mapUrl) {
+    function locationParameters(sequence, captureAt, path, ageSeconds, mapUrl) {
+        var possiblyStale = DirectAlertSafety.isPossiblyStaleLocation(
+            path,
+            ageSeconds
+        );
         return {
             "token" => Properties.getValue("pushoverApiToken"),
             "user" => Properties.getValue("pushoverUserKey"),
             "title" => DirectAlertProfile.personalizedTitle(
                 DirectAlertProfile.LOCATION_TITLE
             ),
-            "message" => DirectAlertProfile.LOCATION_MESSAGE
-                + " Update " + sequence.format("%d") + ".",
+            "message" => DirectAlertProfile.locationMessage(
+                sequence,
+                path,
+                ageSeconds
+            ),
             "priority" => sequence == 1 ? "1" : "0",
             "timestamp" => captureAt.format("%d"),
             "url" => mapUrl,
-            "url_title" => "Open current location"
+            "url_title" => possiblyStale
+                ? "Open possibly stale location"
+                : "Open current location"
         };
     }
 }
@@ -264,16 +306,31 @@ module DirectGrafanaAdapter {
         );
     }
 
-    function locationPayload(eventId, sequence, mapUrl) {
+    function locationPayload(
+        eventId,
+        sequence,
+        captureAt,
+        path,
+        ageSeconds,
+        mapUrl
+    ) {
         var profile = DirectAlertProfile.fields();
-        return profilePayload(
+        var payload = profilePayload(
             eventId,
             DirectAlertProfile.personalizedTitle(DirectAlertProfile.LOCATION_TITLE),
-            DirectAlertProfile.LOCATION_MESSAGE
-                + " Update " + sequence.format("%d") + ". " + mapUrl,
+            DirectAlertProfile.locationMessage(sequence, path, ageSeconds)
+                + " " + mapUrl,
             mapUrl,
             profile
         );
+        payload["gps_capture_time"] = captureAt;
+        payload["gps_age_seconds"] = ageSeconds;
+        payload["gps_fix_kind"] = path == 1 ? "live_callback" : "last_known";
+        payload["gps_may_be_stale"] = DirectAlertSafety.isPossiblyStaleLocation(
+            path,
+            ageSeconds
+        );
+        return payload;
     }
 
     function profilePayload(eventId, title, message, sourceLink, profile) {
@@ -362,6 +419,23 @@ function directProviderSafetyTransitions(logger) {
     }
     if (DirectAlertSafety.isFreshCapture(100, 102, 101)) {
         logger.error("Direct-provider fresh-position boundary failed");
+        return false;
+    }
+    if (DirectAlertSafety.captureAgeSeconds(100, 130) != 30
+        || DirectAlertSafety.captureAgeSeconds(131, 130) != -1) {
+        logger.error("GPS capture age boundary failed");
+        return false;
+    }
+    if (!DirectAlertSafety.isPossiblyStaleLocation(0, 0)) {
+        logger.error("Last-known GPS snapshot was presented as current");
+        return false;
+    }
+    if (DirectAlertSafety.isPossiblyStaleLocation(1, 30)) {
+        logger.error("Fresh continuous GPS callback was marked stale");
+        return false;
+    }
+    if (!DirectAlertSafety.isPossiblyStaleLocation(1, 31)) {
+        logger.error("Old continuous GPS callback was presented as current");
         return false;
     }
     return true;

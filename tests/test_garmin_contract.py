@@ -617,6 +617,8 @@ class GarminContractTests(unittest.TestCase):
         ]
 
         self.assertIn("Lang.NUMBER_FORMAT_SINT32", send)
+        self.assertIn("var path = record[15]", send)
+        self.assertIn("DirectAlertSafety.captureAgeSeconds(captureAt, now)", send)
         self.assertIn('"https://maps.google.com/?q="', send)
         self.assertIn("DirectPushoverAdapter.locationParameters(", send)
         self.assertIn("DirectGrafanaAdapter.locationPayload(", send)
@@ -638,7 +640,13 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("pendingPushover && hasBoundDirectPushover()", completion)
         self.assertIn("pendingGrafana && hasBoundDirectGrafana()", completion)
         self.assertEqual(providers.count("DirectAlertProfile.LOCATION_TITLE"), 2)
-        self.assertIn("DirectAlertProfile.LOCATION_MESSAGE", providers)
+        self.assertEqual(providers.count("DirectAlertProfile.locationMessage("), 2)
+        self.assertIn("WARNUNG: letzter bekannter", providers)
+        self.assertIn("Alter laut Uhr:", providers)
+        self.assertIn('payload["gps_capture_time"] = captureAt', providers)
+        self.assertIn('payload["gps_age_seconds"] = ageSeconds', providers)
+        self.assertIn('payload["gps_fix_kind"]', providers)
+        self.assertIn('payload["gps_may_be_stale"]', providers)
         self.assertIn('"priority" => sequence == 1 ? "1" : "0"', providers)
         self.assertIn('"timestamp" => captureAt.format("%d")', providers)
         self.assertIn("method(:onDirectLocationResponse)", send)
@@ -657,6 +665,22 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('data["status"] == 1', acceptance)
         self.assertIn('isProviderReference(data["request"])', acceptance)
         self.assertNotIn("receipt", acceptance)
+
+    def test_invalid_direct_test_state_recovers_without_clearing_live_or_queue(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        load = source[
+            source.index("function loadState()")
+            : source.index("function migrateLegacyTest()")
+        ]
+        recovery = load[load.index("function isRecoverableInvalidDirectTestState(") :]
+
+        self.assertIn("if (isRecoverableInvalidDirectTestState(stored))", load)
+        self.assertIn("clearInvalidDirectTestState();", load)
+        self.assertIn("PanicProtocol.hasExactKeys(value, STATE_KEYS)", recovery)
+        self.assertIn('value["queue"].size() == 0', recovery)
+        self.assertIn('value["active"] == null', recovery)
+        self.assertIn('value["direct_result"] != null', recovery)
+        self.assertIn("Storage.deleteValue(STATE_KEY)", recovery)
 
     def test_direct_gps_resumes_retries_and_scrubs_location_state(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
