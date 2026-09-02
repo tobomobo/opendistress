@@ -85,6 +85,7 @@ class GarminContractTests(unittest.TestCase):
                 "@Properties.pushoverApiToken",
                 "@Properties.grafanaWebhookUrl",
                 "@Properties.protectedPersonName",
+                "@Properties.customAlertMessage",
                 "@Properties.homeAddress",
                 "@Properties.childrenInfo",
                 "@Properties.personDescription",
@@ -104,6 +105,7 @@ class GarminContractTests(unittest.TestCase):
                 "@Properties.pushoverApiToken": "password",
                 "@Properties.grafanaWebhookUrl": "password",
                 "@Properties.protectedPersonName": "alphaNumeric",
+                "@Properties.customAlertMessage": "alphaNumeric",
                 "@Properties.homeAddress": "alphaNumeric",
                 "@Properties.childrenInfo": "alphaNumeric",
                 "@Properties.personDescription": "alphaNumeric",
@@ -455,6 +457,7 @@ class GarminContractTests(unittest.TestCase):
         providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         settings = ET.parse(GARMIN / "resources/settings/settings.xml").getroot()
         profile_limits = {
+            "@Properties.customAlertMessage": ("alphaNumeric", "240"),
             "@Properties.homeAddress": ("alphaNumeric", "120"),
             "@Properties.childrenInfo": ("alphaNumeric", "150"),
             "@Properties.personDescription": ("alphaNumeric", "150"),
@@ -486,6 +489,7 @@ class GarminContractTests(unittest.TestCase):
         ]
         grafana = providers[providers.index("module DirectGrafanaAdapter") :]
         profile_fields = (
+            "alert_message",
             "person_name",
             "home_address",
             "children_info",
@@ -499,15 +503,34 @@ class GarminContractTests(unittest.TestCase):
             self.assertIn(f'"{field}"', profile)
             self.assertIn(f'profile["{field}"]', grafana)
         self.assertIn("DirectAlertProfile.pushoverMessage()", pushover)
+        self.assertIn("DirectAlertProfile.initialMessage()", grafana)
         self.assertIn('parameters["url"] = photoUrl', pushover)
         self.assertIn('parameters["url_title"] = "Open profile photo"', pushover)
         self.assertIn("PUSHOVER_MAX_MESSAGE_CHARACTERS = 1024", profile)
         self.assertIn("message.length() <= PUSHOVER_MAX_MESSAGE_CHARACTERS", profile)
+        self.assertIn("function clippedText(value, maxLength)", profile)
+        for constant, value in {
+            "PUSHOVER_ALERT_MESSAGE_CHARACTERS": 160,
+            "PUSHOVER_RESPONSE_CHARACTERS": 170,
+            "PUSHOVER_NAME_CHARACTERS": 40,
+            "PUSHOVER_DESCRIPTION_CHARACTERS": 100,
+            "PUSHOVER_CHILDREN_CHARACTERS": 100,
+            "PUSHOVER_ADDRESS_CHARACTERS": 100,
+            "PUSHOVER_BACKGROUND_CHARACTERS": 90,
+        }.items():
+            self.assertIn(f"const {constant} = {value};", profile)
+        self.assertIn('appendClippedSection(message, "VORBEREITETE NACHRICHT"', profile)
+        self.assertIn('appendClippedSection(message, "HINWEISE FUER HELFER"', profile)
+        self.assertLess(
+            profile.index('appendClippedSection(message, "HINWEISE FUER HELFER"'),
+            profile.index('appendClippedSection(message, "HINTERGRUND"'),
+        )
         maximum_profile_message = (
             len("KEIN ECHTER NOTFALL. Garmin Testausloesung; keine Hilfeleistung erforderlich.")
             + sum(
                 len(label)
                 for label in (
+                    "\n\nVORBEREITETE NACHRICHT\n",
                     "\n\nPERSON MIT DER UHR\n",
                     "\n\nHEIMADRESSE\n",
                     "\n\nKINDER / FAMILIE\n",
@@ -516,11 +539,25 @@ class GarminContractTests(unittest.TestCase):
                     "\n\nHINWEISE FUER HELFER\n",
                 )
             )
-            + 40
-            + sum(int(length) for _, length in profile_limits.values() if length)
+            + sum((160, 170, 40, 100, 100, 100, 90))
         )
         self.assertLessEqual(maximum_profile_message, 1024)
-        self.assertEqual(maximum_profile_message, 1017)
+        self.assertEqual(maximum_profile_message, 982)
+
+        properties = ET.parse(GARMIN / "resources/properties/properties.xml").getroot()
+        custom_default = next(
+            item
+            for item in properties.findall("./property")
+            if item.attrib["id"] == "customAlertMessage"
+        )
+        self.assertFalse(custom_default.text, "Example alert text must never be sent as data")
+
+        strings = ET.parse(GARMIN / "resources/strings/strings.xml").getroot()
+        string_values = {item.attrib["id"]: item.text for item in strings.findall("./string")}
+        self.assertIn("Write this now", string_values["CustomAlertMessagePrompt"])
+        self.assertIn("1) Contact", string_values["ResponseInstructionsPrompt"])
+        self.assertIn("how to verify", string_values["ResponseInstructionsPrompt"])
+        self.assertIn("known threat", string_values["BackgroundInfoPrompt"])
         self.assertIn('value.find("https://") != 0', providers)
         self.assertIn('value.find("@") != null', providers)
         self.assertIn('value.find("#") != null', providers)

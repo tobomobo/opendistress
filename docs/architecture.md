@@ -97,12 +97,13 @@ submission; provider-call ambiguity may therefore produce a duplicate retry.
   The current beta stores a secret Grafana Cloud IRM webhook URL, Pushover
   destination/application keys, or both there and sends a TEST directly to
   those routes. It may also store an optional protected-person display name and
-  a provider-neutral emergency card containing home/family/person/background,
-  responder-instruction, and photo-link fields. The name is intentionally
+  a prepared alert message plus a provider-neutral emergency card containing
+  home/family/person/background, responder-instruction, and photo-link fields. The name is intentionally
   included in provider-visible TEST titles. A shared profile module feeds
   concrete adapters: Grafana receives structured fields while Pushover receives
-  bounded profile text and a supplementary photo link. Grafana's configured
-  mobile template uses only the short title and message; Pushover has no
+  prioritized, per-field-clipped profile text and a supplementary photo link.
+  Grafana's configured mobile template uses the short title plus the prepared
+  message; other profile values remain structured detail fields. Pushover has no
   equivalent detail-template boundary and may expose message text on the lock
   screen. Garmin and each selected provider process their mapped fields. Those
   values are not LIVE content/authentication keys. LIVE

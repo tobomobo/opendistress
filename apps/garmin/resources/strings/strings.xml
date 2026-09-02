@@ -5,8 +5,10 @@
     <string id="TestIdentityGroupDescription">Optional name of the person wearing the watch and sending the alert. Every beta notification remains clearly marked TESTNOTRUF and KEIN ECHTER NOTFALL. The name syncs through Garmin services, is stored on the watch, and is visible to configured providers.</string>
     <string id="ProtectedPersonNameTitle">Name of person wearing the watch</string>
     <string id="ProtectedPersonNamePrompt">For example: Alex; the person who will send the alert</string>
-    <string id="EmergencyProfileGroupTitle">TEST emergency card</string>
-    <string id="EmergencyProfileGroupDescription">Optional details about the person wearing this watch. Grafana shows them in the opened alert; Pushover includes them in its message and may expose them on the lock screen. All entries sync through Garmin services, are stored on the watch, and are sent unencrypted to configured providers.</string>
+    <string id="EmergencyProfileGroupTitle">Prepared alert and response plan</string>
+    <string id="EmergencyProfileGroupDescription">Prepare this in calm conditions and test it with every responder. Start with the short alert message and exact response plan; add only useful details about the person wearing the watch. Empty fields are omitted. Grafana shows structured details in the opened alert; Pushover includes a compact version in its message and may expose it on the lock screen. All entries sync through Garmin services, are stored on the watch, and are sent unencrypted to configured providers.</string>
+    <string id="CustomAlertMessageTitle">Prepared alert message</string>
+    <string id="CustomAlertMessagePrompt">Write this now, not during an emergency. Example: Suspected kidnapping. Start the response plan immediately; use the latest GPS update.</string>
     <string id="HomeAddressTitle">Home address of watch wearer</string>
     <string id="HomeAddressPrompt">Address and apartment or access details</string>
     <string id="ChildrenInfoTitle">Children and family</string>
@@ -14,9 +16,9 @@
     <string id="PersonDescriptionTitle">Description of person wearing the watch</string>
     <string id="PersonDescriptionPrompt">Appearance, clothing, and identifying details of the person sending the alert</string>
     <string id="BackgroundInfoTitle">Background about the watch wearer</string>
-    <string id="BackgroundInfoPrompt">Relevant personal or threat context responders should know</string>
-    <string id="ResponseInstructionsTitle">Instructions for responders</string>
-    <string id="ResponseInstructionsPrompt">Who to contact and what to do first</string>
+    <string id="BackgroundInfoPrompt">Relevant background: known threat, travel or event context, medical needs, or other facts responders should know</string>
+    <string id="ResponseInstructionsTitle">Response plan</string>
+    <string id="ResponseInstructionsPrompt">Template: 1) Contact [person/number]. 2) Do [first action]. 3) Avoid [unsafe action]. 4) State how to verify genuine safety or an all-clear.</string>
     <string id="ProfilePhotoUrlTitle">Photo HTTPS URL (advanced)</string>
     <string id="ProfilePhotoUrlPrompt">Publicly reachable https:// image URL; Grafana or Pushover links it and the image host can see access</string>
     <string id="PushoverGroupTitle">Pushover TEST setup</string>

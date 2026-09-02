@@ -5,6 +5,9 @@
         </setting>
     </group>
     <group id="emergencyProfile" title="@Strings.EmergencyProfileGroupTitle" description="@Strings.EmergencyProfileGroupDescription">
+        <setting propertyKey="@Properties.customAlertMessage" title="@Strings.CustomAlertMessageTitle" prompt="@Strings.CustomAlertMessagePrompt">
+            <settingConfig type="alphaNumeric" required="false" maxLength="240" />
+        </setting>
         <setting propertyKey="@Properties.homeAddress" title="@Strings.HomeAddressTitle" prompt="@Strings.HomeAddressPrompt">
             <settingConfig type="alphaNumeric" required="false" maxLength="120" />
         </setting>

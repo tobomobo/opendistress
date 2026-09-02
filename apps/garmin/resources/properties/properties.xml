@@ -6,6 +6,7 @@
     <property id="pushoverApiToken" type="string"></property>
     <property id="grafanaWebhookUrl" type="string"></property>
     <property id="protectedPersonName" type="string"></property>
+    <property id="customAlertMessage" type="string"></property>
     <property id="homeAddress" type="string"></property>
     <property id="childrenInfo" type="string"></property>
     <property id="personDescription" type="string"></property>

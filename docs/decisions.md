@@ -249,3 +249,25 @@ Those detail fields do not precede the update in the mobile `title`/`message`.
 Pushover keeps its separate notification and map action but receives the same
 formatted body. Provider acceptance, delivery, and human acknowledgement remain
 separate facts.
+
+## 2026-09-02 — Add a calm-time prepared message and response template
+
+The phone-editable Garmin settings add one optional prepared alert message and
+turn the existing responder instructions into an explicit response-plan
+template: first contact, first action, actions to avoid, and all-clear
+verification. Threat/background prompts provide concrete examples. All values
+remain empty by default so sample people, threats, or procedures can never be
+mistaken for the owner's real plan.
+
+This follows the useful GART pattern of writing the alert and response protocol
+before an emergency and testing it with every responder. It does not copy
+GART's Android receiver, full-screen behavior, mock test location, or delivery
+claims. The Garmin beta keeps real GPS and its existing provider evidence
+boundaries.
+
+Grafana includes the prepared alert in its mobile `message` and carries every
+field separately for the opened detail view. Pushover renders the same model in
+a fixed response-priority order with per-field clipping budgets; even every
+field at its configured maximum remains under the provider's 1,024-character
+body limit. GPS updates retain their separate update-first body and do not
+repeat the prepared alert text.
