@@ -81,7 +81,9 @@ class PanicView extends WatchUi.View {
     const LIVE_EXPIRY_SECONDS = 3600;
     const MAX_QUEUE = 3;
     const MAX_INITIAL_RETRIES = 2;
-    const LIVE_ARM_HOLD_MS = 1500;
+    const ALERT_ARM_HOLD_MS = 2500;
+    const ALERT_ARM_FRAME_MS = 50;
+    const ALERT_ARM_START_DEGREES = 270;
     const COVER_REFRESH_MS = 60000;
     const RETRY_DELAY_MS = 5000;
     const WIFI_CHECK_TIMEOUT_MS = 10000;
@@ -151,7 +153,7 @@ class PanicView extends WatchUi.View {
     ];
 
     var _state = "READY — TEST";
-    var _detail = "Top button sends TEST";
+    var _detail = "Hold top button 2.5 seconds";
     var _queue = [];
     var _activeIncident = null;
     var _directResult = null;
@@ -168,10 +170,10 @@ class PanicView extends WatchUi.View {
     var _statusTimer;
     var _visible = false;
     var _personalLive = false;
-    var _armingLive = false;
+    var _armingAlert = false;
+    var _armStartedAtMs = 0;
     var _wifiCheckPending = false;
     var _wifiFallbackEventId = null;
-    var _testStartDown = false;
     var _directLocationRetryBlocked = false;
     var _directGrafanaRetryBlocked = false;
 
@@ -206,7 +208,7 @@ class PanicView extends WatchUi.View {
 
     function onHide() {
         _visible = false;
-        cancelLiveArm();
+        cancelAlertArm();
         stopLocations();
         try {
             _retryTimer.stop();
@@ -322,12 +324,12 @@ class PanicView extends WatchUi.View {
         }
         if (PanicProtocol.stringEquals(_mode, "DIRECT_TEST")) {
             _state = "READY — TEST";
-            _detail = "Press top button to send";
+            _detail = "Hold top button 2.5 seconds";
         } else if (_personalLive) {
             _state = "READY — LIVE";
-            _detail = "Hold top button to trigger";
+            _detail = "Hold top button 2.5 seconds";
         } else if (hasRelayTestConfiguration()) {
-            _detail = "Press top button to send TEST";
+            _detail = "Hold top button 2.5 seconds";
         } else {
             _state = "SETUP REQUIRED";
             _detail = "Enter Grafana webhook or Pushover keys";
@@ -371,7 +373,7 @@ class PanicView extends WatchUi.View {
             return;
         }
         _state = "READY — TEST";
-        _detail = "Press top button to send";
+        _detail = "Hold top button 2.5 seconds";
         selectStartupMode();
         WatchUi.requestUpdate();
     }
@@ -833,6 +835,9 @@ class PanicView extends WatchUi.View {
             });
             tracking.draw(dc);
         }
+        if (_armingAlert) {
+            drawAlertArmProgress(dc);
+        }
     }
 
     function compactDisplayId(value) {
@@ -845,6 +850,75 @@ class PanicView extends WatchUi.View {
         }
         return "ID " + id.substring(0, 4) + "..."
             + id.substring(id.length() - 4, id.length());
+    }
+
+    function alertArmElapsedMs() {
+        if (!_armingAlert) {
+            return -1;
+        }
+        var now = System.getTimer();
+        // Fail closed on the rare system-timer rollover during a hold.
+        if (now < _armStartedAtMs) {
+            return -1;
+        }
+        return now - _armStartedAtMs;
+    }
+
+    function drawAlertArmProgress(dc) {
+        var elapsed = alertArmElapsedMs();
+        if (elapsed < 0) {
+            return;
+        }
+        if (elapsed > ALERT_ARM_HOLD_MS) {
+            elapsed = ALERT_ARM_HOLD_MS;
+        }
+
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var minSize = width < height ? width : height;
+        var compactRound = width == height && minSize < 220;
+        var inset = minSize / 24;
+        if (inset < 6) {
+            inset = 6;
+        }
+        var radius = minSize / 2 - inset - (compactRound ? minSize / 12 : 0);
+        var centerX = compactRound ? (width * 43) / 100 : width / 2;
+        var centerY = compactRound ? (height * 57) / 100 : height / 2;
+        var penWidth = minSize >= 400 ? 6 : (minSize >= 260 ? 4 : 3);
+
+        dc.setPenWidth(penWidth);
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_BLACK);
+        dc.drawCircle(centerX, centerY, radius);
+
+        var sweep = (elapsed * 180) / ALERT_ARM_HOLD_MS;
+        if (sweep > 0) {
+            var clockwiseEnd = ALERT_ARM_START_DEGREES - sweep;
+            var counterClockwiseEnd = ALERT_ARM_START_DEGREES + sweep;
+            if (clockwiseEnd < 0) {
+                clockwiseEnd += 360;
+            }
+            if (counterClockwiseEnd >= 360) {
+                counterClockwiseEnd -= 360;
+            }
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+            dc.drawArc(
+                centerX,
+                centerY,
+                radius,
+                Graphics.ARC_CLOCKWISE,
+                ALERT_ARM_START_DEGREES,
+                clockwiseEnd
+            );
+            dc.drawArc(
+                centerX,
+                centerY,
+                radius,
+                Graphics.ARC_COUNTER_CLOCKWISE,
+                ALERT_ARM_START_DEGREES,
+                counterClockwiseEnd
+            );
+        }
+        dc.setPenWidth(1);
     }
 
     function activate() {
@@ -879,72 +953,86 @@ class PanicView extends WatchUi.View {
     }
 
     function startActionPressed() {
-        if (!PanicProtocol.stringEquals(_mode, "LIVE")) {
-            if (_testStartDown) {
-                return true;
-            }
-            _testStartDown = true;
-            activate();
-            return true;
-        }
-        if (_armingLive
+        if (_armingAlert
             || _inFlight
             || _queue.size() > 0
-            || _activeIncident != null) {
+            || _activeIncident != null
+            || _directResult != null) {
             return true;
         }
-        _armingLive = true;
+        _armingAlert = true;
+        _armStartedAtMs = System.getTimer();
         try {
             _retryTimer.stop();
         } catch (error) {
         }
         try {
-            _retryTimer.start(method(:commitArmedLive), LIVE_ARM_HOLD_MS, false);
+            _retryTimer.start(method(:advanceAlertArm), ALERT_ARM_FRAME_MS, true);
+            WatchUi.requestUpdate();
         } catch (error) {
-            _armingLive = false;
+            _armingAlert = false;
+            _armStartedAtMs = 0;
         }
         return true;
     }
 
     function startActionReleased() {
-        if (!PanicProtocol.stringEquals(_mode, "LIVE")) {
-            _testStartDown = false;
-            return true;
-        }
-        cancelLiveArm();
+        cancelAlertArm();
         return true;
     }
 
-    function cancelLiveArm() {
-        if (!_armingLive) {
+    function advanceAlertArm() {
+        if (!_armingAlert) {
             return;
         }
-        _armingLive = false;
+        var elapsed = alertArmElapsedMs();
+        if (elapsed < 0) {
+            cancelAlertArm();
+            return;
+        }
+        if (elapsed >= ALERT_ARM_HOLD_MS) {
+            commitArmedAlert();
+            return;
+        }
+        WatchUi.requestUpdate();
+    }
+
+    function cancelAlertArm() {
+        if (!_armingAlert) {
+            return;
+        }
+        _armingAlert = false;
+        _armStartedAtMs = 0;
         try {
             _retryTimer.stop();
         } catch (error) {
         }
+        if (_visible) {
+            WatchUi.requestUpdate();
+        }
     }
 
-    function commitArmedLive() {
-        if (!_armingLive) {
+    function commitArmedAlert() {
+        if (!_armingAlert) {
             return;
         }
-        _armingLive = false;
+        _armingAlert = false;
+        _armStartedAtMs = 0;
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
         if (!_visible
             || _inFlight
             || _queue.size() > 0
-            || _activeIncident != null) {
+            || _activeIncident != null
+            || _directResult != null) {
             return;
         }
-        activateLive();
+        activate();
     }
 
     function selectAction() {
-        if (PanicProtocol.stringEquals(_mode, "LIVE")) {
-            return true;
-        }
-        activate();
         return true;
     }
 
@@ -1153,8 +1241,7 @@ class PanicView extends WatchUi.View {
         setState(_queue.size() > 0 ? "RESULT UNKNOWN — EXPIRED" : "INCIDENT EXPIRED",
             _queue.size() > 0
                 ? "Encrypted pending events retained; MENU archives"
-                : (_personalLive ? "Hold top button for a new LIVE incident"
-                    : "Top button sends a non-sensitive TEST"));
+                : "Hold top button 2.5 seconds for a new incident");
         scheduleIdleCoverRefresh();
     }
 
@@ -1855,7 +1942,7 @@ class PanicView extends WatchUi.View {
                 ? "INCIDENT RESOLVED"
                 : "INCIDENT EXPIRED",
             _personalLive
-                ? "Signed relay status verified; hold top button for a new incident"
+                ? "Signed status verified; hold top button 2.5 seconds"
                 : "Signed relay status verified; top button sends TEST");
         scheduleIdleCoverRefresh();
     }
@@ -2974,7 +3061,7 @@ class PanicView extends WatchUi.View {
             stopLocations();
             if (persistStateWithDirect([], _activeIncident, null)) {
                 _state = "READY — TEST";
-                _detail = "Press top button to send";
+                _detail = "Hold top button 2.5 seconds";
                 selectStartupMode();
                 WatchUi.requestUpdate();
             } else {
@@ -2983,7 +3070,7 @@ class PanicView extends WatchUi.View {
             return true;
         }
         _state = "READY — TEST";
-        _detail = "Press top button to send";
+        _detail = "Hold top button 2.5 seconds";
         selectStartupMode();
         WatchUi.requestUpdate();
         return true;
@@ -3026,6 +3113,14 @@ class PanicDelegate extends WatchUi.BehaviorDelegate {
             return _view.startActionReleased();
         }
         return false;
+    }
+
+    function onHold(event) {
+        return true;
+    }
+
+    function onRelease(event) {
+        return true;
     }
 
     function onMenu() {

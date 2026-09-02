@@ -248,7 +248,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("MAX_INITIAL_RETRIES = 2", source)
         self.assertIn("Repeated press keeps the same incident", source)
 
-    def test_personal_live_requires_start_hold_and_down_is_inert(self):
+    def test_all_alert_modes_require_exact_hardware_hold_and_touch_is_inert(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
         on_show = source[source.index("function onShow()") : source.index("function onHide()")]
         delegate = source[source.index("class PanicDelegate") :]
@@ -258,22 +258,30 @@ class GarminContractTests(unittest.TestCase):
         ]
         released = source[
             source.index("function startActionReleased()")
-            : source.index("function commitArmedLive()")
+            : source.index("function commitArmedAlert()")
         ]
         commit = source[
-            source.index("function commitArmedLive()")
+            source.index("function commitArmedAlert()")
             : source.index("function selectAction()")
         ]
 
         self.assertIn("hasProvisionedLiveConfiguration()", source)
         self.assertNotIn("activateLive();", on_show)
-        self.assertIn("LIVE_ARM_HOLD_MS = 1500", source)
-        self.assertIn("_retryTimer.start(method(:commitArmedLive)", pressed)
-        self.assertIn("cancelLiveArm();", released)
-        self.assertIn("activateLive();", commit)
+        self.assertIn("ALERT_ARM_HOLD_MS = 2500", source)
+        self.assertIn(
+            "_retryTimer.start(method(:advanceAlertArm), ALERT_ARM_FRAME_MS, true)",
+            pressed,
+        )
+        self.assertNotIn('PanicProtocol.stringEquals(_mode, "LIVE")', pressed)
+        self.assertNotIn("activate();", pressed)
+        self.assertIn("cancelAlertArm();", released)
+        self.assertIn("activate();", commit)
+        self.assertNotIn("activateLive();", commit)
         self.assertIn("function onKeyPressed(event)", delegate)
         self.assertIn("function onKeyReleased(event)", delegate)
         self.assertIn("key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER", delegate)
+        self.assertIn("function onHold(event)", delegate)
+        self.assertIn("function onRelease(event)", delegate)
         self.assertIn("function onNextPage()", delegate)
         next_page = delegate[delegate.index("function onNextPage()") : delegate.index("function onKeyPressed")]
         self.assertIn("_view.downAction();", next_page)
@@ -283,17 +291,48 @@ class GarminContractTests(unittest.TestCase):
             source,
         )
 
-    def test_test_mode_start_press_triggers_without_waiting_for_select(self):
+    def test_alert_hold_draws_elapsed_symmetric_progress_from_six_oclock(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        update = source[
+            source.index("function onUpdate(dc)", source.index("class PanicView"))
+            : source.index("function compactDisplayId")
+        ]
+        progress = source[
+            source.index("function drawAlertArmProgress(dc)")
+            : source.index("function activate()")
+        ]
+        advance = source[
+            source.index("function advanceAlertArm()")
+            : source.index("function cancelAlertArm()")
+        ]
+
+        self.assertIn("ALERT_ARM_FRAME_MS = 50", source)
+        self.assertIn("drawAlertArmProgress(dc);", update)
+        elapsed = source[
+            source.index("function alertArmElapsedMs()")
+            : source.index("function drawAlertArmProgress(dc)")
+        ]
+        self.assertIn("System.getTimer()", elapsed)
+        self.assertIn("ALERT_ARM_START_DEGREES = 270", source)
+        self.assertIn("Graphics.ARC_CLOCKWISE", progress)
+        self.assertIn("Graphics.ARC_COUNTER_CLOCKWISE", progress)
+        self.assertEqual(progress.count("dc.drawArc("), 2)
+        self.assertIn("elapsed >= ALERT_ARM_HOLD_MS", advance)
+        self.assertIn("commitArmedAlert();", advance)
+
+    def test_test_mode_select_and_short_press_do_not_trigger(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
         pressed = source[
             source.index("function startActionPressed()")
             : source.index("function startActionReleased()")
         ]
+        select = source[
+            source.index("function selectAction()") : source.index("function downAction()")
+        ]
 
-        self.assertIn('if (!PanicProtocol.stringEquals(_mode, "LIVE"))', pressed)
-        self.assertIn("activate();", pressed)
-        self.assertLess(pressed.index("_testStartDown = true;"), pressed.index("activate();"))
-        self.assertLess(pressed.index("activate();"), pressed.rindex("return true;"))
+        self.assertNotIn("activate();", pressed)
+        self.assertNotIn("activate();", select)
+        self.assertIn("return true;", select)
 
         startup = source[
             source.index("function selectStartupMode()")
@@ -774,7 +813,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("persistState(_queue, null)", expiry)
         self.assertIn('setState("LOCAL DISARM UNSAVED"', expiry)
         self.assertIn("Encrypted pending events retained; MENU archives", expiry)
-        self.assertIn('"Hold top button for a new LIVE incident"', expiry)
+        self.assertIn('"Hold top button 2.5 seconds for a new incident"', expiry)
 
         validation = source[
             source.index("function validStoredState(") : source.index("function validActive(")

@@ -101,6 +101,28 @@ firmware/device fact. The analog cover and haptic are evidence only of local
 UI and persistence behavior, never relay acceptance, provider delivery,
 acknowledgement, or resolution.
 
+## 2026-09-02 — Unify TEST and LIVE on an exact hardware hold
+
+The earlier 1.5-second LIVE-only hold and immediate TEST press are superseded.
+Every foreground alert now requires the top hardware key (`START`/`ENTER`) to
+remain pressed for 2.5 seconds; releasing sooner creates no event. There is no
+numeric countdown. Instead, an elapsed-time ring starts at six o'clock, grows
+symmetrically in both directions, and closes at the exact trigger threshold.
+Releasing early removes it immediately. The analog acceptance cover still
+appears only after a direct provider accepts the TEST.
+
+Touchscreen tap and hold behaviors are consumed without triggering. Connect IQ
+reports a touch `onHold()` only after firmware decides that a hold occurred and
+does not expose the initial touch-down timestamp needed to enforce the same
+exact 2.5-second threshold. The tactile hardware path therefore remains the
+blind-operable and testable primary gesture instead of introducing a faster,
+device-dependent touchscreen trigger.
+
+The progress redraw reuses the existing retry timer rather than consuming a
+fourth timer slot. Frames are visual only: `System.getTimer()` elapsed time is
+the trigger authority, and a timer rollover fails closed instead of creating
+an event.
+
 ## 2026-08-31 — Treat receiver interruption as an enrollment gate
 
 LIVE Pushover routes use emergency priority 2 and require a receipt, but that
