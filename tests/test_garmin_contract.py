@@ -85,6 +85,12 @@ class GarminContractTests(unittest.TestCase):
                 "@Properties.pushoverApiToken",
                 "@Properties.grafanaWebhookUrl",
                 "@Properties.protectedPersonName",
+                "@Properties.homeAddress",
+                "@Properties.childrenInfo",
+                "@Properties.personDescription",
+                "@Properties.backgroundInfo",
+                "@Properties.responseInstructions",
+                "@Properties.profilePhotoUrl",
             },
         )
         setting_types = {
@@ -98,6 +104,12 @@ class GarminContractTests(unittest.TestCase):
                 "@Properties.pushoverApiToken": "password",
                 "@Properties.grafanaWebhookUrl": "password",
                 "@Properties.protectedPersonName": "alphaNumeric",
+                "@Properties.homeAddress": "alphaNumeric",
+                "@Properties.childrenInfo": "alphaNumeric",
+                "@Properties.personDescription": "alphaNumeric",
+                "@Properties.backgroundInfo": "alphaNumeric",
+                "@Properties.responseInstructions": "alphaNumeric",
+                "@Properties.profilePhotoUrl": "url",
             },
         )
         self.assertTrue(
@@ -380,7 +392,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('const DIRECT_TEST_TITLE = "TESTNOTRUF"', source)
         self.assertIn('const DIRECT_LOCATION_TITLE = "TESTNOTRUF — GPS"', source)
         self.assertIn("KEIN ECHTER NOTFALL", source)
-        self.assertIn('Properties.getValue("protectedPersonName")', source)
+        self.assertIn('optionalProfileText("protectedPersonName", 40)', source)
         self.assertIn("function personalizedTestTitle(baseTitle)", source)
         self.assertEqual(
             source.count('"title" => personalizedTestTitle(DIRECT_TEST_TITLE)'),
@@ -390,6 +402,61 @@ class GarminContractTests(unittest.TestCase):
             source.count('"title" => personalizedTestTitle(DIRECT_LOCATION_TITLE)'),
             2,
         )
+
+    def test_optional_emergency_profile_is_phone_editable_and_grafana_only(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        settings = ET.parse(GARMIN / "resources/settings/settings.xml").getroot()
+        profile_limits = {
+            "@Properties.homeAddress": ("alphaNumeric", "160"),
+            "@Properties.childrenInfo": ("alphaNumeric", "240"),
+            "@Properties.personDescription": ("alphaNumeric", "240"),
+            "@Properties.backgroundInfo": ("alphaNumeric", "320"),
+            "@Properties.responseInstructions": ("alphaNumeric", "240"),
+            "@Properties.profilePhotoUrl": ("url", None),
+        }
+        configs = {
+            item.attrib["propertyKey"]: item.find("./settingConfig").attrib
+            for item in settings.findall(".//setting")
+        }
+
+        for key, (setting_type, max_length) in profile_limits.items():
+            self.assertIn(key, configs)
+            self.assertEqual(configs[key]["type"], setting_type)
+            self.assertEqual(configs[key]["required"], "false")
+            if max_length is None:
+                self.assertNotIn("maxLength", configs[key])
+            else:
+                self.assertEqual(configs[key]["maxLength"], max_length)
+
+        pushover = source[
+            source.index("function sendDirectPushover(")
+            : source.index("function grafanaAlertPayload(")
+        ]
+        initial_grafana = source[
+            source.index("function grafanaAlertPayload(")
+            : source.index("function sendDirectGrafanaInitial(")
+        ]
+        location_grafana = source[
+            source.index('var grafanaParameters = {')
+            : source.index('var grafanaOptions = {')
+        ]
+        profile_fields = (
+            "person_name",
+            "home_address",
+            "children_info",
+            "person_description",
+            "background_info",
+            "response_instructions",
+            "profile_photo_url",
+        )
+
+        for field in profile_fields:
+            self.assertNotIn(field, pushover)
+            self.assertIn(f'"{field}"', initial_grafana)
+            self.assertIn(f'"{field}"', location_grafana)
+        self.assertIn('value.find("https://") != 0', source)
+        self.assertIn('value.find("@") != null', source)
+        self.assertIn('value.find("#") != null', source)
 
     def test_direct_gps_starts_only_after_a_provider_acceptance(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()

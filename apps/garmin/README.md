@@ -17,7 +17,10 @@ and a bounded relay-free direct-provider TEST path:
 When a valid Grafana webhook or valid Pushover settings are present, the top hardware button
 (`START`/`ENTER`) immediately creates and sends a clearly marked TESTNOTRUF.
 An optional protected-person name from phone-editable app settings is appended
-to the notification title; omitting it never blocks activation.
+to the notification title. The same settings screen can hold an optional
+Grafana emergency card: home address, children/family information, a person
+description, background, responder instructions, and an HTTPS photo URL.
+Omitting any or all of it never blocks activation.
 DOWN is consumed without triggering. A fully provisioned personal build with
 no direct TEST settings remains LIVE-only: LIVE is committed only after the top
 button remains pressed for 1.5 seconds, and releasing sooner cancels without
@@ -97,9 +100,13 @@ Leave Grafana's optional **Require a Grafana service account token** switch off
 for this beta: the current watch setting contains the generated webhook URL but
 does not provision a separate `Authorization` bearer token.
 
-Install the Beta/App-Store artifact, then edit the route credentials and the
-optional **Protected person name** in the Connect IQ Store app, Garmin Connect,
-or Garmin Express. The watch receives the updated values through Garmin app
+Install the Beta/App-Store artifact, then edit the route credentials, optional
+**Protected person name**, and optional **TEST emergency card** in the Connect
+IQ Store app, Garmin Connect, or Garmin Express. The card supports a home
+address, children/family information, a person description, relevant
+background, responder instructions, and an HTTPS photo URL. Garmin's standard
+settings UI cannot upload a photo, so the last field is a link to an image that
+Grafana and the image host can retrieve. The watch receives the updated values through Garmin app
 settings and refreshes an idle setup screen
 without a reinstall. If a TEST is already pending after a rejected
 configuration, saving corrected valid values retries that same durable event
@@ -122,21 +129,45 @@ persisted as a separate pending route and also serves as fallback after a
 definite Pushover rejection. Success from either route is enough to start the
 acceptance cover and GPS drill; the second route continues independently.
 
-Grafana's formatted webhook receives `alert_uid`, `title`, `state`, and
-`message`; later GPS updates reuse the same `alert_uid`. A webhook HTTP 2xx is
+Grafana's formatted webhook receives `alert_uid`, `title`, `state`, `message`,
+and the optional emergency-card fields; later GPS updates reuse the same
+`alert_uid` and repeat the current card so it remains available in the newest
+alert item. Configure Grafana's mobile template from `title` and `message` only,
+then render the optional fields in its web/detail template. This keeps sensitive
+profile text off the short lock-screen notification while still making it
+available after a responder deliberately opens the alert. A webhook HTTP 2xx is
 only Grafana ingestion acceptance. Grafana's mobile app may provide Important
 Push and receiver ACK after receiver-side setup, but this watch version neither
 polls nor displays that ACK. Pushover uses emergency priority `2`, a 30-second
 retry interval, and the remaining TEST lifetime as expiry. Its first location
 uses priority `1`; later locations use priority `0`.
 
+Use these Grafana **Mobile push notifications** templates:
+
+```jinja2
+Title:   {{ payload.get("title", "Garmin Panic Button") }}
+Message: {{ payload.get("message", "Open Grafana IRM for details.") }}
+```
+
+The Web message may conditionally render `person_name`, `home_address`,
+`children_info`, `person_description`, `background_info`,
+`response_instructions`, and `profile_photo_url`. Set the Web image URL to:
+
+```jinja2
+{{ payload.get("profile_photo_url", "") }}
+```
+
 The initial TEST contains no location or LIVE payload, but its optional display
-name is visible to Garmin and each selected provider. After acceptance,
+name is visible to Garmin and each selected provider. Its optional emergency
+card is sent only to Grafana, not Pushover. The fields are validated only for
+bounded length and the optional photo must be an HTTPS URL without embedded
+credentials or a fragment; content correctness remains the owner's
+responsibility. After acceptance,
 the direct-GPS drill may send exact coordinates in a Google Maps URL to each
 accepted provider. Garmin, Grafana and/or Pushover, and Google can therefore
 observe data in this explicitly privacy-relaxed path. Ambiguous provider
 recovery may duplicate an alert or location. These credentials and coordinates
-are private and are stored or processed through the participating services;
+plus the emergency-card content are private and are stored or processed through the participating services;
 this is acceptable only for the bounded personal POC, not production LIVE
 enrollment.
 

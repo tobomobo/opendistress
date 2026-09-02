@@ -23,16 +23,22 @@ for example, ntfy commonly caches messages for offline subscribers. Use a privat
 self-hosted instance when that boundary is unacceptable.
 
 The personal relay-free Garmin beta has one explicit, non-production exception:
-its optional protected-person display name synchronizes through Garmin, is
-stored on the watch, and appears in TEST titles sent to each selected provider.
+its optional protected-person display name and emergency-card fields synchronize
+through Garmin and are stored on the watch. The display name appears in TEST
+titles sent to each selected provider. The home address, children/family
+information, person description, background, responder instructions, and
+optional HTTPS photo URL are sent only to Grafana in the webhook payload. A
+short Grafana mobile template can keep those fields off the lock screen, but
+Grafana still receives them and an image host learns when the photo URL is
+retrieved.
 After the clearly marked TEST alert receives valid Grafana Cloud IRM or
 Pushover acceptance, a one-hour foreground GPS drill can send exact coordinates
 to every direct provider that accepted the trigger and in Google Maps URLs.
 This is outside TEST v1 and v2, and therefore outside the encrypted location
 guarantee above. Grafana, Pushover, Garmin's settings/network path, and Google
 can observe or retain data within their respective roles and policies. The
-display name, Grafana webhook URL, and Pushover credentials also synchronize
-through Garmin and are stored on the watch. Local last/pending coordinate
+display name, emergency card, Grafana webhook URL, and Pushover credentials
+also synchronize through Garmin and are stored on the watch. Local last/pending coordinate
 records are scrubbed at expiry or MENU reset. Do not use this exception for
 production LIVE or with anyone who has not explicitly consented.
 
@@ -50,8 +56,10 @@ Maximum defaults are:
 | IP addresses and analytics | not persisted / none |
 | Backups | 7 days |
 
-Except for the expressly consented personal direct-GPS drill above, contacts
-and coordinates never belong in URLs, logs, acknowledgements, or bug reports.
+Except for the expressly consented personal direct-GPS drill and emergency card
+above, contacts and coordinates never belong in URLs, logs, acknowledgements,
+or bug reports. Do not put a secret, token, private image-host credential, or
+live location in the card's photo URL.
 Public fixtures contain only generated test material. Longer retention requires
 an explicit local export rather than changing server defaults.
 

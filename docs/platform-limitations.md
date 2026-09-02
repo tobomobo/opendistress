@@ -25,7 +25,10 @@
 - Garmin's normal phone-editable app settings require a Connect IQ Store
   installation. The separate private beta application ID lets the owner test
   those settings without releasing the app publicly; a bare USB PRG sideload
-  is not the end-user configuration path.
+  is not the end-user configuration path. The settings UI supports text and URL
+  values but not a photo-file upload. The beta therefore accepts only an
+  optional HTTPS photo URL for its Grafana emergency card; Garmin, Grafana, and
+  the image host remain in that privacy boundary.
 - The public communications API does not let an app select BLE/phone versus
   watch Wi-Fi for a normal web request. The app submits immediately, then on a
   specific unavailable/timeout phone result asks Garmin once whether a saved

@@ -4,6 +4,26 @@
             <settingConfig type="alphaNumeric" required="false" maxLength="40" />
         </setting>
     </group>
+    <group id="emergencyProfile" title="@Strings.EmergencyProfileGroupTitle" description="@Strings.EmergencyProfileGroupDescription">
+        <setting propertyKey="@Properties.homeAddress" title="@Strings.HomeAddressTitle" prompt="@Strings.HomeAddressPrompt">
+            <settingConfig type="alphaNumeric" required="false" maxLength="160" />
+        </setting>
+        <setting propertyKey="@Properties.childrenInfo" title="@Strings.ChildrenInfoTitle" prompt="@Strings.ChildrenInfoPrompt">
+            <settingConfig type="alphaNumeric" required="false" maxLength="240" />
+        </setting>
+        <setting propertyKey="@Properties.personDescription" title="@Strings.PersonDescriptionTitle" prompt="@Strings.PersonDescriptionPrompt">
+            <settingConfig type="alphaNumeric" required="false" maxLength="240" />
+        </setting>
+        <setting propertyKey="@Properties.backgroundInfo" title="@Strings.BackgroundInfoTitle" prompt="@Strings.BackgroundInfoPrompt">
+            <settingConfig type="alphaNumeric" required="false" maxLength="320" />
+        </setting>
+        <setting propertyKey="@Properties.responseInstructions" title="@Strings.ResponseInstructionsTitle" prompt="@Strings.ResponseInstructionsPrompt">
+            <settingConfig type="alphaNumeric" required="false" maxLength="240" />
+        </setting>
+        <setting propertyKey="@Properties.profilePhotoUrl" title="@Strings.ProfilePhotoUrlTitle" prompt="@Strings.ProfilePhotoUrlPrompt">
+            <settingConfig type="url" required="false" />
+        </setting>
+    </group>
     <group id="grafanaIrm" title="@Strings.GrafanaGroupTitle" description="@Strings.GrafanaGroupDescription">
         <setting propertyKey="@Properties.grafanaWebhookUrl" title="@Strings.GrafanaWebhookTitle" prompt="@Strings.GrafanaWebhookPrompt">
             <settingConfig type="password" required="false" maxLength="512" />

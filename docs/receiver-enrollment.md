@@ -67,7 +67,13 @@ Alternatively, create a **Grafana Cloud IRM** custom integration with a
 formatted incoming webhook, configure its escalation chain, and paste the
 secret webhook URL into the Garmin app's password-type setting. Install the
 Grafana mobile app on each intended responder, enable Important Push, and test
-the exact locked/DND/Focus state. Record separately: webhook HTTP acceptance,
+the exact locked/DND/Focus state. Keep the mobile notification template limited
+to the payload's short `title` and `message`. If the optional Garmin emergency
+card is used, render its address, children/family, person-description,
+background, responder-instruction, and photo-link fields only in Grafana's
+opened web/detail view. Confirm on the exact receiver phone that no sensitive
+card text appears on the lock screen, then confirm every intended field and the
+photo render correctly after opening the alert. Record separately: webhook HTTP acceptance,
 first audible/vibration interruption, deliberate in-app ACK, and the alert
 timeline. The watch's cover and haptic prove only webhook ingestion and do not
 show the Grafana ACK. Repeat with notification permission or Important Push

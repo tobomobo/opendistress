@@ -661,13 +661,40 @@ class PanicView extends WatchUi.View {
     }
 
     function protectedPersonName() {
-        var value = Properties.getValue("protectedPersonName");
+        return optionalProfileText("protectedPersonName", 40);
+    }
+
+    function optionalProfileText(propertyKey, maxLength) {
+        var value = Properties.getValue(propertyKey);
         if (!(value instanceof Lang.String)
             || value.length() < 1
-            || value.length() > 40) {
+            || value.length() > maxLength) {
             return "";
         }
         return value as Lang.String;
+    }
+
+    function profilePhotoUrl() {
+        var value = optionalProfileText("profilePhotoUrl", 512);
+        if (value.length() < 9
+            || value.find("https://") != 0
+            || value.find("@") != null
+            || value.find("#") != null) {
+            return "";
+        }
+        return value;
+    }
+
+    function grafanaProfileFields() {
+        return {
+            "person_name" => protectedPersonName(),
+            "home_address" => optionalProfileText("homeAddress", 160),
+            "children_info" => optionalProfileText("childrenInfo", 240),
+            "person_description" => optionalProfileText("personDescription", 240),
+            "background_info" => optionalProfileText("backgroundInfo", 320),
+            "response_instructions" => optionalProfileText("responseInstructions", 240),
+            "profile_photo_url" => profilePhotoUrl()
+        };
     }
 
     function personalizedTestTitle(baseTitle) {
@@ -1949,11 +1976,19 @@ class PanicView extends WatchUi.View {
     }
 
     function grafanaAlertPayload(eventId) {
+        var profile = grafanaProfileFields();
         return {
             "alert_uid" => eventId,
             "title" => personalizedTestTitle(DIRECT_TEST_TITLE),
             "state" => "alerting",
-            "message" => DIRECT_TEST_MESSAGE
+            "message" => DIRECT_TEST_MESSAGE,
+            "person_name" => profile["person_name"],
+            "home_address" => profile["home_address"],
+            "children_info" => profile["children_info"],
+            "person_description" => profile["person_description"],
+            "background_info" => profile["background_info"],
+            "response_instructions" => profile["response_instructions"],
+            "profile_photo_url" => profile["profile_photo_url"]
         };
     }
 
@@ -2274,13 +2309,21 @@ class PanicView extends WatchUi.View {
         }
         if (_directResult["pending_location_grafana"]
             && hasDirectGrafanaConfiguration()) {
+            var profile = grafanaProfileFields();
             var grafanaParameters = {
                 "alert_uid" => _directResult["event_id"],
                 "title" => personalizedTestTitle(DIRECT_LOCATION_TITLE),
                 "state" => "alerting",
                 "message" => DIRECT_LOCATION_MESSAGE
                     + " Update " + sequence.format("%d") + ". " + mapUrl,
-                "link_to_upstream_details" => mapUrl
+                "link_to_upstream_details" => mapUrl,
+                "person_name" => profile["person_name"],
+                "home_address" => profile["home_address"],
+                "children_info" => profile["children_info"],
+                "person_description" => profile["person_description"],
+                "background_info" => profile["background_info"],
+                "response_instructions" => profile["response_instructions"],
+                "profile_photo_url" => profile["profile_photo_url"]
             };
             var grafanaOptions = {
                 :method => Communications.HTTP_REQUEST_METHOD_POST,
