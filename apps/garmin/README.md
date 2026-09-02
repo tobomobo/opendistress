@@ -395,6 +395,14 @@ token, and a query-suffixed credential failed closed. This is URL-validation
 and simulator evidence only; no Grafana endpoint, Important Push, receiver ACK,
 or GPS provider call was exercised.
 
+The review fix at `c8b4338` compiled for `fenix847mm` at `-l 1 -O 1` in the
+same pinned SDK image and ran five structured simulator tests. In addition to
+the four protocol tests above, `directProviderSafetyTransitions` executed
+provider-fingerprint mismatch, active-route, and post-acceptance GPS timestamp
+boundaries. The result was `PASSED (passed=5, failed=0, errors=0)`. This remains
+simulator evidence only; it does not replace physical GPS or provider delivery
+evidence.
+
 Earlier native macOS simulator runs verified the public setup state and the
 former pre-trigger cover behavior. That cover behavior was intentionally
 superseded by the direct-TEST acceptance UX above. The current fēnix 8 47 mm
