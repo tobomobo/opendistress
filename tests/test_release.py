@@ -80,8 +80,19 @@ class SourceSbomTests(unittest.TestCase):
         self.assertIn("git merge-base --is-ancestor HEAD origin/main", workflow)
         self.assertIn('for check in "test (3.11)" "test (3.13)" wearos watchos', workflow)
         self.assertIn('--json isPrerelease --jq .isPrerelease)" = true', workflow)
+        self.assertIn("commit: ${{ steps.release.outputs.commit }}", workflow)
+        self.assertIn("tag_object: ${{ steps.release.outputs.tag_object }}", workflow)
+        self.assertIn("ref: ${{ needs.validate.outputs.commit }}", workflow)
+        self.assertNotIn("ref: ${{ needs.validate.outputs.tag }}", workflow)
+        self.assertIn("EXPECTED_COMMIT: ${{ needs.validate.outputs.commit }}", workflow)
+        self.assertIn(
+            "EXPECTED_TAG_OBJECT: ${{ needs.validate.outputs.tag_object }}", workflow
+        )
+        self.assertGreaterEqual(workflow.count("= \"$EXPECTED_TAG_OBJECT\""), 2)
         self.assertIn("scripts/build_garmin_beta_release.sh", workflow)
         self.assertIn('gh release upload "$RELEASE_TAG" dist/garmin/* --clobber', workflow)
+        self.assertIn("if: always()", workflow)
+        self.assertIn('run: rm -f "$GARMIN_KEY_PATH"', workflow)
         self.assertIn("persist-credentials: false", workflow)
 
     def test_garmin_beta_builder_pins_sdk_and_packages_beta_manifest(self):

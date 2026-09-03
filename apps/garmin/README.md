@@ -169,10 +169,12 @@ workflow reruns `make ci` before any signing job is allowed to start. This
 keeps release creation, code signing, and Garmin's manual Store review as
 separate evidence.
 
-The signing job intentionally uses a self-hosted Apple Silicon macOS runner
-with the custom label `connect-iq-release`. Install the official Connect IQ
-SDK 9.2.0 and required manifest device profiles on that runner, place
-`monkeyc` on its service `PATH`, and do not use the runner for pull requests.
+The signing job intentionally uses a dedicated self-hosted Apple Silicon macOS
+runner with the custom label `connect-iq-release`. Prefer an ephemeral runner;
+otherwise use an encrypted host that wipes its runner temp directory between
+jobs. Install the official Connect IQ SDK 9.2.0 and required manifest device
+profiles on that runner, place `monkeyc` on its service `PATH`, and do not use
+the runner for pull requests.
 Create a protected GitHub environment named `garmin-beta`, require a reviewer,
 and add the original Store signing key as the environment secret
 `GARMIN_DEVELOPER_KEY_DER_BASE64`:
@@ -186,20 +188,22 @@ openssl base64 -A -in private-resources/developer_key.der \
 This streams the key into GitHub without printing it. Garmin requires every
 update to use the same signing key as the first upload. Keep at least two
 separately encrypted offline backups; GitHub is not the only backup.
-The workflow decodes the key into its private runner temp directory, removes
-it after the compiler exits, uploads the IQ file and a portable SHA-256 file as
-a 30-day workflow artifact, and attaches both to the existing GitHub
-prerelease. Download the IQ file, verify its checksum, and upload it manually
-to the existing **OpenDistress TEST** beta entry. GitHub release acceptance is
-not Garmin validation, Store acceptance, watch installation, or physical test
-evidence.
+The workflow decodes the key into its private runner temp directory and attempts
+removal both when the compiler exits and in an always-run cleanup step. A hard
+runner loss can bypass both, which is why ephemeral execution or temp-directory
+wiping is required. It uploads the IQ file and a portable SHA-256 file as a
+30-day workflow artifact, and attaches both to the existing GitHub prerelease.
+Download the IQ file, verify its checksum, and upload it manually to the existing
+**OpenDistress TEST** beta entry. GitHub release acceptance is not Garmin
+validation, Store acceptance, watch installation, or physical test evidence.
 
 The workflow packages only `manifest-beta.xml` at gradual type checking
 (`-l 1`). Production packaging stays disabled until strict `-l 3` compilation
 and the documented physical release gates pass.
 
-After merging a beta change, create and push a signed annotated tag, wait for
-the `Release source` workflow, and then start the packaging workflow:
+After merging a beta change, wait for every required check on the resulting
+`main` commit. Then create and push a signed annotated tag, wait for the
+`Release source` workflow, and start the packaging workflow:
 
 ```sh
 git tag -s v0.2.0-test.1 -m "OpenDistress TEST 0.2.0-test.1"
