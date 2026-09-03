@@ -290,3 +290,17 @@ The Store beta retains its alternate Garmin application ID, as Garmin requires
 for beta staging. A USB-sideloaded `Panic Button` and Store-installed `Panic
 Button TEST` therefore appear as two apps; the former has no reliable mobile
 settings path and should be removed for end-user testing.
+
+## 2026-09-03 — Keep the acceptance cover visually clean
+
+The first discoverability revision put `TEST ACCEPTED` and `DOWN: DETAILS`
+directly above and below the analog dial. Physical fēnix 8 evidence showed both
+labels clipped at the round display boundary and, more importantly, exposed
+alert UI on a cover whose purpose is to look neutral. That revision is
+superseded.
+
+The analog cover again renders only the dial. DOWN or a touchscreen tap still
+opens the separate provider-evidence page, where the explicit MENU reset is
+visible; neither first interaction clears accepted state or stops GPS. A
+fēnix 8 47 mm simulator visual fixture must show a text-free dial and a distinct
+unclipped detail page before the beta artifact is handed off.

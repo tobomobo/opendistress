@@ -398,7 +398,11 @@ class GarminContractTests(unittest.TestCase):
 
         self.assertIn("var _acceptedStatusVisible = false", source)
         self.assertIn("&& !_acceptedStatusVisible", cover)
-        self.assertIn('drawAcceptedCoverHint(dc, "TEST ACCEPTED", "DOWN: DETAILS")', update)
+        cover_start = update.index("if (shouldShowCover())")
+        cover_branch = update[cover_start : update.index("dc.setColor(", cover_start)]
+        self.assertIn("drawAnalogCover(dc);", cover_branch)
+        self.assertNotIn("drawAcceptedCoverHint", cover_branch)
+        self.assertNotIn("function drawAcceptedCoverHint", source)
         self.assertEqual(select.count("toggleAcceptedStatus();"), 2)
         self.assertNotIn("persistStateWithDirect", select)
         self.assertNotIn("activate", select)
