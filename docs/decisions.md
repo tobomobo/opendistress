@@ -299,8 +299,14 @@ labels clipped at the round display boundary and, more importantly, exposed
 alert UI on a cover whose purpose is to look neutral. That revision is
 superseded.
 
-The analog cover again renders only the dial. DOWN or a touchscreen tap still
-opens the separate provider-evidence page, where the explicit MENU reset is
-visible; neither first interaction clears accepted state or stops GPS. A
-fēnix 8 47 mm simulator visual fixture must show a text-free dial and a distinct
-unclipped detail page before the beta artifact is handed off.
+The analog cover again renders only the dial. The lower-left button or a
+touchscreen tap opens the separate provider-evidence page, where the physical
+reset control is visible; neither first interaction clears accepted state or
+stops GPS. A fēnix 8 47 mm simulator visual fixture must show a text-free dial
+and a distinct unclipped detail page before the beta artifact is handed off.
+
+The detail page uses physical button positions rather than only Garmin input
+event names: tap or the lower-left button returns to the dial, while holding
+the middle-left button resets the accepted TEST. It names Grafana, Pushover, or
+both as the accepting provider and says `Delivery not confirmed` instead of the
+ambiguous `Recipient unknown`.

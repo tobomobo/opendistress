@@ -63,9 +63,11 @@ accepted. The first HTTP-level
 provider acceptance changes the foreground app to its neutral analog cover and
 triggers a double haptic. This proves neither phone delivery, Important/Critical
 Push behavior, human acknowledgement, nor that help is coming. The current TEST
-cover remains visually clean; DOWN or a tap reveals a separate detail page
-without clearing anything, and MENU performs the explicit TEST reset required
-before another drill.
+cover remains visually clean; the lower-left button or a tap reveals a separate
+detail page without clearing anything. That page names the accepting provider,
+marks phone delivery as unconfirmed, and shows its controls. Holding the
+middle-left button performs the explicit TEST reset required before another
+drill.
 
 Only after the first stored acceptance, the foreground beta starts the watch's
 real position API for up to one hour. A cached fix older than that acceptance is
