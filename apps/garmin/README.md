@@ -154,6 +154,64 @@ monkeyc -e -f beta.jungle \
   -y private-resources/developer_key.der -l 1
 ```
 
+## Beta release automation
+
+GitHub Actions can validate and package a beta release, but Garmin's supported
+Store flow still requires a human to upload the resulting IQ file in the
+developer portal. The repository deliberately does not automate that browser
+session or store Garmin account credentials.
+
+The [`Garmin beta release`](../../.github/workflows/garmin-beta-release.yml)
+workflow accepts an existing annotated, cryptographically verified tag named
+`vMAJOR.MINOR.PATCH-test.N` or `vMAJOR.MINOR.PATCH-beta.N`. The tag must point
+to tested `main`, the ordinary source prerelease must already exist, and the
+workflow reruns `make ci` before any signing job is allowed to start. This
+keeps release creation, code signing, and Garmin's manual Store review as
+separate evidence.
+
+The signing job intentionally uses a self-hosted Apple Silicon macOS runner
+with the custom label `connect-iq-release`. Install the official Connect IQ
+SDK 9.2.0 and required manifest device profiles on that runner, place
+`monkeyc` on its service `PATH`, and do not use the runner for pull requests.
+Create a protected GitHub environment named `garmin-beta`, require a reviewer,
+and add the original Store signing key as the environment secret
+`GARMIN_DEVELOPER_KEY_DER_BASE64`:
+
+```sh
+openssl base64 -A -in private-resources/developer_key.der \
+  | gh secret set GARMIN_DEVELOPER_KEY_DER_BASE64 \
+      --env garmin-beta --repo tobomobo/opendistress
+```
+
+This streams the key into GitHub without printing it. Garmin requires every
+update to use the same signing key as the first upload. Keep at least two
+separately encrypted offline backups; GitHub is not the only backup.
+The workflow decodes the key into its private runner temp directory, removes
+it after the compiler exits, uploads the IQ file and a portable SHA-256 file as
+a 30-day workflow artifact, and attaches both to the existing GitHub
+prerelease. Download the IQ file, verify its checksum, and upload it manually
+to the existing **OpenDistress TEST** beta entry. GitHub release acceptance is
+not Garmin validation, Store acceptance, watch installation, or physical test
+evidence.
+
+The workflow packages only `manifest-beta.xml` at gradual type checking
+(`-l 1`). Production packaging stays disabled until strict `-l 3` compilation
+and the documented physical release gates pass.
+
+After merging a beta change, create and push a signed annotated tag, wait for
+the `Release source` workflow, and then start the packaging workflow:
+
+```sh
+git tag -s v0.2.0-test.1 -m "OpenDistress TEST 0.2.0-test.1"
+git push origin v0.2.0-test.1
+gh workflow run garmin-beta-release.yml \
+  --repo tobomobo/opendistress -f tag=v0.2.0-test.1
+```
+
+Approve the `garmin-beta` environment only after checking the tag, commit, and
+source prerelease. Re-running the same workflow replaces only the two Garmin
+assets for that tag; it does not submit anything to Garmin.
+
 ### Why two app icons can appear
 
 `OpenDistress TEST` uses a fresh Garmin application ID and is the only build to

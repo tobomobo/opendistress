@@ -111,6 +111,8 @@ Native build commands and their remaining gates are documented in
 [`apps/garmin/README.md`](apps/garmin/README.md),
 [`apps/wearos/README.md`](apps/wearos/README.md), and
 [`apps/watchos/README.md`](apps/watchos/README.md).
+The Garmin guide also documents the protected GitHub Actions beta-packaging
+workflow and the remaining manual Connect IQ Store upload.
 
 ## Run the relay locally
 

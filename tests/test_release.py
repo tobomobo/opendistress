@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,3 +62,90 @@ class SourceSbomTests(unittest.TestCase):
             workflow,
         )
         self.assertNotIn('sha256sum "dist/', workflow)
+        self.assertIn('release_flags+=(--prerelease)', workflow)
+
+    def test_garmin_beta_release_is_signed_gated_and_manual(self):
+        workflow = (ROOT / ".github/workflows/garmin-beta-release.yml").read_text()
+
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("pull_request:", workflow)
+        self.assertIn("runs-on: [self-hosted, macOS, ARM64, connect-iq-release]", workflow)
+        self.assertIn("environment: garmin-beta", workflow)
+        self.assertIn("secrets.GARMIN_DEVELOPER_KEY_DER_BASE64", workflow)
+        self.assertNotIn("GARMIN_USERNAME", workflow)
+        self.assertNotIn("GARMIN_PASSWORD", workflow)
+        self.assertIn("command -v openssl", workflow)
+        self.assertIn("command -v gh", workflow)
+        self.assertIn('--jq .verification.verified)" = true', workflow)
+        self.assertIn("git merge-base --is-ancestor HEAD origin/main", workflow)
+        self.assertIn('for check in "test (3.11)" "test (3.13)" wearos watchos', workflow)
+        self.assertIn('--json isPrerelease --jq .isPrerelease)" = true', workflow)
+        self.assertIn("scripts/build_garmin_beta_release.sh", workflow)
+        self.assertIn('gh release upload "$RELEASE_TAG" dist/garmin/* --clobber', workflow)
+        self.assertIn("persist-credentials: false", workflow)
+
+    def test_garmin_beta_builder_pins_sdk_and_packages_beta_manifest(self):
+        script = (ROOT / "scripts/build_garmin_beta_release.sh").read_text()
+
+        self.assertIn('compiler_version="$(monkeyc --version 2>&1)"', script)
+        self.assertIn("SDK 9.2.0 is required", script)
+        self.assertIn("monkeyc -e -f beta.jungle", script)
+        self.assertIn("-l 1 -w", script)
+        self.assertIn('OpenDistress-TEST-${version}.iq', script)
+        self.assertIn("sha256sum", script)
+        self.assertIn("shasum -a 256", script)
+
+    def test_garmin_beta_builder_uses_absolute_key_and_portable_checksum(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            temporary = Path(directory)
+            fake_bin = temporary / "bin"
+            fake_bin.mkdir()
+            fake_monkeyc = fake_bin / "monkeyc"
+            fake_monkeyc.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "--version" ]]; then
+  echo "Connect IQ Compiler version 9.2.0"
+  exit 0
+fi
+output=""
+key=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) output="$2"; shift 2 ;;
+    -y) key="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[[ "$key" == /* ]]
+[[ -s "$key" ]]
+printf 'test Connect IQ package\n' > "$output"
+"""
+            )
+            fake_monkeyc.chmod(0o755)
+            key = temporary / "developer-key.der"
+            key.write_bytes(b"test signing key")
+            output = temporary / "output"
+            relative_key = key.relative_to(ROOT)
+
+            subprocess.run(
+                [
+                    str(ROOT / "scripts/build_garmin_beta_release.sh"),
+                    "0.2.0-test.1",
+                    str(relative_key),
+                    str(output),
+                ],
+                cwd=ROOT,
+                env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            artifact = output / "OpenDistress-TEST-0.2.0-test.1.iq"
+            checksum = artifact.with_suffix(".iq.sha256")
+            checksum_fields = checksum.read_text().split()
+            self.assertEqual(
+                checksum_fields[0], hashlib.sha256(artifact.read_bytes()).hexdigest()
+            )
+            self.assertEqual(checksum_fields[1], artifact.name)
