@@ -271,3 +271,22 @@ a fixed response-priority order with per-field clipping budgets; even every
 field at its configured maximum remains under the provider's 1,024-character
 body limit. GPS updates retain their separate update-first body and do not
 repeat the prepared alert text.
+
+## 2026-09-03 — Make accepted TEST state and reset discoverable
+
+Direct provider acceptance remains durable across closing and reopening the
+app because the foreground GPS drill may still have work for up to one hour.
+The resulting analog cover was correct state recovery but looked like an
+unexplained watch mode, while the existing MENU reset had no visible affordance.
+
+The TEST cover now carries small `TEST ACCEPTED` and `DOWN: DETAILS` labels.
+DOWN or a touchscreen tap toggles a provider-evidence page and never triggers,
+stops tracking, or clears state. That page states that the recipient remains
+unknown and exposes MENU as the explicit TEST reset. The analog cover returns
+when details are hidden or the app is reopened. No wording upgrades provider
+acceptance into phone delivery, recipient acknowledgement, or help.
+
+The Store beta retains its alternate Garmin application ID, as Garmin requires
+for beta staging. A USB-sideloaded `Panic Button` and Store-installed `Panic
+Button TEST` therefore appear as two apps; the former has no reliable mobile
+settings path and should be removed for end-user testing.
