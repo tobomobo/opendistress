@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: MIT
+name: Garmin beta release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing signed beta tag, for example v0.2.0-test.1
+        required: true
+        type: string
+
+permissions:
+  checks: read
+  contents: write
+
+concurrency:
+  group: garmin-beta-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+      tag_object: ${{ steps.release.outputs.tag_object }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+      - name: Require a signed beta tag on tested main
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(beta|test)\.[0-9]+$ ]]; then
+            echo "Expected vMAJOR.MINOR.PATCH-beta.N or -test.N" >&2
+            exit 1
+          fi
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.type)" = tag
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha)"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .verification.verified)" = true
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .tag)" = "$RELEASE_TAG"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .object.type)" = commit
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq .object.sha)" = "$(git rev-parse HEAD)"
+          git merge-base --is-ancestor HEAD origin/main
+          commit_sha="$(git rev-parse HEAD)"
+          for check in "test (3.11)" "test (3.13)" wearos watchos; do
+            actual="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${commit_sha}/check-runs" \
+              -f check_name="$check" -f filter=latest -f per_page=100 \
+              --jq '.check_runs[] | select(.app.id == 15368 and .status == "completed" and .conclusion == "success") | .name')"
+            test "$actual" = "$check"
+          done
+          test "$(gh release view "$RELEASE_TAG" --json isPrerelease --jq .isPrerelease)" = true
+          echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=${commit_sha}" >> "$GITHUB_OUTPUT"
+          echo "tag_object=${tag_sha}" >> "$GITHUB_OUTPUT"
+      - run: make ci
+
+  package:
+    needs: validate
+    runs-on: [self-hosted, macOS, ARM64, connect-iq-release]
+    environment: garmin-beta
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate.outputs.commit }}
+      - name: Revalidate the immutable release target after approval
+        env:
+          EXPECTED_COMMIT: ${{ needs.validate.outputs.commit }}
+          EXPECTED_TAG_OBJECT: ${{ needs.validate.outputs.tag_object }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.type)" = tag
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha)" = "$EXPECTED_TAG_OBJECT"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXPECTED_TAG_OBJECT}" --jq .verification.verified)" = true
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXPECTED_TAG_OBJECT}" --jq .object.sha)" = "$EXPECTED_COMMIT"
+      - name: Build signed Garmin beta package
+        env:
+          GARMIN_DEVELOPER_KEY_DER_BASE64: ${{ secrets.GARMIN_DEVELOPER_KEY_DER_BASE64 }}
+          GARMIN_KEY_PATH: ${{ runner.temp }}/opendistress-developer-key.der
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -n "$GARMIN_DEVELOPER_KEY_DER_BASE64"
+          command -v monkeyc
+          command -v openssl
+          command -v gh
+          rm -f "$GARMIN_KEY_PATH"
+          trap 'rm -f "$GARMIN_KEY_PATH"' EXIT
+          umask 077
+          printf '%s' "$GARMIN_DEVELOPER_KEY_DER_BASE64" | openssl base64 -d -A -out "$GARMIN_KEY_PATH"
+          test -s "$GARMIN_KEY_PATH"
+          scripts/build_garmin_beta_release.sh "$RELEASE_VERSION" "$GARMIN_KEY_PATH" dist/garmin
+      - name: Remove temporary signing key
+        if: always()
+        env:
+          GARMIN_KEY_PATH: ${{ runner.temp }}/opendistress-developer-key.der
+        run: rm -f "$GARMIN_KEY_PATH"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opendistress-garmin-beta-${{ needs.validate.outputs.version }}
+          path: dist/garmin/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Attach package to the existing GitHub prerelease
+        env:
+          EXPECTED_TAG_OBJECT: ${{ needs.validate.outputs.tag_object }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha)" = "$EXPECTED_TAG_OBJECT"
+          gh release upload "$RELEASE_TAG" dist/garmin/* --clobber
