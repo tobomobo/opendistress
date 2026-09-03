@@ -35,12 +35,17 @@ its app or the receiver OS may expose the text on the lock screen. Each selected
 provider receives its mapped content, and an image host learns when the photo
 URL is retrieved.
 After the clearly marked TEST alert receives valid Grafana Cloud IRM or
-Pushover acceptance, a one-hour foreground GPS drill can send exact coordinates
+Pushover acceptance, a 24-hour foreground GPS drill can send exact coordinates
 to every direct provider that accepted the trigger and in Google Maps URLs.
 The first last-known update and every fix older than 30 seconds are visibly
 marked as possibly stale; capture time, computed age, source kind, and stale
 classification accompany Grafana updates, while Pushover receives the warning,
-age, and Garmin capture timestamp. Age is diagnostic metadata, not proof that a
+source, quality class, and age information. Pushover's provider timestamp is the
+current send attempt; the distinct Garmin capture time remains represented by
+the age in the message. The initial
+last-known fix may predate provider acceptance, and a running Garmin activity
+may supply its current fix without being modified; the latter has no Garmin fix
+timestamp and is explicitly marked with unknown age. Age is diagnostic metadata, not proof that a
 coordinate is current.
 This is outside TEST v1 and v2, and therefore outside the encrypted location
 guarantee above. Grafana, Pushover, Garmin's settings/network path, and Google

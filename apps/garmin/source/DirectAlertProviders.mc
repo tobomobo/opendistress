@@ -3,6 +3,7 @@
 import Toybox.Application.Properties;
 import Toybox.Cryptography;
 import Toybox.Lang;
+import Toybox.Position;
 import Toybox.StringUtil;
 
 module DirectAlertSafety {
@@ -69,6 +70,13 @@ module DirectAlertSafety {
             return false;
         }
         return captureAt <= now;
+    }
+
+    function isUsableLastKnownCapture(captureAt, now) {
+        return captureAt instanceof Lang.Number
+            && now instanceof Lang.Number
+            && captureAt > 0
+            && captureAt <= now;
     }
 
     function captureAgeSeconds(captureAt, now) {
@@ -158,11 +166,37 @@ module DirectAlertProfile {
         return "GPS-UPDATE " + sequence.format("%d") + " — TESTNOTRUF";
     }
 
-    function locationMessage(sequence, path, ageSeconds, mapUrl) {
+    function locationSource(path) {
+        if (path == 2) {
+            return "Laufende Garmin-Sportaufzeichnung";
+        }
+        return path == 1 ? "Live-GPS der Uhr" : "Letzter bekannter Uhrenstandort";
+    }
+
+    function locationQuality(quality) {
+        if (quality == Position.QUALITY_GOOD) {
+            return "gut";
+        }
+        if (quality == Position.QUALITY_USABLE) {
+            return "verwendbar";
+        }
+        if (quality == Position.QUALITY_POOR) {
+            return "schwach / nur 2D";
+        }
+        if (quality == Position.QUALITY_LAST_KNOWN) {
+            return "nur letzter bekannter Fix";
+        }
+        return "unbekannt";
+    }
+
+    function locationMessage(sequence, path, quality, ageSeconds, mapUrl) {
         var status;
         if (path != 1) {
-            status = "WARNUNG: letzter bekannter "
-                + "Garmin-GPS-Teststandort; moeglicherweise veraltet.";
+            status = path == 2
+                ? "WARNUNG: Garmin-Sport-GPS hat keinen Fix-Zeitstempel; "
+                    + "moeglicherweise veraltet."
+                : "WARNUNG: letzter bekannter Garmin-GPS-Teststandort; "
+                    + "moeglicherweise veraltet.";
         } else if (DirectAlertSafety.isPossiblyStaleLocation(path, ageSeconds)) {
             status = "WARNUNG: Garmin-GPS-Teststandort "
                 + "ist moeglicherweise veraltet.";
@@ -172,7 +206,12 @@ module DirectAlertProfile {
         return "GPS-UPDATE " + sequence.format("%d") + "\n\n"
             + "TESTMODUS — KEIN ECHTER NOTFALL\n\n"
             + "GPS-STATUS\n" + status
-            + "\n\nGPS-ALTER LAUT UHR\n" + ageSeconds.format("%d") + " s"
+            + "\nQuelle: " + locationSource(path)
+            + "\nQualitaet: " + locationQuality(quality)
+            + "\n\nGPS-ALTER LAUT UHR\n"
+            + (path == 2
+                ? "Nicht verfuegbar; vor " + ageSeconds.format("%d") + " s ausgelesen"
+                : ageSeconds.format("%d") + " s")
             + "\n\nKARTE\n" + mapUrl;
     }
 
@@ -279,7 +318,7 @@ module DirectPushoverAdapter {
         return parameters;
     }
 
-    function locationParameters(sequence, captureAt, path, ageSeconds, mapUrl) {
+    function locationParameters(sequence, sentAt, path, quality, ageSeconds, mapUrl) {
         var possiblyStale = DirectAlertSafety.isPossiblyStaleLocation(
             path,
             ageSeconds
@@ -293,11 +332,13 @@ module DirectPushoverAdapter {
             "message" => DirectAlertProfile.locationMessage(
                 sequence,
                 path,
+                quality,
                 ageSeconds,
                 mapUrl
             ),
             "priority" => sequence == 1 ? "1" : "0",
-            "timestamp" => captureAt.format("%d"),
+            // Keep the notification current even when its clearly labeled GPS fix is old.
+            "timestamp" => sentAt.format("%d"),
             "url" => mapUrl,
             "url_title" => possiblyStale
                 ? "Open possibly stale location"
@@ -349,6 +390,7 @@ module DirectGrafanaAdapter {
         sequence,
         captureAt,
         path,
+        quality,
         ageSeconds,
         mapUrl
     ) {
@@ -358,13 +400,28 @@ module DirectGrafanaAdapter {
             DirectAlertProfile.personalizedTitle(
                 DirectAlertProfile.locationTitle(sequence)
             ),
-            DirectAlertProfile.locationMessage(sequence, path, ageSeconds, mapUrl),
+            DirectAlertProfile.locationMessage(
+                sequence,
+                path,
+                quality,
+                ageSeconds,
+                mapUrl
+            ),
             mapUrl,
             profile
         );
-        payload["gps_capture_time"] = captureAt;
-        payload["gps_age_seconds"] = ageSeconds;
-        payload["gps_fix_kind"] = path == 1 ? "live_callback" : "last_known";
+        if (path == 2) {
+            payload["gps_observed_at"] = captureAt;
+            payload["gps_capture_age_unknown"] = true;
+        } else {
+            payload["gps_capture_time"] = captureAt;
+            payload["gps_age_seconds"] = ageSeconds;
+            payload["gps_capture_age_unknown"] = false;
+        }
+        payload["gps_fix_kind"] = path == 2
+            ? "active_activity"
+            : (path == 1 ? "live_callback" : "last_known");
+        payload["gps_quality"] = DirectAlertProfile.locationQuality(quality);
         payload["gps_may_be_stale"] = DirectAlertSafety.isPossiblyStaleLocation(
             path,
             ageSeconds
@@ -461,6 +518,11 @@ function directProviderSafetyTransitions(logger) {
         logger.error("Direct-provider fresh-position boundary failed");
         return false;
     }
+    if (!DirectAlertSafety.isUsableLastKnownCapture(99, 101)
+        || DirectAlertSafety.isUsableLastKnownCapture(102, 101)) {
+        logger.error("Last-known GPS boundary failed");
+        return false;
+    }
     if (DirectAlertSafety.captureAgeSeconds(100, 130) != 30
         || DirectAlertSafety.captureAgeSeconds(131, 130) != -1) {
         logger.error("GPS capture age boundary failed");
@@ -478,6 +540,10 @@ function directProviderSafetyTransitions(logger) {
         logger.error("Old continuous GPS callback was presented as current");
         return false;
     }
+    if (!DirectAlertSafety.isPossiblyStaleLocation(2, 5)) {
+        logger.error("Untimestamped activity GPS was presented as fresh");
+        return false;
+    }
     if (!PanicProtocol.stringEquals(
             DirectAlertProfile.locationTitle(2),
             "GPS-UPDATE 2 — TESTNOTRUF"
@@ -487,13 +553,16 @@ function directProviderSafetyTransitions(logger) {
     }
     var expectedLocationMessage = "GPS-UPDATE 2\n\n"
         + "TESTMODUS — KEIN ECHTER NOTFALL\n\n"
-        + "GPS-STATUS\nAktueller Garmin-GPS-Teststandort.\n\n"
+        + "GPS-STATUS\nAktueller Garmin-GPS-Teststandort."
+        + "\nQuelle: Live-GPS der Uhr"
+        + "\nQualitaet: gut\n\n"
         + "GPS-ALTER LAUT UHR\n5 s\n\n"
         + "KARTE\nhttps://maps.google.com/?q=1,2";
     if (!PanicProtocol.stringEquals(
             DirectAlertProfile.locationMessage(
                 2,
                 1,
+                Position.QUALITY_GOOD,
                 5,
                 "https://maps.google.com/?q=1,2"
             ),

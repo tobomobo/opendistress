@@ -74,11 +74,14 @@ alone does not stop it.
 
 The relay-free Garmin beta has a deliberately separate direct-GPS drill. It
 starts only after a direct TEST has received and durably stored valid Grafana
-Cloud IRM or Pushover acceptance. For up to one foreground hour it uses the real
-watch position API and sends a first post-acceptance fix plus materially changed
+Cloud IRM or Pushover acceptance. For up to 24 foreground hours it uses the real
+watch position API and sends a best-available initial location plus materially changed
 later fixes to every provider whose current configuration matches the one-way
-fingerprint stored with its trigger acceptance. A pre-acceptance cached fix is
-rejected, and changing provider settings pauses rather than retargets GPS. A
+fingerprint stored with its trigger acceptance. Its immediate fallback may be a
+pre-acceptance last-known fix, but that source and its exact reported age are
+prominent; live callbacks still must be post-acceptance. If a Garmin sport is
+already recording, the beta can use its current location without controlling
+that recording. Changing provider settings pauses rather than retargets GPS. A
 changed route or an exhausted per-target retry budget cannot retain the shared
 fix slot and starve another still-bound provider.
 Grafana updates share the trigger's
