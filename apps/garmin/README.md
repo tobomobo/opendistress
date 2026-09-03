@@ -85,6 +85,15 @@ bounded number of times, and resumed when the app is reopened. MENU or the
 24-hour expiry stops positioning and scrubs local coordinate records while
 retaining the provider-acceptance cover until MENU resets it.
 
+If neither an activity location nor a last-known snapshot exists at acceptance,
+the cover retries both the synchronous snapshot and the continuous positioning
+request every 10 seconds for the first five minutes, then once per minute. A
+snapshot discovered during that wait remains labeled last-known and does not
+complete the fresh-fix stage, so a later fresh callback at the same coordinates
+still produces an update. DOWN/tap opens the accepted detail page and reports
+`GPS searching`, `GPS update pending`, or `GPS update sent`; the analog cover
+itself remains text-free.
+
 ## Memory and type safety
 
 Connect IQ requires Monkey C; it does not offer a Rust target. Monkey C runs as

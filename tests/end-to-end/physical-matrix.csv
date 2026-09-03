@@ -36,6 +36,7 @@ phase,gate,route_or_condition,target,status,completed,last_run_utc,evidence_refe
 4,receiver critical alert,emergency receipt matches the acknowledging recipient and device,repeated,NOT_RUN,0,,,
 5,encrypted LIVE,recipient verifies and decrypts exact template ID,10,NOT_RUN,0,,,
 6,location,indoor unavailable snapshot plus fresh callback,10,NOT_RUN,0,,,
+6,location,empty initial snapshot followed by late last-known cache and fresh same-place callback,10,NOT_RUN,0,,,
 6,location,outdoor cached then better fresh fix,10,NOT_RUN,0,,,
 6,battery and lifecycle,foreground timeout activity conflict low battery,repeated,NOT_RUN,0,,,
 6,resolution stop,signed relay resolution status halts foreground location,repeated,NOT_RUN,0,,,

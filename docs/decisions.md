@@ -339,3 +339,17 @@ activity location as a fallback when firmware withholds the app's position
 callback. This consumes no additional timer. It still runs only while the app
 is foreground, never invents coordinates or a numeric accuracy radius, and
 does not claim that simulator data proves indoor or physical GPS behavior.
+
+## 2026-09-03 — Keep retrying after an empty initial watch location
+
+The first watch-only implementation polled `Position.getInfo()` once after
+provider acceptance. When that returned no location it entered fresh-fix stage
+one, but the cover fallback incorrectly allowed later snapshot polls only in
+stage two. A device that populated its last-known cache later, or whose initial
+continuous request failed transiently, could therefore remain silent forever.
+
+The accepted cover now retries both `Position.getInfo()` and the best-supported
+continuous request every 10 seconds for the first five minutes, then every
+minute for battery control. A later last-known snapshot retains the current
+stage instead of marking fresh acquisition complete. The accepted detail page
+exposes searching, queued, and sent GPS states without adding text to the cover.

@@ -77,6 +77,10 @@
   than 30 seconds receive the same warning. A small reported age still does not
   independently prove spatial freshness. Neither simulator nor mock GPS is
   accepted as physical reliability evidence.
+  When no initial location exists, the foreground cover retries the snapshot
+  and continuous request every 10 seconds for five minutes and then every
+  minute. This improves recovery from a late cache or transient API failure but
+  cannot manufacture an indoor fix when Garmin exposes no usable position.
 - Foreground cadence stops at local expiry or a verified signed relay status of
   `resolved`/`expired`. Polling occurs only while the client is foregrounded, so
   lifecycle and network delays still postpone that stop.
