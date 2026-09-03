@@ -728,6 +728,7 @@ class GarminContractTests(unittest.TestCase):
 
     def test_direct_gps_uses_real_position_and_persists_before_sending(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
+        manifest = (GARMIN / "manifest.xml").read_text()
         direct = source[
             source.index("function resumeDirectLocations()")
             : source.index("function scheduleLocationExpiry(")
@@ -738,14 +739,23 @@ class GarminContractTests(unittest.TestCase):
         ]
 
         self.assertIn("Position.getInfo()", direct)
+        self.assertIn("Activity.getActivityInfo()", direct)
+        self.assertIn("Activity.TIMER_STATE_ON", direct)
+        self.assertIn("activity.currentLocation", direct)
+        self.assertIn("activity.currentLocationAccuracy", direct)
+        self.assertIn("PanicProtocol.locationRecordFromValues(", direct)
+        self.assertIn("pollDirectFallbackLocation()", source)
         self.assertIn("enableBestContinuousLocation()", direct)
         self.assertIn("Position.QUALITY_NOT_AVAILABLE", direct)
         self.assertIn("DirectAlertSafety.isFreshCapture(", direct)
+        self.assertIn("DirectAlertSafety.isUsableLastKnownCapture(", direct)
         self.assertIn('info.when.value()', direct)
         self.assertIn('_directResult["accepted_at"]', direct)
         self.assertNotIn("LOCATION_ONE_SHOT", direct)
         self.assertNotIn("mock", direct.lower())
         self.assertNotIn("fixture", direct.lower())
+        self.assertNotIn("ActivityRecording", source)
+        self.assertNotIn('uses-permission id="Fit"', manifest)
         self.assertLess(queue.index("persistDirectTracking("), queue.index("sendDirectLocation();"))
         self.assertNotIn("locationRecord(null", direct)
 
@@ -826,9 +836,12 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('payload["gps_capture_time"] = captureAt', providers)
         self.assertIn('payload["gps_age_seconds"] = ageSeconds', providers)
         self.assertIn('payload["gps_fix_kind"]', providers)
+        self.assertIn('payload["gps_quality"]', providers)
+        self.assertIn('"active_activity"', providers)
         self.assertIn('payload["gps_may_be_stale"]', providers)
         self.assertIn('"priority" => sequence == 1 ? "1" : "0"', providers)
-        self.assertIn('"timestamp" => captureAt.format("%d")', providers)
+        self.assertIn('"timestamp" => sentAt.format("%d")', providers)
+        self.assertIn("sequence,\n                now,", send)
         self.assertIn("method(:onDirectLocationResponse)", send)
         self.assertIn('"alert_uid" => eventId', providers)
         self.assertIn('"state" => "alerting"', providers)
@@ -1033,6 +1046,7 @@ class GarminContractTests(unittest.TestCase):
             "FIRST_CADENCE_SECONDS = 30",
             "MIDDLE_CADENCE_SECONDS = 120",
             "LATE_CADENCE_SECONDS = 300",
+            "EXTENDED_CADENCE_SECONDS = 900",
             "MATERIAL_MOVE_E7 = 5000",
             "LOW_BATTERY_PERCENT = 20",
             "Position.LOCATION_CONTINUOUS",
@@ -1043,6 +1057,8 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("record[14] > previous[14]", app)
         self.assertIn("(current.toDouble() - previous.toDouble()).abs()", app)
         self.assertIn("var startedAt = expiresAt >= LIVE_EXPIRY_SECONDS", app)
+        self.assertIn("LIVE_EXPIRY_SECONDS = 86400", app)
+        self.assertIn("activeFor < 21600", app)
         self.assertIn('setState("CLOCK INCONSISTENT", "Future GPS fix was not queued")', app)
         self.assertIn("System.getSystemStats()", app)
         self.assertIn("scheduleLocationExpiry(now)", app)

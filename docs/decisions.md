@@ -313,3 +313,29 @@ reveals `DIAL` or `RESET TEST` before completing it. This uses the existing
 status timer rather than consuming another constrained Connect IQ timer. The
 page names Grafana, Pushover, or both as the accepting provider and says
 `Delivery not confirmed` instead of the ambiguous `Recipient unknown`.
+
+## 2026-09-03 — Prefer useful watch-only location over a fresh-fix gate
+
+The one-hour direct and encrypted LIVE location windows are superseded by the
+protocol's existing 24-hour maximum. Network updates retain the 30-second and
+two-minute early cadence, move to five minutes through hour six, and then to 15
+minutes; the existing low-battery multiplier still applies. Location remains
+foreground-only because Connect IQ cannot start GPS from a temporal background
+service, and automatically creating an activity recording would conflict with
+normal sport use and generate or take ownership of FIT recording state.
+
+After provider acceptance, the direct beta now prefers the current location of
+an already-running Garmin sport, then the watch's synchronous last-known
+snapshot, while independently requesting the best supported continuous GNSS
+configuration. A last-known snapshot may predate acceptance and is useful
+indoors, but its source, quality class, exact age, and stale warning are sent
+before the map link. The active-activity surface has no fix timestamp and is
+therefore marked possibly stale with unknown capture age. Continuous callbacks still require a post-acceptance
+timestamp. The app never starts, stops, pauses, saves, or discards the user's
+sport recording.
+
+The analog cover's existing minute refresh also polls the watch and active
+activity location as a fallback when firmware withholds the app's position
+callback. This consumes no additional timer. It still runs only while the app
+is foreground, never invents coordinates or a numeric accuracy radius, and
+does not claim that simulator data proves indoor or physical GPS behavior.

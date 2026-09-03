@@ -3,6 +3,7 @@
 import Toybox.Application;
 import Toybox.Application.Properties;
 import Toybox.Application.Storage;
+import Toybox.Activity;
 import Toybox.Attention;
 import Toybox.Communications;
 import Toybox.Complications;
@@ -78,7 +79,8 @@ class PanicGlanceView extends WatchUi.GlanceView {
 class PanicView extends WatchUi.View {
     const STATE_KEY = "event_state_v2";
     const LEGACY_PENDING_KEY = "pending_event";
-    const LIVE_EXPIRY_SECONDS = 3600;
+    const LIVE_EXPIRY_SECONDS = 86400;
+    const LEGACY_LOCATION_EXPIRY_SECONDS = 3600;
     const MAX_QUEUE = 3;
     const MAX_INITIAL_RETRIES = 2;
     const ALERT_ARM_HOLD_MS = 2500;
@@ -95,6 +97,7 @@ class PanicView extends WatchUi.View {
     const FIRST_CADENCE_SECONDS = 30;
     const MIDDLE_CADENCE_SECONDS = 120;
     const LATE_CADENCE_SECONDS = 300;
+    const EXTENDED_CADENCE_SECONDS = 900;
     const LEGACY_STATE_KEYS = ["queue", "active"];
     const STATE_KEYS = ["queue", "active", "direct_result"];
     const LEGACY_DIRECT_RESULT_KEYS = ["event_id", "request", "receipt"];
@@ -259,6 +262,7 @@ class PanicView extends WatchUi.View {
             return;
         }
         WatchUi.requestUpdate();
+        pollDirectFallbackLocation();
         scheduleIdleCoverRefresh();
     }
 
@@ -843,10 +847,13 @@ class PanicView extends WatchUi.View {
         if (value["tracking_expires_at"] == 0) {
             return value["accepted_at"] == 0;
         }
-        return value["accepted_at"] > 0
-            && value["accepted_at"] <= PanicProtocol.MAX_TIME - LIVE_EXPIRY_SECONDS
-            && value["tracking_expires_at"]
-                == value["accepted_at"] + LIVE_EXPIRY_SECONDS;
+        if (value["accepted_at"] <= 0) {
+            return false;
+        }
+        var lifetime = value["tracking_expires_at"] - value["accepted_at"];
+        return (lifetime == LIVE_EXPIRY_SECONDS
+                || lifetime == LEGACY_LOCATION_EXPIRY_SECONDS)
+            && value["accepted_at"] <= PanicProtocol.MAX_TIME - lifetime;
     }
 
     function validLocationHex(value) {
@@ -1522,12 +1529,20 @@ class PanicView extends WatchUi.View {
         if (_directResult["pending_location_hex"].length() > 0) {
             sendDirectLocation();
         } else if (_directResult["capture_stage"] == 0) {
-            var snapshot = null;
-            try {
-                snapshot = Position.getInfo();
-            } catch (error) {
+            var queuedInitial = false;
+            var activityRecord = currentActivityLocationRecord(now);
+            if (activityRecord != null) {
+                queuedInitial = queueDirectLocationRecord(activityRecord, 2, now);
             }
-            if (!queueDirectLocation(snapshot, 0, 1)) {
+            if (!queuedInitial) {
+                var snapshot = null;
+                try {
+                    snapshot = Position.getInfo();
+                } catch (error) {
+                }
+                queuedInitial = queueDirectLocation(snapshot, 0, 1);
+            }
+            if (!queuedInitial) {
                 if (!persistDirectTracking(
                         _directResult["next_location_sequence"],
                         _directResult["last_location_hex"],
@@ -1544,6 +1559,63 @@ class PanicView extends WatchUi.View {
             }
         }
         startDirectContinuousLocations();
+    }
+
+    function currentActivityLocationRecord(now) {
+        try {
+            var activity = Activity.getActivityInfo();
+            if (activity == null
+                || activity.timerState != Activity.TIMER_STATE_ON
+                || activity.currentLocation == null
+                || activity.currentLocationAccuracy == null
+                || activity.currentLocationAccuracy == Position.QUALITY_NOT_AVAILABLE) {
+                return null;
+            }
+            var record = PanicProtocol.locationRecordFromValues(
+                now,
+                activity.currentLocation,
+                activity.currentLocationAccuracy,
+                2
+            );
+            return record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+                :offset => 2,
+                :endianness => Lang.ENDIAN_BIG
+            }) == 0 ? null : record;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function pollDirectFallbackLocation() {
+        if (!_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 0
+            || _directResult["capture_stage"] == 3
+            || _directResult["pending_location_hex"].length() > 0) {
+            return;
+        }
+        var now = currentTime();
+        if (now == null || now >= _directResult["tracking_expires_at"]) {
+            return;
+        }
+        var activityRecord = currentActivityLocationRecord(now);
+        if (activityRecord != null
+            && shouldQueueDirectCadenceRecord(activityRecord, now)) {
+            queueDirectLocationRecord(activityRecord, 2, now);
+            return;
+        }
+        if (_directResult["capture_stage"] != 2) {
+            return;
+        }
+        var snapshot = null;
+        try {
+            snapshot = Position.getInfo();
+        } catch (error) {
+        }
+        if (snapshot != null
+            && shouldQueueDirectCadenceLocation(snapshot, now, 0)) {
+            queueDirectLocation(snapshot, 0, 2);
+        }
     }
 
     function startDirectContinuousLocations() {
@@ -1625,19 +1697,41 @@ class PanicView extends WatchUi.View {
         var now = currentTime();
         if (now == null
             || now >= _directResult["tracking_expires_at"]
-            || !DirectAlertSafety.isFreshCapture(
-                _directResult["accepted_at"],
-                info.when.value(),
-                now
-            )) {
+            || (path == 0
+                ? !DirectAlertSafety.isUsableLastKnownCapture(info.when.value(), now)
+                : !DirectAlertSafety.isFreshCapture(
+                    _directResult["accepted_at"],
+                    info.when.value(),
+                    now
+                ))) {
             return false;
         }
         var record = PanicProtocol.locationRecord(info, path);
+        return queueDirectLocationRecord(record, nextCaptureStage, now);
+    }
+
+    function queueDirectLocationRecord(record, nextCaptureStage, now) {
+        if (_directResult == null
+            || _directResult["capture_stage"] == 3
+            || _directResult["pending_location_hex"].length() > 0
+            || !hasBoundDirectProvider()
+            || !(record instanceof Lang.ByteArray)
+            || record.size() != 16
+            || !(now instanceof Lang.Number)
+            || now >= _directResult["tracking_expires_at"]) {
+            return false;
+        }
         var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
             :offset => 2,
             :endianness => Lang.ENDIAN_BIG
         });
-        if (captureAt == 0) {
+        var path = record[15];
+        var quality = record[14];
+        if (captureAt == 0
+            || captureAt > now
+            || (path != 0 && path != 1 && path != 2)
+            || quality < Position.QUALITY_LAST_KNOWN
+            || quality > Position.QUALITY_GOOD) {
             return false;
         }
         var recordHex = PanicProtocol.bytesHex(record);
@@ -1664,7 +1758,7 @@ class PanicView extends WatchUi.View {
         return true;
     }
 
-    function shouldQueueDirectCadenceLocation(info, now) {
+    function shouldQueueDirectCadenceLocation(info, now, path) {
         if (_directResult == null
             || _directResult["pending_location_hex"].length() > 0
             || !hasBoundDirectProvider()
@@ -1672,23 +1766,38 @@ class PanicView extends WatchUi.View {
             || info.position == null
             || info.when == null
             || info.accuracy == Position.QUALITY_NOT_AVAILABLE
-            || !DirectAlertSafety.isFreshCapture(
-                _directResult["accepted_at"],
-                info.when.value(),
-                now
-            )) {
+            || (path == 0
+                ? !DirectAlertSafety.isUsableLastKnownCapture(info.when.value(), now)
+                : !DirectAlertSafety.isFreshCapture(
+                    _directResult["accepted_at"],
+                    info.when.value(),
+                    now
+                ))) {
             return false;
         }
         if (_directResult["last_location_hex"].length() == 0) {
             return true;
         }
-        var record = PanicProtocol.locationRecord(info, 1);
+        var record = PanicProtocol.locationRecord(info, path);
+        return shouldQueueDirectCadenceRecord(record, now);
+    }
+
+    function shouldQueueDirectCadenceRecord(record, now) {
+        if (_directResult == null
+            || !(record instanceof Lang.ByteArray)
+            || record.size() != 16) {
+            return false;
+        }
         var previous = PanicProtocol.hexBytes(_directResult["last_location_hex"]);
         var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
             :offset => 2,
             :endianness => Lang.ENDIAN_BIG
         });
-        if (captureAt == 0) {
+        var previousCaptureAt = previous.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        if (captureAt == 0 || captureAt < previousCaptureAt) {
             return false;
         }
         if (record[14] > previous[14]) {
@@ -1696,9 +1805,9 @@ class PanicView extends WatchUi.View {
         }
         var lastQueuedAt = _directResult["last_location_queued_at"];
         if (now < lastQueuedAt
-            || now - lastQueuedAt < cadenceSecondsForExpiry(
+            || now - lastQueuedAt < cadenceSecondsForStart(
                 now,
-                _directResult["tracking_expires_at"]
+                _directResult["accepted_at"]
             )) {
             return false;
         }
@@ -1866,7 +1975,7 @@ class PanicView extends WatchUi.View {
         if (_directResult["capture_stage"] == 1) {
             queueDirectLocation(info, 1, 2);
         } else if (_directResult["capture_stage"] == 2
-            && shouldQueueDirectCadenceLocation(info, now)) {
+            && shouldQueueDirectCadenceLocation(info, now, 1)) {
             queueDirectLocation(info, 1, 2);
         }
     }
@@ -1936,10 +2045,18 @@ class PanicView extends WatchUi.View {
         var startedAt = expiresAt >= LIVE_EXPIRY_SECONDS
             ? expiresAt - LIVE_EXPIRY_SECONDS
             : 0;
+        return cadenceSecondsForStart(now, startedAt);
+    }
+
+    function cadenceSecondsForStart(now, startedAt) {
         var activeFor = now >= startedAt ? now - startedAt : 0;
         var seconds = activeFor < 300
             ? FIRST_CADENCE_SECONDS
-            : (activeFor < 1800 ? MIDDLE_CADENCE_SECONDS : LATE_CADENCE_SECONDS);
+            : (activeFor < 1800
+                ? MIDDLE_CADENCE_SECONDS
+                : (activeFor < 21600
+                    ? LATE_CADENCE_SECONDS
+                    : EXTENDED_CADENCE_SECONDS));
         try {
             var stats = System.getSystemStats();
             if (!stats.charging && stats.battery <= LOW_BATTERY_PERCENT) {
@@ -2724,6 +2841,7 @@ class PanicView extends WatchUi.View {
             :endianness => Lang.ENDIAN_BIG
         });
         var path = record[15];
+        var quality = record[14];
         var ageSeconds = DirectAlertSafety.captureAgeSeconds(captureAt, now);
         var latitude = record.decodeNumber(Lang.NUMBER_FORMAT_SINT32, {
             :offset => 6,
@@ -2734,7 +2852,9 @@ class PanicView extends WatchUi.View {
             :endianness => Lang.ENDIAN_BIG
         });
         if (captureAt == 0
-            || (path != 0 && path != 1)
+            || (path != 0 && path != 1 && path != 2)
+            || quality < Position.QUALITY_LAST_KNOWN
+            || quality > Position.QUALITY_GOOD
             || ageSeconds < 0
             || latitude < -900000000
             || latitude > 900000000
@@ -2754,8 +2874,9 @@ class PanicView extends WatchUi.View {
         if (sendPushover) {
             var parameters = DirectPushoverAdapter.locationParameters(
                 sequence,
-                captureAt,
+                now,
                 path,
+                quality,
                 ageSeconds,
                 mapUrl
             );
@@ -2787,6 +2908,7 @@ class PanicView extends WatchUi.View {
                 sequence,
                 captureAt,
                 path,
+                quality,
                 ageSeconds,
                 mapUrl
             );
@@ -3413,7 +3535,7 @@ function directValidRestartStateRoundTrips(logger) {
             "grafana_fingerprint" => grafanaFingerprint,
             "grafana_alert_pending" => false,
             "accepted_at" => 100,
-            "tracking_expires_at" => 3700,
+            "tracking_expires_at" => 86500,
             "next_location_sequence" => 2,
             "last_location_hex" => locationHex,
             "last_location_queued_at" => 100,

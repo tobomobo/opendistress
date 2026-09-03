@@ -68,15 +68,21 @@ action immediately widens and brightens its arc and briefly reveals `DIAL` or
 evidence and returns to readiness so another test can be triggered.
 
 After that stored acceptance, and never before it, the beta requests a real
-watch position for up to one hour. Every provider that accepted the trigger is
+watch position for up to 24 hours. Every provider that accepted the trigger is
 targeted sequentially for each fix. Pushover gets a separate high-priority
 first map-link message and normal-priority later moves. Grafana gets updates on
-the same alert UID, including the map link. Position acquisition and updates
-run only while the app is foreground. No synthetic unavailable record is sent,
-and simulator/mock fixes are not evidence that real GPS works. A pending fix
+the same alert UID, including the map link. The immediate fallback may be the
+watch's pre-acceptance last-known position; its source and age are explicit.
+During an already-running Garmin sport, the app can read the activity's current
+location without creating, stopping, or modifying its recording. Because that
+API exposes no fix timestamp, the update is conservatively marked possibly
+stale and its age unknown. Position
+acquisition and updates run only while the app is foreground. No synthetic
+unavailable record is sent, and simulator/mock fixes are not evidence that real
+GPS works. A pending fix
 and its remaining provider targets are stored before network calls, retried a
 bounded number of times, and resumed when the app is reopened. MENU or the
-one-hour expiry stops positioning and scrubs local coordinate records while
+24-hour expiry stops positioning and scrubs local coordinate records while
 retaining the provider-acceptance cover until MENU resets it.
 
 ## Memory and type safety
@@ -184,13 +190,16 @@ is pending is dropped from that fix so it cannot stall another accepted route;
 restoring the original settings makes it eligible for subsequent fixes.
 Likewise, exhausting one route's bounded retry budget advances that target and
 continues any other accepted route instead of blocking the shared GPS slot.
-Position timestamps from before provider acceptance are rejected. The initial
-`Position.getInfo()` result is nevertheless only Garmin's last-known snapshot;
-its timestamp alone cannot prove that the coordinates are spatially current.
+Continuous position callbacks from before provider acceptance are rejected.
+The initial `Position.getInfo()` result is Garmin's last-known snapshot and can
+predate acceptance; indoors that is often the most useful immediately available
+lead. Its timestamp alone cannot prove that the coordinates are spatially current.
 That first update is therefore always labeled `WARNUNG: letzter bekannter ...;
 moeglicherweise veraltet` and includes its send-time age in seconds. Continuous
-location callbacks are labeled as live callbacks, but receive the same warning
-once their reported timestamp is more than 30 seconds old.
+location callbacks are labeled as live callbacks, while positions obtained from
+an already-running Garmin activity are labeled separately and conservatively
+warn that Garmin supplies no capture timestamp. Live callbacks receive the stale
+warning once their reported timestamp is more than 30 seconds old.
 
 Every location notification begins with an update-first title such as
 `GPS-UPDATE 2 — TESTNOTRUF — Name`. Grafana and Pushover receive the same
@@ -204,6 +213,8 @@ TESTMODUS — KEIN ECHTER NOTFALL
 
 GPS-STATUS
 Aktueller Garmin-GPS-Teststandort.
+Quelle: Live-GPS der Uhr
+Qualitaet: gut
 
 GPS-ALTER LAUT UHR
 5 s
@@ -216,8 +227,11 @@ Grafana's formatted webhook receives `alert_uid`, `title`, `state`, `message`,
 and the optional emergency-card fields; later GPS updates reuse the same
 `alert_uid` and repeat the current card so it remains available in the newest
 alert item. GPS updates additionally expose numeric `gps_capture_time` and
-`gps_age_seconds`, `gps_fix_kind` (`last_known` or `live_callback`), and boolean
-`gps_may_be_stale`. Configure Grafana's mobile template from `title` and
+`gps_age_seconds`, `gps_fix_kind` (`last_known`, `live_callback`, or
+`active_activity`), `gps_quality`, and boolean `gps_may_be_stale`. Active
+activity updates instead expose `gps_observed_at` and
+`gps_capture_age_unknown: true` because Garmin supplies no fix timestamp on
+that API. Configure Grafana's mobile template from `title` and
 `message` only, then render the optional fields in its web/detail template. This
 keeps sensitive profile text off the short lock-screen notification while still
 making it available after a responder deliberately opens the alert. A webhook
@@ -227,8 +241,9 @@ version neither polls nor displays that ACK. Pushover uses emergency priority
 `2`, a 30-second retry interval, and the remaining TEST lifetime as expiry. Its first location
 uses priority `1`; later locations use priority `0`. Its location text includes
 the same sectioned status, last-known/stale warning, age, and map URL, while its
-provider timestamp remains the Garmin capture time rather than the later
-delivery-attempt time.
+provider timestamp remains the current delivery-attempt time so an old
+last-known fix cannot make the new alarm update appear old. The distinct GPS
+capture time and age stay in the message.
 
 Use these Grafana **Mobile push notifications** templates:
 
@@ -349,7 +364,8 @@ fails, the app retries with Garmin's legacy continuous request rather than
 abandoning emergency acquisition. A quality improvement queues immediately.
 Otherwise a move must exceed `0.0005` degrees in latitude or longitude and the
 minimum interval is 30 seconds for the first five minutes, two minutes through
-minute 30, and five minutes later. At 20% battery or below while not charging,
+minute 30, five minutes through hour six, and 15 minutes thereafter. At 20%
+battery or below while not charging,
 those intervals double. The same foreground-only cadence
 queries signed `/v2/status` even when a position callback is unchanged. An
 unaccepted TEST or LIVE trigger has priority and shares the single in-flight

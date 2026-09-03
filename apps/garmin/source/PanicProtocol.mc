@@ -617,18 +617,29 @@ module PanicProtocol {
     }
 
     function locationRecord(info, path) {
-        var record = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]b;
-        record[0] = 1;
-        record[1] = 2;
-        record[15] = path;
         if (info == null
             || info.position == null
             || info.when == null
             || info.accuracy == Position.QUALITY_NOT_AVAILABLE) {
+            return locationRecordFromValues(0, null, 0, path);
+        }
+        return locationRecordFromValues(
+            info.when.value(),
+            info.position,
+            info.accuracy,
+            path
+        );
+    }
+
+    function locationRecordFromValues(captureAt, position, accuracy, path) {
+        var record = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]b;
+        record[0] = 1;
+        record[1] = 2;
+        record[15] = path;
+        if (position == null || accuracy == Position.QUALITY_NOT_AVAILABLE) {
             return record;
         }
-        var captureAt = info.when.value();
-        var coordinates = info.position.toDegrees();
+        var coordinates = position.toDegrees();
         var latitude = truncateE7(coordinates[0]);
         var longitude = truncateE7(coordinates[1]);
         if (captureAt < 0
@@ -637,8 +648,8 @@ module PanicProtocol {
             || latitude > 900000000
             || longitude < -1800000000
             || longitude > 1800000000
-            || info.accuracy < 0
-            || info.accuracy > 4) {
+            || accuracy < 0
+            || accuracy > 4) {
             return record;
         }
         record.encodeNumber(captureAt, Lang.NUMBER_FORMAT_UINT32, {
@@ -653,7 +664,7 @@ module PanicProtocol {
             :offset => 10,
             :endianness => Lang.ENDIAN_BIG
         });
-        record[14] = info.accuracy;
+        record[14] = accuracy;
         return record;
     }
 }

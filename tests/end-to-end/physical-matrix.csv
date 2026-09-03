@@ -9,7 +9,7 @@ phase,gate,route_or_condition,target,status,completed,last_run_utc,evidence_refe
 1,direct GPS indoor acquisition,real fēnix 8 starts with no usable indoor fix then sends a later real fix without mock data,10,NOT_RUN,0,,,
 1,direct GPS movement,real fēnix 8 moves more than cadence threshold and sends a later normal-priority update-first map notification,10,NOT_RUN,0,,,
 1,direct GPS durable retry,interrupt network after real fix persistence then reopen and receive the retained fix,repeated,NOT_RUN,0,,,
-1,direct GPS lifecycle,DOWN or tap reveals accepted details without clearing; MENU reset and one-hour expiry stop positioning and scrub local coordinate records,repeated,NOT_RUN,0,,,
+1,direct GPS lifecycle,DOWN or tap reveals accepted details without clearing; MENU reset and 24-hour expiry stop positioning and scrub local coordinate records,repeated,NOT_RUN,0,,,
 1,100-attempt matrix,Android locked and screen off,10,NOT_RUN,0,,,
 1,100-attempt matrix,Garmin Connect backgrounded,10,NOT_RUN,0,,,
 1,100-attempt matrix,watch Wi-Fi disabled,10,NOT_RUN,0,,,

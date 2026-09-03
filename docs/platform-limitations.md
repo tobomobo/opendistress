@@ -62,14 +62,18 @@
   valid encrypted updates.
 - The personal direct-GPS drill starts only after at least one direct provider
   accepts the alert, runs only while the app remains foreground, and expires
-  after one hour. The app prefers supported multi-GNSS multi-band L1+L5, then
+  after 24 hours. The app prefers supported multi-GNSS multi-band L1+L5, then
   multi-GNSS L1, SatIQ, GPS, and finally the legacy continuous request. Device,
   firmware, satellite visibility, and environment still determine the actual
   fix quality. It sends no synthetic no-fix record. Its exact coordinates are
   plaintext to every direct provider that accepted the trigger and exposed in
   a Google Maps URL. Garmin's synchronous `Position.getInfo()` value is a
   last-known snapshot, not proof of a current fix, so it is always marked as
-  possibly stale and sent with its reported age. Continuous callbacks older
+  possibly stale and sent with its reported age even when it predates provider
+  acceptance. If a Garmin sport is already recording, its current location and
+  quality are used as another watch-only fallback without changing that
+  recording. That activity API supplies no fix timestamp, so its update is
+  conservatively stale and reports unknown capture age. Continuous callbacks older
   than 30 seconds receive the same warning. A small reported age still does not
   independently prove spatial freshness. Neither simulator nor mock GPS is
   accepted as physical reliability evidence.

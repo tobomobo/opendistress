@@ -22,7 +22,7 @@
     <string id="ProfilePhotoUrlTitle">Photo HTTPS URL (advanced)</string>
     <string id="ProfilePhotoUrlPrompt">Publicly reachable https:// image URL; Grafana or Pushover links it and the image host can see access</string>
     <string id="PushoverGroupTitle">Pushover TEST setup</string>
-    <string id="PushoverGroupDescription">Optional independent TEST route. Emergency profile text and its photo link are visible to Pushover and may appear on the lock screen. After acceptance, real GPS is shared with Pushover and Google Maps for up to one hour.</string>
+    <string id="PushoverGroupDescription">Optional independent TEST route. Emergency profile text and its photo link are visible to Pushover and may appear on the lock screen. After acceptance, the best available watch GPS is shared with Pushover and Google Maps for up to 24 hours while the app remains open.</string>
     <string id="PushoverUserKeyTitle">Pushover User Key</string>
     <string id="PushoverUserKeyPrompt">30 characters from the receiving Pushover account</string>
     <string id="PushoverApiTokenTitle">Pushover API Token</string>
