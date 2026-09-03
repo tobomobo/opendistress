@@ -58,10 +58,12 @@ stored acceptance. The cover means only **a provider accepted the request**;
 it does not mean a receiver phone displayed or sounded it, a person ACKed it,
 or help is coming. The cover is an ordinary foreground app view, not a
 replacement system watch face. It deliberately contains no alert text or
-controls: DOWN or a screen tap reveals a separate provider-evidence page
-without stopping GPS or clearing anything, and DOWN or tap again returns to the
-clean cover. MENU explicitly clears accepted TEST evidence and returns to
-readiness so another test can be triggered.
+controls: the lower-left button or a screen tap reveals a separate
+provider-evidence page without stopping GPS or clearing anything, and the same
+input returns to the clean cover. The page names the accepting provider and
+states that phone delivery is unconfirmed. Holding the middle-left button
+explicitly clears accepted TEST evidence and returns to readiness so another
+test can be triggered.
 
 After that stored acceptance, and never before it, the beta requests a real
 watch position for up to one hour. Every provider that accepted the trigger is
@@ -469,10 +471,13 @@ it does not replace physical GPS or provider delivery evidence.
 
 On 2026-09-03 the native macOS simulator rendered the accepted state on
 `fenix847mm` as a clean, text-free analog cover. A physical DOWN input opened
-the separate provider-evidence page with no clipped text. The visual run used
-a synthetic accepted result to avoid a real provider alert; the final source
-was then rebuilt and passed all eight structured simulator tests. Screenshots
-are recorded in `tests/end-to-end/evidence/`.
+the separate provider-evidence page. A follow-up visual regression replaced the
+ambiguous recipient text with the accepting provider, explicit unconfirmed
+delivery status, and fully visible physical-position controls for returning to
+the dial and resetting TEST. The visual runs used a synthetic accepted result
+to avoid a real provider alert; the final source was then rebuilt and passed
+all eight structured simulator tests. Screenshots are recorded in
+`tests/end-to-end/evidence/`.
 
 Earlier native macOS simulator runs verified the public setup state and the
 former pre-trigger cover behavior. That cover behavior was intentionally

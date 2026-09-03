@@ -227,6 +227,14 @@ class PanicView extends WatchUi.View {
             && !PanicProtocol.stringEquals(_state, "ROUTE CHANGED");
     }
 
+    function shouldShowAcceptedStatus() {
+        return _directResult != null
+            && _acceptedStatusVisible
+            && !PanicProtocol.stringEquals(_state, "LOCATION SCRUB UNSAVED")
+            && !PanicProtocol.stringEquals(_state, "LOCATION STATE UNSAVED")
+            && !PanicProtocol.stringEquals(_state, "ROUTE CHANGED");
+    }
+
     function scheduleIdleCoverRefresh() {
         if (!_visible || _directResult == null) {
             return;
@@ -315,6 +323,45 @@ class PanicView extends WatchUi.View {
             centerX + length * Math.cos(angle),
             centerY + length * Math.sin(angle)
         );
+    }
+
+    function drawAcceptedStatus(dc) {
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var isRound = width == height;
+        var compactRound = isRound && width < 220;
+        var safeWidth = (width * (compactRound ? 64 : (isRound ? 76 : 88))) / 100;
+        var safeLeft = (width - safeWidth) / 2;
+
+        var title = new WatchUi.TextArea({
+            :text => "ALERT STATUS",
+            :color => Graphics.COLOR_WHITE,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
+                Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => safeLeft,
+            :locY => (height * (compactRound ? 12 : 18)) / 100,
+            :width => safeWidth,
+            :height => (height * (compactRound ? 18 : 15)) / 100
+        });
+        title.draw(dc);
+
+        var detail = new WatchUi.TextArea({
+            :text => acceptedProviderSummary()
+                + "\nDelivery not confirmed"
+                + "\nTAP / LOWER-LEFT: DIAL"
+                + "\nHOLD MID-LEFT: RESET",
+            :color => Graphics.COLOR_LT_GRAY,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => safeLeft,
+            :locY => (height * (compactRound ? 34 : 36)) / 100,
+            :width => safeWidth,
+            :height => (height * (compactRound ? 52 : 48)) / 100
+        });
+        detail.draw(dc);
     }
 
     function selectStartupMode() {
@@ -790,6 +837,10 @@ class PanicView extends WatchUi.View {
             drawAnalogCover(dc);
             return;
         }
+        if (shouldShowAcceptedStatus()) {
+            drawAcceptedStatus(dc);
+            return;
+        }
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
         var width = dc.getWidth();
         var height = dc.getHeight();
@@ -1045,6 +1096,24 @@ class PanicView extends WatchUi.View {
         return true;
     }
 
+    function acceptedProviderSummary() {
+        if (_directResult == null) {
+            return "Provider accepted";
+        }
+        var grafanaAccepted = _directResult["grafana_accepted"];
+        var pushoverAccepted = _directResult["pushover_accepted"];
+        if (grafanaAccepted && pushoverAccepted) {
+            return "Grafana + Pushover accepted";
+        }
+        if (grafanaAccepted) {
+            return "Grafana accepted";
+        }
+        if (pushoverAccepted) {
+            return "Pushover accepted";
+        }
+        return "Provider accepted";
+    }
+
     function toggleAcceptedStatus() {
         if (_directResult == null) {
             return;
@@ -1052,7 +1121,6 @@ class PanicView extends WatchUi.View {
         _acceptedStatusVisible = !_acceptedStatusVisible;
         if (_acceptedStatusVisible) {
             _state = "PROVIDER ACCEPTED";
-            _detail = "Recipient unknown; MENU resets TEST";
         }
         WatchUi.requestUpdate();
     }
