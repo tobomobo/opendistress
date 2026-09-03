@@ -71,10 +71,12 @@ widens its arc and briefly reveals `DIAL` or `RESET TEST`; the latter performs
 the explicit TEST reset required before another drill.
 
 Only after the first stored acceptance, the foreground beta starts the watch's
-real position API for up to one hour. A cached fix older than that acceptance is
-rejected. Each provider that accepted the trigger receives the first fresh fix
-and meaningful later movement, but only while its current credentials match the
-fingerprint stored at acceptance; Grafana updates reuse the
+real position API for up to one hour. It requests the most accurate available
+Garmin mode in this order: multi-GNSS multi-band L1+L5, multi-GNSS L1, SatIQ,
+then GPS/legacy continuous positioning. A cached fix older than that acceptance
+is rejected. Each provider that accepted the trigger receives the first fresh
+fix and meaningful later movement, but only while its current credentials match
+the fingerprint stored at acceptance; Grafana updates reuse the
 same alert UID, while Pushover uses separate map-link messages. Both render
 location notifications update-first, with blank-line-separated TEST status,
 GPS status, signal age, and map sections instead of one dense sentence. These

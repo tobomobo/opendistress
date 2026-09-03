@@ -738,7 +738,7 @@ class GarminContractTests(unittest.TestCase):
         ]
 
         self.assertIn("Position.getInfo()", direct)
-        self.assertIn("Position.LOCATION_CONTINUOUS", direct)
+        self.assertIn("enableBestContinuousLocation()", direct)
         self.assertIn("Position.QUALITY_NOT_AVAILABLE", direct)
         self.assertIn("DirectAlertSafety.isFreshCapture(", direct)
         self.assertIn('info.when.value()', direct)
@@ -748,6 +748,34 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("fixture", direct.lower())
         self.assertLess(queue.index("persistDirectTracking("), queue.index("sendDirectLocation();"))
         self.assertNotIn("locationRecord(null", direct)
+
+    def test_gps_prefers_best_supported_configuration_with_legacy_fallback(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        helper = source[
+            source.index("function enableBestContinuousLocation()")
+            : source.index("function stopLocations()")
+        ]
+        configurations = (
+            "CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1_L5",
+            "CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1",
+            "CONFIGURATION_SAT_IQ",
+            "CONFIGURATION_GPS",
+        )
+
+        self.assertIn(":acquisitionType => Position.LOCATION_CONTINUOUS", helper)
+        self.assertIn(":configuration => configuration", helper)
+        self.assertIn("Position.hasConfigurationSupport(", helper)
+        self.assertIn(
+            "Position.enableLocationEvents(Position.LOCATION_CONTINUOUS",
+            helper,
+        )
+        for configuration in configurations:
+            self.assertIn(configuration, helper)
+        for preferred, fallback in zip(configurations, configurations[1:]):
+            self.assertLess(
+                helper.index(f"Position has :{preferred})"),
+                helper.index(f"Position has :{fallback})"),
+            )
 
     def test_direct_gps_sends_real_map_link_and_requires_provider_acceptance(self):
         source = (GARMIN / "source/PanicApp.mc").read_text()
@@ -985,7 +1013,7 @@ class GarminContractTests(unittest.TestCase):
             capture.index('if (_activeIncident != null && _activeIncident["capture_stage"] == 1)')
             : capture.index('} else if (_activeIncident != null && _activeIncident["capture_stage"] == 2)')
         ]
-        self.assertIn("Position.LOCATION_CONTINUOUS", stage_one_capture)
+        self.assertIn("enableBestContinuousLocation()", stage_one_capture)
         first_callback = capture[
             capture.index('if (_activeIncident["capture_stage"] == 1)', capture.index("function onPosition("))
             : capture.index('} else if (_activeIncident["capture_stage"] == 2', capture.index("function onPosition("))
