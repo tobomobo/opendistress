@@ -61,9 +61,11 @@ replacement system watch face. It deliberately contains no alert text or
 controls: the lower-left button or a screen tap reveals a separate
 provider-evidence page without stopping GPS or clearing anything, and the same
 input returns to the clean cover. The page names the accepting provider and
-states that phone delivery is unconfirmed. Holding the middle-left button
-explicitly clears accepted TEST evidence and returns to readiness so another
-test can be triggered.
+states that phone delivery is unconfirmed. Instead of persistent button text,
+short edge arcs align with the physical middle-left and lower-left buttons. An
+action immediately widens and brightens its arc and briefly reveals `DIAL` or
+`RESET TEST`; holding middle-left on this detail page clears accepted TEST
+evidence and returns to readiness so another test can be triggered.
 
 After that stored acceptance, and never before it, the beta requests a real
 watch position for up to one hour. Every provider that accepted the trigger is
@@ -473,10 +475,12 @@ On 2026-09-03 the native macOS simulator rendered the accepted state on
 `fenix847mm` as a clean, text-free analog cover. A physical DOWN input opened
 the separate provider-evidence page. A follow-up visual regression replaced the
 ambiguous recipient text with the accepting provider, explicit unconfirmed
-delivery status, and fully visible physical-position controls for returning to
-the dial and resetting TEST. The visual runs used a synthetic accepted result
-to avoid a real provider alert; the final source was then rebuilt and passed
-all eight structured simulator tests. Screenshots are recorded in
+delivery status, and physical-position controls for returning to the dial and
+resetting TEST. A second follow-up replaced the persistent control copy with
+edge-aligned arcs: the active arc grows and brightens while its action label is
+briefly visible. The visual runs used a synthetic accepted result to avoid a
+real provider alert; the final source was then rebuilt and passed all eight
+structured simulator tests. Screenshots are recorded in
 `tests/end-to-end/evidence/`.
 
 Earlier native macOS simulator runs verified the public setup state and the

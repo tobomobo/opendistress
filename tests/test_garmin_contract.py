@@ -394,6 +394,10 @@ class GarminContractTests(unittest.TestCase):
             source.index("function selectAction()")
             : source.index("function activateTest()")
         ]
+        reset = source[
+            source.index("function resetAcceptedTest()")
+            : source.index("function menuAction()")
+        ]
         menu = source[source.index("function menuAction()") : source.index("function setState(")]
 
         self.assertIn("var _acceptedStatusVisible = false", source)
@@ -409,6 +413,7 @@ class GarminContractTests(unittest.TestCase):
             source.index("function shouldShowAcceptedStatus()")
             : source.index("function scheduleIdleCoverRefresh()")
         ]
+        self.assertIn('stringEquals(_state, "PROVIDER ACCEPTED")', accepted_gate)
         self.assertIn('"LOCATION SCRUB UNSAVED"', accepted_gate)
         self.assertIn('"LOCATION STATE UNSAVED"', accepted_gate)
         self.assertIn('"ROUTE CHANGED"', accepted_gate)
@@ -419,19 +424,29 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('"ALERT STATUS"', accepted_ui)
         self.assertIn(":text => acceptedProviderSummary()", accepted_ui)
         self.assertIn("Delivery not confirmed", accepted_ui)
-        self.assertIn("TAP / LOWER-LEFT: DIAL", accepted_ui)
-        self.assertIn("HOLD MID-LEFT: RESET", accepted_ui)
+        self.assertIn("drawAcceptedButtonIndicators(dc);", accepted_ui)
+        self.assertIn("function drawAcceptedButtonIndicator(", accepted_ui)
+        self.assertIn("Graphics.ARC_CLOCKWISE", accepted_ui)
+        self.assertIn("var halfSweep = active ? 18 : 7", accepted_ui)
+        self.assertIn('"RESET TEST"', accepted_ui)
+        self.assertIn('"DIAL"', accepted_ui)
+        self.assertNotIn("LOWER-LEFT", accepted_ui)
+        self.assertNotIn("MID-LEFT", accepted_ui)
         self.assertNotIn("_displayEventId", accepted_ui)
         self.assertEqual(select.count("toggleAcceptedStatus();"), 2)
         self.assertNotIn("persistStateWithDirect", select)
         self.assertNotIn("activate", select)
+        self.assertIn('beginAcceptedActionFeedback("DIAL")', select)
         self.assertIn("function acceptedProviderSummary()", select)
         self.assertIn('"Grafana + Pushover accepted"', select)
         self.assertIn('"Grafana accepted"', select)
         self.assertIn('"Pushover accepted"', select)
         self.assertNotIn("Recipient unknown", source)
-        self.assertIn("persistStateWithDirect([], _activeIncident, null)", menu)
-        self.assertIn("_acceptedStatusVisible = false", menu)
+        self.assertIn("ACCEPTED_ACTION_FEEDBACK_MS = 180", source)
+        self.assertIn('beginAcceptedActionFeedback("RESET")', menu)
+        self.assertIn("persistStateWithDirect([], _activeIncident, null)", reset)
+        self.assertIn("_acceptedStatusVisible = false", reset)
+        self.assertIn("_acceptedActionFeedback = null", reset)
 
         pushover = source[
             source.index("function onPushoverResponse(")
@@ -826,7 +841,10 @@ class GarminContractTests(unittest.TestCase):
             source.index("function expireDirectLocations()")
             : source.index("function queueDirectLocation(")
         ]
-        menu = source[source.index("function menuAction()") : source.index("function setState(")]
+        reset = source[
+            source.index("function resetAcceptedTest()")
+            : source.index("function menuAction()")
+        ]
 
         self.assertIn("resumeDirectLocations();", on_show)
         self.assertIn('if (_directResult["pending_location_hex"].length() > 0)', source)
@@ -849,7 +867,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("stopLocations();", expiry)
         self.assertIn('persistDirectTracking(', expiry)
         self.assertIn('"",\n            0,\n            3,\n            ""', expiry)
-        self.assertIn("stopLocations();", menu)
+        self.assertIn("stopLocations();", reset)
         self.assertIn("LEGACY_DIRECT_RESULT_KEYS", source)
         for key in (
             "tracking_expires_at",

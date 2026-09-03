@@ -306,7 +306,10 @@ stops GPS. A fēnix 8 47 mm simulator visual fixture must show a text-free dial
 and a distinct unclipped detail page before the beta artifact is handed off.
 
 The detail page uses physical button positions rather than only Garmin input
-event names: tap or the lower-left button returns to the dial, while holding
-the middle-left button resets the accepted TEST. It names Grafana, Pushover, or
-both as the accepting provider and says `Delivery not confirmed` instead of the
-ambiguous `Recipient unknown`.
+event names. Short arcs at the display edge align with the middle-left and
+lower-left buttons; their resting state is deliberately subdued. Activating an
+action immediately widens and brightens the corresponding arc and briefly
+reveals `DIAL` or `RESET TEST` before completing it. This uses the existing
+status timer rather than consuming another constrained Connect IQ timer. The
+page names Grafana, Pushover, or both as the accepting provider and says
+`Delivery not confirmed` instead of the ambiguous `Recipient unknown`.

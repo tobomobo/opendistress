@@ -84,6 +84,7 @@ class PanicView extends WatchUi.View {
     const ALERT_ARM_HOLD_MS = 2500;
     const ALERT_ARM_FRAME_MS = 50;
     const ALERT_ARM_START_DEGREES = 270;
+    const ACCEPTED_ACTION_FEEDBACK_MS = 180;
     const COVER_REFRESH_MS = 60000;
     const RETRY_DELAY_MS = 5000;
     const WIFI_CHECK_TIMEOUT_MS = 10000;
@@ -177,6 +178,7 @@ class PanicView extends WatchUi.View {
     var _directLocationRetryBlocked = false;
     var _directGrafanaRetryBlocked = false;
     var _acceptedStatusVisible = false;
+    var _acceptedActionFeedback = null;
 
     function initialize() {
         View.initialize();
@@ -210,6 +212,7 @@ class PanicView extends WatchUi.View {
     function onHide() {
         _visible = false;
         _acceptedStatusVisible = false;
+        _acceptedActionFeedback = null;
         cancelAlertArm();
         stopLocations();
         try {
@@ -230,6 +233,7 @@ class PanicView extends WatchUi.View {
     function shouldShowAcceptedStatus() {
         return _directResult != null
             && _acceptedStatusVisible
+            && PanicProtocol.stringEquals(_state, "PROVIDER ACCEPTED")
             && !PanicProtocol.stringEquals(_state, "LOCATION SCRUB UNSAVED")
             && !PanicProtocol.stringEquals(_state, "LOCATION STATE UNSAVED")
             && !PanicProtocol.stringEquals(_state, "ROUTE CHANGED");
@@ -349,9 +353,7 @@ class PanicView extends WatchUi.View {
 
         var detail = new WatchUi.TextArea({
             :text => acceptedProviderSummary()
-                + "\nDelivery not confirmed"
-                + "\nTAP / LOWER-LEFT: DIAL"
-                + "\nHOLD MID-LEFT: RESET",
+                + "\nDelivery not confirmed",
             :color => Graphics.COLOR_LT_GRAY,
             :backgroundColor => Graphics.COLOR_BLACK,
             :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
@@ -359,9 +361,69 @@ class PanicView extends WatchUi.View {
             :locX => safeLeft,
             :locY => (height * (compactRound ? 34 : 36)) / 100,
             :width => safeWidth,
-            :height => (height * (compactRound ? 52 : 48)) / 100
+            :height => (height * (compactRound ? 30 : 25)) / 100
         });
         detail.draw(dc);
+        drawAcceptedButtonIndicators(dc);
+
+        if (_acceptedActionFeedback != null) {
+            var feedback = new WatchUi.TextArea({
+                :text => PanicProtocol.stringEquals(_acceptedActionFeedback, "RESET")
+                    ? "RESET TEST"
+                    : "DIAL",
+                :color => Graphics.COLOR_WHITE,
+                :backgroundColor => Graphics.COLOR_BLACK,
+                :font => [Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
+                    Graphics.FONT_TINY, Graphics.FONT_XTINY],
+                :justification => Graphics.TEXT_JUSTIFY_CENTER,
+                :locX => safeLeft,
+                :locY => (height * (compactRound ? 68 : 67)) / 100,
+                :width => safeWidth,
+                :height => (height * 16) / 100
+            });
+            feedback.draw(dc);
+        }
+    }
+
+    function drawAcceptedButtonIndicators(dc) {
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var resetActive = PanicProtocol.stringEquals(_acceptedActionFeedback, "RESET");
+        var dialActive = PanicProtocol.stringEquals(_acceptedActionFeedback, "DIAL");
+        if (width == height) {
+            var radius = width / 2 - (width >= 400 ? 12 : 7);
+            drawAcceptedButtonIndicator(dc, width / 2, height / 2,
+                radius, 180, resetActive);
+            drawAcceptedButtonIndicator(dc, width / 2, height / 2,
+                radius, 225, dialActive);
+            return;
+        }
+        drawAcceptedEdgeIndicator(dc, height / 2, resetActive);
+        drawAcceptedEdgeIndicator(dc, (height * 72) / 100, dialActive);
+    }
+
+    function drawAcceptedButtonIndicator(dc, centerX, centerY, radius,
+        centerDegrees, active) {
+        var minSize = dc.getWidth() < dc.getHeight() ? dc.getWidth() : dc.getHeight();
+        var halfSweep = active ? 18 : 7;
+        dc.setPenWidth(active
+            ? (minSize >= 400 ? 16 : (minSize >= 260 ? 12 : 8))
+            : (minSize >= 400 ? 8 : (minSize >= 260 ? 6 : 4)));
+        dc.setColor(active ? Graphics.COLOR_WHITE : Graphics.COLOR_DK_GRAY,
+            Graphics.COLOR_BLACK);
+        dc.drawArc(centerX, centerY, radius, Graphics.ARC_CLOCKWISE,
+            centerDegrees + halfSweep, centerDegrees - halfSweep);
+        dc.setPenWidth(1);
+    }
+
+    function drawAcceptedEdgeIndicator(dc, centerY, active) {
+        var height = dc.getHeight();
+        var halfLength = active ? height / 12 : height / 24;
+        dc.setPenWidth(active ? 12 : 6);
+        dc.setColor(active ? Graphics.COLOR_WHITE : Graphics.COLOR_DK_GRAY,
+            Graphics.COLOR_BLACK);
+        dc.drawLine(5, centerY - halfLength, 5, centerY + halfLength);
+        dc.setPenWidth(1);
     }
 
     function selectStartupMode() {
@@ -1087,11 +1149,17 @@ class PanicView extends WatchUi.View {
     }
 
     function selectAction() {
+        if (shouldShowAcceptedStatus()) {
+            return beginAcceptedActionFeedback("DIAL");
+        }
         toggleAcceptedStatus();
         return true;
     }
 
     function downAction() {
+        if (shouldShowAcceptedStatus()) {
+            return beginAcceptedActionFeedback("DIAL");
+        }
         toggleAcceptedStatus();
         return true;
     }
@@ -1123,6 +1191,43 @@ class PanicView extends WatchUi.View {
             _state = "PROVIDER ACCEPTED";
         }
         WatchUi.requestUpdate();
+    }
+
+    function beginAcceptedActionFeedback(action) {
+        if (_acceptedActionFeedback != null) {
+            return true;
+        }
+        _acceptedActionFeedback = action;
+        WatchUi.requestUpdate();
+        try {
+            _statusTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _statusTimer.start(method(:completeAcceptedActionFeedback),
+                ACCEPTED_ACTION_FEEDBACK_MS, false);
+        } catch (error) {
+            completeAcceptedActionFeedback();
+        }
+        return true;
+    }
+
+    function completeAcceptedActionFeedback() {
+        try {
+            _statusTimer.stop();
+        } catch (error) {
+        }
+        var action = _acceptedActionFeedback;
+        _acceptedActionFeedback = null;
+        if (PanicProtocol.stringEquals(action, "RESET")) {
+            resetAcceptedTest();
+            return;
+        }
+        if (PanicProtocol.stringEquals(action, "DIAL")) {
+            _acceptedStatusVisible = false;
+            WatchUi.requestUpdate();
+            scheduleIdleCoverRefresh();
+        }
     }
 
     function activateTest() {
@@ -3084,6 +3189,22 @@ class PanicView extends WatchUi.View {
         }
     }
 
+    function resetAcceptedTest() {
+        stopLocations();
+        if (persistStateWithDirect([], _activeIncident, null)) {
+            _acceptedStatusVisible = false;
+            _acceptedActionFeedback = null;
+            _state = "READY — TEST";
+            _detail = "Hold top button 2.5 seconds";
+            selectStartupMode();
+            WatchUi.requestUpdate();
+        } else {
+            _acceptedStatusVisible = false;
+            _acceptedActionFeedback = null;
+            setState("CONFIGURATION FAILURE", "Cannot reset accepted TEST");
+        }
+    }
+
     function menuAction() {
         if (_inFlight) {
             return true;
@@ -3143,17 +3264,11 @@ class PanicView extends WatchUi.View {
             return true;
         }
         if (_directResult != null) {
-            stopLocations();
-            if (persistStateWithDirect([], _activeIncident, null)) {
-                _acceptedStatusVisible = false;
-                _state = "READY — TEST";
-                _detail = "Hold top button 2.5 seconds";
-                selectStartupMode();
-                WatchUi.requestUpdate();
-            } else {
-                setState("CONFIGURATION FAILURE", "Cannot reset accepted TEST");
+            if (!_acceptedStatusVisible) {
+                toggleAcceptedStatus();
+                return true;
             }
-            return true;
+            return beginAcceptedActionFeedback("RESET");
         }
         _state = "READY — TEST";
         _detail = "Hold top button 2.5 seconds";
@@ -3257,6 +3372,9 @@ function directValidRestartStateRoundTrips(logger) {
         && !reloaded.shouldShowCover()
         && reloaded._directResult != null;
     reloaded.menuAction();
+    var resetFeedback = PanicProtocol.stringEquals(
+        reloaded._acceptedActionFeedback, "RESET");
+    reloaded.completeAcceptedActionFeedback();
     var storedAfterReset = Storage.getValue("event_state_v2");
     var reset = reloaded._directResult == null
         && !reloaded._acceptedStatusVisible
@@ -3267,7 +3385,7 @@ function directValidRestartStateRoundTrips(logger) {
         logger.error("Valid Grafana direct state did not survive storage roundtrip");
         return false;
     }
-    if (!coverProtected || !detailsRevealed || !reset) {
+    if (!coverProtected || !detailsRevealed || !resetFeedback || !reset) {
         logger.error("Accepted direct TEST could not reveal details and reset safely");
         return false;
     }
