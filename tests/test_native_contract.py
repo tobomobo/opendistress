@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 
+import json
 import plistlib
 import re
 import unittest
@@ -34,6 +35,18 @@ class NativeContractTests(unittest.TestCase):
         self.assertEqual(feature.attrib[android + "required"], "true")
         application = manifest.find("application")
         self.assertEqual(application.attrib[android + "usesCleartextTraffic"], "false")
+        self.assertEqual(application.attrib[android + "icon"], "@mipmap/ic_launcher")
+        self.assertEqual(application.attrib[android + "roundIcon"], "@mipmap/ic_launcher_round")
+        for resource in (
+            "drawable/ic_launcher_foreground.xml",
+            "drawable/ic_launcher_monochrome.xml",
+            "mipmap-anydpi-v26/ic_launcher.xml",
+            "mipmap-anydpi-v26/ic_launcher_round.xml",
+            "mipmap-anydpi-v33/ic_launcher.xml",
+            "mipmap-anydpi-v33/ic_launcher_round.xml",
+            "values/colors.xml",
+        ):
+            ET.parse(WEAR / "app/src/main/res" / resource)
         standalone = application.find("meta-data")
         self.assertEqual(standalone.attrib[android + "name"], "com.google.android.wearable.standalone")
         self.assertEqual(standalone.attrib[android + "value"], "true")
@@ -76,6 +89,13 @@ class NativeContractTests(unittest.TestCase):
         self.assertIsNotNone(scheme.find("ArchiveAction"))
 
         project = (WATCH / "OpenDistressWatch.xcodeproj/project.pbxproj").read_text()
+        self.assertEqual(project.count("ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;"), 2)
+        self.assertGreaterEqual(project.count("Assets.xcassets"), 3)
+        app_icon = WATCH / "OpenDistressWatch/Assets.xcassets/AppIcon.appiconset"
+        contents = json.loads((app_icon / "Contents.json").read_text())
+        self.assertEqual(contents["images"][0]["platform"], "watchos")
+        self.assertEqual(contents["images"][0]["size"], "1024x1024")
+        self.assertTrue((app_icon / contents["images"][0]["filename"]).is_file())
         self.assertEqual(project.count("PRODUCT_BUNDLE_IDENTIFIER = dev.opendistress.watch;"), 2)
         self.assertEqual(
             project.count("PRODUCT_BUNDLE_IDENTIFIER = dev.opendistress.watch.tests;"),

@@ -39,6 +39,10 @@ The personal prototype build embeds those locally supplied values in Android
 provisioned artifact. Hardware-backed Keystore enrollment and key rotation are
 production gates, not implemented by this build-time provisioning path.
 
+The launcher uses an OpenDistress adaptive icon with separate graphite
+background, readiness-ring foreground, and API 33 monochrome themed-icon
+layers. The round launcher reference uses the same safe-zone-aware artwork.
+
 ```sh
 gradle --no-daemon -p apps/wearos :app:testDebugUnitTest :app:assembleDebug
 ```

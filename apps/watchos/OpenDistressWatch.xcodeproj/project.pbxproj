@@ -17,6 +17,7 @@
 		A10000000000000000000008 /* location-updated-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* location-updated-v2.json */; };
 		A10000000000000000000009 /* status-query-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* status-query-v2.json */; };
 		A1000000000000000000000A /* status-v2.txt in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* status-v2.txt */; };
+		A1000000000000000000000B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,6 +45,7 @@
 		A2000000000000000000000C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A2000000000000000000000D /* status-query-v2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "status-query-v2.json"; sourceTree = "<group>"; };
 		A2000000000000000000000E /* status-v2.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "status-v2.txt"; sourceTree = "<group>"; };
+		A2000000000000000000000F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +81,7 @@
 			isa = PBXGroup;
 			children = (
 				A2000000000000000000000C /* Info.plist */,
+				A2000000000000000000000F /* Assets.xcassets */,
 				A20000000000000000000001 /* OpenDistressWatchApp.swift */,
 				A20000000000000000000005 /* OpenDistressController.swift */,
 				A20000000000000000000002 /* Protocol.swift */,
@@ -206,6 +209,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000000B /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -288,6 +292,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A20000000000000000000007 /* PublicDefaults.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -312,6 +317,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A20000000000000000000007 /* PublicDefaults.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;

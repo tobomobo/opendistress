@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: MIT
 
-.PHONY: test ci protocol-vectors
+.PHONY: test ci native-icons protocol-vectors
+
+native-icons:
+	xcrun swift scripts/generate_native_icons.swift apps/watchos/OpenDistressWatch/Assets.xcassets/AppIcon.appiconset/OpenDistress-AppIcon.png
 
 protocol-vectors:
 	node scripts/generate_protocol_vectors.js

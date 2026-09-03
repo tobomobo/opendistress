@@ -36,6 +36,10 @@ app's `Info.plist`; anyone who obtains that bundle can extract them. Do not
 distribute a provisioned artifact. Keychain-backed enrollment and key rotation
 are production gates, not implemented by this build-time provisioning path.
 
+The `AppIcon` asset catalog contains an opaque 1024 x 1024 OpenDistress master.
+Regenerate it from the checked-in Core Graphics source on macOS with
+`make native-icons`; watchOS applies the final launcher mask.
+
 ```sh
 xcodebuild -project apps/watchos/OpenDistressWatch.xcodeproj \
   -scheme OpenDistressWatch \

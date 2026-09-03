@@ -60,6 +60,17 @@ during deliberate activation.
 - Red is reserved for an unmistakable active live state or blocking error; it
   is not the identity colour.
 
+## Native app icons
+
+Apple Watch uses an opaque 1024 x 1024 master in its `AppIcon` asset catalog;
+watchOS applies the final device mask, so the source artwork has square edges
+and no alpha channel. Regenerate it on macOS with `make native-icons`.
+
+Wear OS uses the same mark as an adaptive icon: graphite is the background
+layer, the warm-white ring and amber signal point form the foreground, and an
+all-white monochrome layer supports Android themed icons. API 26 resources omit
+the newer monochrome element; API 33 resources add it explicitly.
+
 ## Garmin Connect IQ Store metadata
 
 **Name**
