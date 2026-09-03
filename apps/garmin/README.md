@@ -342,11 +342,15 @@ path. The explicitly separate direct-GPS drill described above relaxes the
 plaintext boundary only after direct Grafana or Pushover TEST acceptance.
 
 After the initial callback, continuous positioning runs only while this view is
-foreground and the incident is unexpired. A quality improvement queues
-immediately. Otherwise a move must exceed `0.0005` degrees in latitude or
-longitude and the minimum interval is 30 seconds for the first five minutes,
-two minutes through minute 30, and five minutes later. At 20% battery or below
-while not charging, those intervals double. The same foreground-only cadence
+foreground and the incident is unexpired. Each acquisition requests the best
+supported Garmin configuration in this order: multi-GNSS multi-band L1+L5,
+multi-GNSS L1, SatIQ, then GPS. If the capability query or configured request
+fails, the app retries with Garmin's legacy continuous request rather than
+abandoning emergency acquisition. A quality improvement queues immediately.
+Otherwise a move must exceed `0.0005` degrees in latitude or longitude and the
+minimum interval is 30 seconds for the first five minutes, two minutes through
+minute 30, and five minutes later. At 20% battery or below while not charging,
+those intervals double. The same foreground-only cadence
 queries signed `/v2/status` even when a position callback is unchanged. An
 unaccepted TEST or LIVE trigger has priority and shares the single in-flight
 request gate with status queries. Only a queued `location.updated` for the same

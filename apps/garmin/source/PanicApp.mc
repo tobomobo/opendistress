@@ -1356,7 +1356,7 @@ class PanicView extends WatchUi.View {
         }
         if (_activeIncident != null && _activeIncident["capture_stage"] == 1) {
             try {
-                Position.enableLocationEvents(Position.LOCATION_CONTINUOUS, method(:onPosition));
+                enableBestContinuousLocation();
             } catch (error) {
                 if (appendLocation(null, 1, 2)) {
                     setState("LOCATION UNAVAILABLE", "Encrypted unavailable fix queued");
@@ -1400,10 +1400,59 @@ class PanicView extends WatchUi.View {
             return;
         }
         try {
-            Position.enableLocationEvents(Position.LOCATION_CONTINUOUS, method(:onPosition));
+            enableBestContinuousLocation();
         } catch (error) {
             setState("LOCATION UNAVAILABLE", "Foreground cadence could not start");
         }
+    }
+
+    function enableBestContinuousLocation() {
+        var configuration = bestLocationConfiguration();
+        if (configuration != null) {
+            try {
+                Position.enableLocationEvents({
+                    :acquisitionType => Position.LOCATION_CONTINUOUS,
+                    :configuration => configuration
+                }, method(:onPosition));
+                return;
+            } catch (error) {
+                // A capability result can still be stale across firmware/runtime
+                // changes. Emergency acquisition therefore falls back to the
+                // legacy continuous request instead of abandoning GPS.
+            }
+        }
+        Position.enableLocationEvents(Position.LOCATION_CONTINUOUS, method(:onPosition));
+    }
+
+    function bestLocationConfiguration() {
+        try {
+            if (!(Position has :hasConfigurationSupport)) {
+                return null;
+            }
+            if ((Position has :CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1_L5)
+                && Position.hasConfigurationSupport(
+                    Position.CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1_L5
+                )) {
+                return Position.CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1_L5;
+            }
+            if ((Position has :CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1)
+                && Position.hasConfigurationSupport(
+                    Position.CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1
+                )) {
+                return Position.CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1;
+            }
+            if ((Position has :CONFIGURATION_SAT_IQ)
+                && Position.hasConfigurationSupport(Position.CONFIGURATION_SAT_IQ)) {
+                return Position.CONFIGURATION_SAT_IQ;
+            }
+            if ((Position has :CONFIGURATION_GPS)
+                && Position.hasConfigurationSupport(Position.CONFIGURATION_GPS)) {
+                return Position.CONFIGURATION_GPS;
+            }
+        } catch (error) {
+            // Older firmware can expose only the legacy acquisition overload.
+        }
+        return null;
     }
 
     function stopLocations() {
@@ -1505,7 +1554,7 @@ class PanicView extends WatchUi.View {
             return;
         }
         try {
-            Position.enableLocationEvents(Position.LOCATION_CONTINUOUS, method(:onPosition));
+            enableBestContinuousLocation();
         } catch (error) {
             // The accepted alert remains valid; reopening retries real GPS acquisition.
         }
@@ -3327,6 +3376,19 @@ class PanicDelegate extends WatchUi.BehaviorDelegate {
     function onMenu() {
         return _view.menuAction();
     }
+}
+
+(:test)
+function bestAvailableGpsConfigurationStarts(logger) {
+    var view = new PanicView();
+    try {
+        view.enableBestContinuousLocation();
+        Position.enableLocationEvents(Position.LOCATION_DISABLE, null);
+    } catch (error) {
+        logger.error("Best available GPS request and legacy fallback both failed");
+        return false;
+    }
+    return true;
 }
 
 (:test)
