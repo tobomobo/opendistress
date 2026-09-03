@@ -1,7 +1,7 @@
 phase,gate,route_or_condition,target,status,completed,last_run_utc,evidence_reference,notes
 1,physical TEST ping,app list / phone proxy,1,NOT_RUN,0,,,
 1,beta settings sync,Connect IQ Store beta install plus Store-page-edited Grafana webhook optional Pushover keys prepared alert and response plan on fēnix 8 47mm,1,NOT_RUN,0,,,"2026-09-03 user observed Store-page settings work while Garmin Connect showed no settings; exact replacement build and old-sideload removal still require rerun"
-1,direct Grafana TEST,2.5-second START hold sends prepared message and structured profile through webhook acceptance then shows a clean text-free analog cover; lower-left opens provider and unconfirmed-delivery details; hold middle-left resets TEST,1,NOT_RUN,0,,,
+1,direct Grafana TEST,2.5-second START hold sends prepared message and structured profile through webhook acceptance then shows a clean text-free analog cover; lower-left opens provider and unconfirmed-delivery details with aligned edge indicators; activated arc expands and labels the action; hold middle-left resets TEST,1,NOT_RUN,0,,,
 1,direct Grafana Important Push,locked receiver phone gets audible Important Push and deliberate in-app ACK,repeated,NOT_RUN,0,,,
 1,direct dual-provider TEST,Grafana and Pushover each accept the same trigger and render the prepared response model independently,repeated,NOT_RUN,0,,,
 1,direct Pushover TEST,2.5-second START hold sends the prioritized bounded message through provider acceptance then shows analog cover,1,NOT_RUN,0,,,
