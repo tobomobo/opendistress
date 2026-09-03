@@ -17,7 +17,7 @@ import Toybox.Time;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
-class PanicApp extends Application.AppBase {
+class OpenDistressApp extends Application.AppBase {
     var _view = null;
 
     function initialize() {
@@ -25,7 +25,7 @@ class PanicApp extends Application.AppBase {
         try {
             Complications.updateComplication(0, {
                 :value => "OPEN",
-                :shortLabel => "PANIC"
+                :shortLabel => "SIGNAL"
             });
         } catch (error) {
             // A face may not have selected the published complication yet.
@@ -33,8 +33,8 @@ class PanicApp extends Application.AppBase {
     }
 
     function getInitialView() {
-        _view = new PanicView();
-        return [_view, new PanicDelegate(_view)];
+        _view = new OpenDistressView();
+        return [_view, new OpenDistressDelegate(_view)];
     }
 
     function onSettingsChanged() {
@@ -45,12 +45,12 @@ class PanicApp extends Application.AppBase {
 
     (:glance)
     function getGlanceView() {
-        return [new PanicGlanceView()];
+        return [new OpenDistressGlanceView()];
     }
 }
 
 (:glance)
-class PanicGlanceView extends WatchUi.GlanceView {
+class OpenDistressGlanceView extends WatchUi.GlanceView {
     function initialize() {
         GlanceView.initialize();
     }
@@ -61,7 +61,7 @@ class PanicGlanceView extends WatchUi.GlanceView {
         var width = dc.getWidth();
         var height = dc.getHeight();
         var label = new WatchUi.TextArea({
-            :text => "OPEN PANIC",
+            :text => "OPEN SIGNAL",
             :color => Graphics.COLOR_WHITE,
             :backgroundColor => Graphics.COLOR_BLACK,
             :font => [Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
@@ -76,7 +76,7 @@ class PanicGlanceView extends WatchUi.GlanceView {
     }
 }
 
-class PanicView extends WatchUi.View {
+class OpenDistressView extends WatchUi.View {
     const STATE_KEY = "event_state_v2";
     const LEGACY_PENDING_KEY = "pending_event";
     const LIVE_EXPIRY_SECONDS = 86400;
@@ -230,18 +230,18 @@ class PanicView extends WatchUi.View {
     function shouldShowCover() {
         return _directResult != null
             && !_acceptedStatusVisible
-            && !PanicProtocol.stringEquals(_state, "LOCATION SCRUB UNSAVED")
-            && !PanicProtocol.stringEquals(_state, "LOCATION STATE UNSAVED")
-            && !PanicProtocol.stringEquals(_state, "ROUTE CHANGED");
+            && !OpenDistressProtocol.stringEquals(_state, "LOCATION SCRUB UNSAVED")
+            && !OpenDistressProtocol.stringEquals(_state, "LOCATION STATE UNSAVED")
+            && !OpenDistressProtocol.stringEquals(_state, "ROUTE CHANGED");
     }
 
     function shouldShowAcceptedStatus() {
         return _directResult != null
             && _acceptedStatusVisible
-            && PanicProtocol.stringEquals(_state, "PROVIDER ACCEPTED")
-            && !PanicProtocol.stringEquals(_state, "LOCATION SCRUB UNSAVED")
-            && !PanicProtocol.stringEquals(_state, "LOCATION STATE UNSAVED")
-            && !PanicProtocol.stringEquals(_state, "ROUTE CHANGED");
+            && OpenDistressProtocol.stringEquals(_state, "PROVIDER ACCEPTED")
+            && !OpenDistressProtocol.stringEquals(_state, "LOCATION SCRUB UNSAVED")
+            && !OpenDistressProtocol.stringEquals(_state, "LOCATION STATE UNSAVED")
+            && !OpenDistressProtocol.stringEquals(_state, "ROUTE CHANGED");
     }
 
     function scheduleIdleCoverRefresh() {
@@ -386,7 +386,7 @@ class PanicView extends WatchUi.View {
 
         if (_acceptedActionFeedback != null) {
             var feedback = new WatchUi.TextArea({
-                :text => PanicProtocol.stringEquals(_acceptedActionFeedback, "RESET")
+                :text => OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "RESET")
                     ? "RESET TEST"
                     : "DIAL",
                 :color => Graphics.COLOR_WHITE,
@@ -406,8 +406,8 @@ class PanicView extends WatchUi.View {
     function drawAcceptedButtonIndicators(dc) {
         var width = dc.getWidth();
         var height = dc.getHeight();
-        var resetActive = PanicProtocol.stringEquals(_acceptedActionFeedback, "RESET");
-        var dialActive = PanicProtocol.stringEquals(_acceptedActionFeedback, "DIAL");
+        var resetActive = OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "RESET");
+        var dialActive = OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "DIAL");
         if (width == height) {
             var radius = width / 2 - (width >= 400 ? 12 : 7);
             drawAcceptedButtonIndicator(dc, width / 2, height / 2,
@@ -446,13 +446,13 @@ class PanicView extends WatchUi.View {
 
     function selectStartupMode() {
         refreshConfiguredMode();
-        if (!PanicProtocol.stringEquals(_state, "READY — TEST")
+        if (!OpenDistressProtocol.stringEquals(_state, "READY — TEST")
             || _queue.size() > 0
             || _activeIncident != null
             || _directResult != null) {
             return;
         }
-        if (PanicProtocol.stringEquals(_mode, "DIRECT_TEST")) {
+        if (OpenDistressProtocol.stringEquals(_mode, "DIRECT_TEST")) {
             _state = "READY — TEST";
             _detail = "Hold top button 2.5 seconds";
         } else if (_personalLive) {
@@ -510,9 +510,9 @@ class PanicView extends WatchUi.View {
 
     function hasRelayTestConfiguration() {
         try {
-            return PanicProtocol.isHttpsBaseUrl(Properties.getValue("relayBaseUrl"))
-                && PanicProtocol.isCanonicalId(Properties.getValue("deviceId"))
-                && PanicProtocol.isSafeAuthKey(Properties.getValue("hmacKeyHex"));
+            return OpenDistressProtocol.isHttpsBaseUrl(Properties.getValue("relayBaseUrl"))
+                && OpenDistressProtocol.isCanonicalId(Properties.getValue("deviceId"))
+                && OpenDistressProtocol.isSafeAuthKey(Properties.getValue("hmacKeyHex"));
         } catch (error) {
             return false;
         }
@@ -570,9 +570,9 @@ class PanicView extends WatchUi.View {
 
     function hasProvisionedLiveConfiguration() {
         try {
-            return PanicProtocol.isHttpsBaseUrl(Properties.getValue("relayBaseUrl"))
-                && PanicProtocol.isCanonicalId(Properties.getValue("deviceId"))
-                && PanicProtocol.isSafeLiveConfiguration(
+            return OpenDistressProtocol.isHttpsBaseUrl(Properties.getValue("relayBaseUrl"))
+                && OpenDistressProtocol.isCanonicalId(Properties.getValue("deviceId"))
+                && OpenDistressProtocol.isSafeLiveConfiguration(
                     Properties.getValue("liveAuthKeyHex"),
                     Properties.getValue("liveEncKeyHex"),
                     Properties.getValue("liveMacKeyHex"),
@@ -591,7 +591,7 @@ class PanicView extends WatchUi.View {
                 migrateLegacyTest();
                 return;
             }
-            if (PanicProtocol.hasExactKeys(stored, LEGACY_STATE_KEYS)) {
+            if (OpenDistressProtocol.hasExactKeys(stored, LEGACY_STATE_KEYS)) {
                 var legacyState = stored as Lang.Dictionary;
                 stored = {
                     "queue" => legacyState["queue"],
@@ -601,27 +601,27 @@ class PanicView extends WatchUi.View {
                 Storage.setValue(STATE_KEY, stored);
             }
             var storedState = stored as Lang.Dictionary;
-            if (PanicProtocol.hasExactKeys(storedState, STATE_KEYS)
+            if (OpenDistressProtocol.hasExactKeys(storedState, STATE_KEYS)
                 && storedState["direct_result"] != null
-                && PanicProtocol.hasExactKeys(
+                && OpenDistressProtocol.hasExactKeys(
                     storedState["direct_result"],
                     LEGACY_DIRECT_RESULT_KEYS
                 )) {
                 clearPreviousDirectState();
                 return;
             }
-            if (PanicProtocol.hasExactKeys(storedState, STATE_KEYS)
+            if (OpenDistressProtocol.hasExactKeys(storedState, STATE_KEYS)
                 && storedState["direct_result"] != null
-                && PanicProtocol.hasExactKeys(
+                && OpenDistressProtocol.hasExactKeys(
                     storedState["direct_result"],
                     LEGACY_DIRECT_TRACKING_KEYS
                 )) {
                 clearPreviousDirectState();
                 return;
             }
-            if (PanicProtocol.hasExactKeys(storedState, STATE_KEYS)
+            if (OpenDistressProtocol.hasExactKeys(storedState, STATE_KEYS)
                 && storedState["direct_result"] != null
-                && PanicProtocol.hasExactKeys(
+                && OpenDistressProtocol.hasExactKeys(
                     storedState["direct_result"],
                     UNBOUND_DIRECT_RESULT_KEYS
                 )) {
@@ -670,7 +670,7 @@ class PanicView extends WatchUi.View {
     }
 
     function isRecoverableInvalidDirectTestState(value) {
-        return PanicProtocol.hasExactKeys(value, STATE_KEYS)
+        return OpenDistressProtocol.hasExactKeys(value, STATE_KEYS)
             && value["queue"] instanceof Lang.Array
             && value["queue"].size() == 0
             && value["active"] == null
@@ -690,7 +690,7 @@ class PanicView extends WatchUi.View {
         if (legacy == null) {
             return;
         }
-        if (!PanicProtocol.isTestEvent(legacy)) {
+        if (!OpenDistressProtocol.isTestEvent(legacy)) {
             setState("CONFIGURATION FAILURE", "Stored legacy TEST is invalid");
             return;
         }
@@ -708,7 +708,7 @@ class PanicView extends WatchUi.View {
     }
 
     function validStoredState(value) {
-        if (!PanicProtocol.hasExactKeys(value, STATE_KEYS)
+        if (!OpenDistressProtocol.hasExactKeys(value, STATE_KEYS)
             || !(value["queue"] instanceof Lang.Array)
             || value["queue"].size() > MAX_QUEUE
             || !validActive(value["active"])
@@ -721,12 +721,12 @@ class PanicView extends WatchUi.View {
         var archivedIncidentId = "";
         var archivedExpiresAt = -1;
         for (var i = 0; i < queue.size(); i += 1) {
-            if (!PanicProtocol.isEvent(queue[i])) {
+            if (!OpenDistressProtocol.isEvent(queue[i])) {
                 return false;
             }
             if (queue[i]["v"] == 2) {
                 if (value["active"] != null) {
-                    if (!PanicProtocol.stringEquals(
+                    if (!OpenDistressProtocol.stringEquals(
                             queue[i]["incident_id"],
                             value["active"]["incident_id"]
                         )
@@ -736,7 +736,7 @@ class PanicView extends WatchUi.View {
                 } else if (archivedIncidentId.length() == 0) {
                     archivedIncidentId = queue[i]["incident_id"];
                     archivedExpiresAt = queue[i]["expires_at"];
-                } else if (!PanicProtocol.stringEquals(
+                } else if (!OpenDistressProtocol.stringEquals(
                         queue[i]["incident_id"],
                         archivedIncidentId
                     )
@@ -752,7 +752,7 @@ class PanicView extends WatchUi.View {
         if (value == null) {
             return true;
         }
-        if (!PanicProtocol.hasExactKeys(value, DIRECT_RESULT_KEYS)) {
+        if (!OpenDistressProtocol.hasExactKeys(value, DIRECT_RESULT_KEYS)) {
             return false;
         }
         var result = value as Lang.Dictionary;
@@ -762,7 +762,7 @@ class PanicView extends WatchUi.View {
     }
 
     function validDirectAcceptance(result) {
-        if (!PanicProtocol.isCanonicalId(result["event_id"])
+        if (!OpenDistressProtocol.isCanonicalId(result["event_id"])
             || !(result["pushover_accepted"] instanceof Lang.Boolean)
             || !(result["grafana_accepted"] instanceof Lang.Boolean)
             || !(result["grafana_alert_pending"] instanceof Lang.Boolean)) {
@@ -776,8 +776,8 @@ class PanicView extends WatchUi.View {
                 || !DirectPushoverAdapter.isToken(result["receipt"])) {
                 return false;
             }
-        } else if (!PanicProtocol.stringEquals(result["request"], "")
-            || !PanicProtocol.stringEquals(result["receipt"], "")) {
+        } else if (!OpenDistressProtocol.stringEquals(result["request"], "")
+            || !OpenDistressProtocol.stringEquals(result["receipt"], "")) {
             return false;
         }
         if (result["grafana_accepted"] && result["grafana_alert_pending"]) {
@@ -841,17 +841,17 @@ class PanicView extends WatchUi.View {
         var pushoverFingerprint = value["pushover_fingerprint"];
         var grafanaFingerprint = value["grafana_fingerprint"];
         if (value["pushover_accepted"]) {
-            if (!PanicProtocol.isCanonicalDigest(pushoverFingerprint)) {
+            if (!OpenDistressProtocol.isCanonicalDigest(pushoverFingerprint)) {
                 return false;
             }
-        } else if (!PanicProtocol.stringEquals(pushoverFingerprint, "")) {
+        } else if (!OpenDistressProtocol.stringEquals(pushoverFingerprint, "")) {
             return false;
         }
         if (value["grafana_accepted"]) {
-            if (!PanicProtocol.isCanonicalDigest(grafanaFingerprint)) {
+            if (!OpenDistressProtocol.isCanonicalDigest(grafanaFingerprint)) {
                 return false;
             }
-        } else if (!PanicProtocol.stringEquals(grafanaFingerprint, "")) {
+        } else if (!OpenDistressProtocol.stringEquals(grafanaFingerprint, "")) {
             return false;
         }
         return true;
@@ -867,12 +867,12 @@ class PanicView extends WatchUi.View {
         var lifetime = value["tracking_expires_at"] - value["accepted_at"];
         return (lifetime == LIVE_EXPIRY_SECONDS
                 || lifetime == LEGACY_LOCATION_EXPIRY_SECONDS)
-            && value["accepted_at"] <= PanicProtocol.MAX_TIME - lifetime;
+            && value["accepted_at"] <= OpenDistressProtocol.MAX_TIME - lifetime;
     }
 
     function validLocationHex(value) {
         return value instanceof Lang.String
-            && (value.length() == 0 || PanicProtocol.isLowerHex(value, 32));
+            && (value.length() == 0 || OpenDistressProtocol.isLowerHex(value, 32));
     }
 
     function isProviderReference(value) {
@@ -892,15 +892,15 @@ class PanicView extends WatchUi.View {
 
     function validActive(value) {
         return value == null
-            || (PanicProtocol.hasExactKeys(value, ACTIVE_KEYS)
-                && PanicProtocol.isCanonicalId(value["incident_id"])
+            || (OpenDistressProtocol.hasExactKeys(value, ACTIVE_KEYS)
+                && OpenDistressProtocol.isCanonicalId(value["incident_id"])
                 && value["expires_at"] instanceof Lang.Number
                 && value["expires_at"] >= 0
                 && value["next_sequence"] instanceof Lang.Number
                 && value["next_sequence"] >= 1
                 && value["last_location_hex"] instanceof Lang.String
                 && (value["last_location_hex"].length() == 0
-                    || PanicProtocol.isLowerHex(value["last_location_hex"], 32))
+                    || OpenDistressProtocol.isLowerHex(value["last_location_hex"], 32))
                 && value["last_location_queued_at"] instanceof Lang.Number
                 && value["last_location_queued_at"] >= 0
                 && value["last_location_queued_at"] <= value["expires_at"]
@@ -1082,7 +1082,7 @@ class PanicView extends WatchUi.View {
             expireLocations();
             return;
         }
-        if (PanicProtocol.stringEquals(_mode, "LIVE")) {
+        if (OpenDistressProtocol.stringEquals(_mode, "LIVE")) {
             activateLive();
         } else {
             activateTest();
@@ -1255,11 +1255,11 @@ class PanicView extends WatchUi.View {
         }
         var action = _acceptedActionFeedback;
         _acceptedActionFeedback = null;
-        if (PanicProtocol.stringEquals(action, "RESET")) {
+        if (OpenDistressProtocol.stringEquals(action, "RESET")) {
             resetAcceptedTest();
             return;
         }
-        if (PanicProtocol.stringEquals(action, "DIAL")) {
+        if (OpenDistressProtocol.stringEquals(action, "DIAL")) {
             _acceptedStatusVisible = false;
             WatchUi.requestUpdate();
             scheduleIdleCoverRefresh();
@@ -1272,9 +1272,9 @@ class PanicView extends WatchUi.View {
         var keyHex = Properties.getValue("hmacKeyHex");
         var directAlert = hasDirectAlertConfiguration();
         if (!directAlert
-            && (!PanicProtocol.isHttpsBaseUrl(baseUrl)
-            || !PanicProtocol.isCanonicalId(deviceId)
-            || !PanicProtocol.isSafeAuthKey(keyHex))) {
+            && (!OpenDistressProtocol.isHttpsBaseUrl(baseUrl)
+            || !OpenDistressProtocol.isCanonicalId(deviceId)
+            || !OpenDistressProtocol.isSafeAuthKey(keyHex))) {
             setState("SETUP REQUIRED", "Connect IQ Store: add webhook or keys");
             return;
         }
@@ -1283,10 +1283,10 @@ class PanicView extends WatchUi.View {
             return;
         }
         if (directAlert) {
-            deviceId = PanicProtocol.randomId();
+            deviceId = OpenDistressProtocol.randomId();
         }
-        var event = PanicProtocol.newTestEvent(PanicProtocol.randomId(), deviceId, now);
-        if (!PanicProtocol.isTestEvent(event)
+        var event = OpenDistressProtocol.newTestEvent(OpenDistressProtocol.randomId(), deviceId, now);
+        if (!OpenDistressProtocol.isTestEvent(event)
             || !persistState([event], _activeIncident)) {
             setState("CONFIGURATION FAILURE", "Cannot persist TEST event");
             return;
@@ -1310,15 +1310,15 @@ class PanicView extends WatchUi.View {
         if (config == null) {
             return;
         }
-        if (now > PanicProtocol.MAX_TIME - LIVE_EXPIRY_SECONDS) {
+        if (now > OpenDistressProtocol.MAX_TIME - LIVE_EXPIRY_SECONDS) {
             setState("CONFIGURATION FAILURE", "Watch time is outside v2 range");
             return;
         }
-        var incidentId = PanicProtocol.randomId();
+        var incidentId = OpenDistressProtocol.randomId();
         var event;
         try {
-            event = PanicProtocol.newEncryptedEvent(
-                PanicProtocol.V2_LIVE_KIND,
+            event = OpenDistressProtocol.newEncryptedEvent(
+                OpenDistressProtocol.V2_LIVE_KIND,
                 incidentId,
                 incidentId,
                 config["device_id"],
@@ -1326,7 +1326,7 @@ class PanicView extends WatchUi.View {
                 now,
                 now + LIVE_EXPIRY_SECONDS,
                 config["key_version"],
-                PanicProtocol.hexBytes(config["template_id"]),
+                OpenDistressProtocol.hexBytes(config["template_id"]),
                 config["enc_key"],
                 config["mac_key"]
             );
@@ -1342,7 +1342,7 @@ class PanicView extends WatchUi.View {
             "last_location_queued_at" => 0,
             "capture_stage" => 0
         };
-        if (!PanicProtocol.isEncryptedEvent(event) || !persistState([event], active)) {
+        if (!OpenDistressProtocol.isEncryptedEvent(event) || !persistState([event], active)) {
             setState("CONFIGURATION FAILURE", "Cannot persist LIVE trigger");
             return;
         }
@@ -1600,7 +1600,7 @@ class PanicView extends WatchUi.View {
                 || activity.currentLocationAccuracy == Position.QUALITY_NOT_AVAILABLE) {
                 return null;
             }
-            var record = PanicProtocol.locationRecordFromValues(
+            var record = OpenDistressProtocol.locationRecordFromValues(
                 now,
                 activity.currentLocation,
                 activity.currentLocationAccuracy,
@@ -1734,7 +1734,7 @@ class PanicView extends WatchUi.View {
                 ))) {
             return false;
         }
-        var record = PanicProtocol.locationRecord(info, path);
+        var record = OpenDistressProtocol.locationRecord(info, path);
         return queueDirectLocationRecord(record, nextCaptureStage, now);
     }
 
@@ -1762,8 +1762,8 @@ class PanicView extends WatchUi.View {
             || quality > Position.QUALITY_GOOD) {
             return false;
         }
-        var recordHex = PanicProtocol.bytesHex(record);
-        if (PanicProtocol.stringEquals(recordHex, _directResult["last_location_hex"])) {
+        var recordHex = OpenDistressProtocol.bytesHex(record);
+        if (OpenDistressProtocol.stringEquals(recordHex, _directResult["last_location_hex"])) {
             return false;
         }
         var pendingPushover = hasBoundDirectPushover();
@@ -1806,7 +1806,7 @@ class PanicView extends WatchUi.View {
         if (_directResult["last_location_hex"].length() == 0) {
             return true;
         }
-        var record = PanicProtocol.locationRecord(info, path);
+        var record = OpenDistressProtocol.locationRecord(info, path);
         return shouldQueueDirectCadenceRecord(record, now);
     }
 
@@ -1816,7 +1816,7 @@ class PanicView extends WatchUi.View {
             || record.size() != 16) {
             return false;
         }
-        var previous = PanicProtocol.hexBytes(_directResult["last_location_hex"]);
+        var previous = OpenDistressProtocol.hexBytes(_directResult["last_location_hex"]);
         var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
             :offset => 2,
             :endianness => Lang.ENDIAN_BIG
@@ -2020,8 +2020,8 @@ class PanicView extends WatchUi.View {
             setState("CLOCK INCONSISTENT", "Future GPS fix was not queued");
             return false;
         }
-        var record = PanicProtocol.locationRecord(info, 1);
-        var previous = PanicProtocol.hexBytes(_activeIncident["last_location_hex"]);
+        var record = OpenDistressProtocol.locationRecord(info, 1);
+        var previous = OpenDistressProtocol.hexBytes(_activeIncident["last_location_hex"]);
         var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
             :offset => 2,
             :endianness => Lang.ENDIAN_BIG
@@ -2149,9 +2149,9 @@ class PanicView extends WatchUi.View {
             return false;
         }
         var head = _queue[0];
-        return PanicProtocol.isEncryptedEvent(head)
-            && PanicProtocol.stringEquals(head["kind"], PanicProtocol.V2_LOCATION_KIND)
-            && PanicProtocol.stringEquals(
+        return OpenDistressProtocol.isEncryptedEvent(head)
+            && OpenDistressProtocol.stringEquals(head["kind"], OpenDistressProtocol.V2_LOCATION_KIND)
+            && OpenDistressProtocol.stringEquals(
                 head["incident_id"],
                 _activeIncident["incident_id"]
             )
@@ -2170,20 +2170,20 @@ class PanicView extends WatchUi.View {
         if (config == null) {
             return;
         }
-        var query = PanicProtocol.newStatusQuery(
-            PanicProtocol.randomId(),
+        var query = OpenDistressProtocol.newStatusQuery(
+            OpenDistressProtocol.randomId(),
             _activeIncident["incident_id"],
             config["device_id"],
             now,
             _activeIncident["expires_at"]
         );
-        if (!PanicProtocol.isStatusQuery(query)) {
+        if (!OpenDistressProtocol.isStatusQuery(query)) {
             setState("CONFIGURATION FAILURE", "Cannot create incident status query");
             return;
         }
         var signature;
         try {
-            signature = PanicProtocol.statusRequestSignature(config["auth_key"], query);
+            signature = OpenDistressProtocol.statusRequestSignature(config["auth_key"], query);
         } catch (error) {
             setState("CONFIGURATION FAILURE", "Cannot authenticate status query");
             return;
@@ -2198,7 +2198,7 @@ class PanicView extends WatchUi.View {
             :method => Communications.HTTP_REQUEST_METHOD_POST,
             :headers => {
                 "Content-Type" => Communications.REQUEST_CONTENT_TYPE_JSON,
-                "X-SPB-Signature" => signature
+                "X-OpenDistress-Signature" => signature
             },
             :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON,
             :context => query["request_id"]
@@ -2225,7 +2225,7 @@ class PanicView extends WatchUi.View {
     ) as Void {
         if (!_inFlight
             || _statusQuery == null
-            || !PanicProtocol.stringEquals(requestId, _statusQuery["request_id"])) {
+            || !OpenDistressProtocol.stringEquals(requestId, _statusQuery["request_id"])) {
             return;
         }
         var query = _statusQuery;
@@ -2239,7 +2239,7 @@ class PanicView extends WatchUi.View {
             return;
         }
         if (_activeIncident == null
-            || !PanicProtocol.stringEquals(
+            || !OpenDistressProtocol.stringEquals(
                 _activeIncident["incident_id"],
                 query["incident_id"]
             )
@@ -2250,7 +2250,7 @@ class PanicView extends WatchUi.View {
         var verified = false;
         if (responseCode == 200) {
             try {
-                verified = PanicProtocol.verifyStatusResult(data, query, keyHex, receiveAt);
+                verified = OpenDistressProtocol.verifyStatusResult(data, query, keyHex, receiveAt);
             } catch (error) {
                 verified = false;
             }
@@ -2263,8 +2263,8 @@ class PanicView extends WatchUi.View {
             }
             return;
         }
-        if (PanicProtocol.stringEquals(data["state"], "resolved")
-            || PanicProtocol.stringEquals(data["state"], "expired")) {
+        if (OpenDistressProtocol.stringEquals(data["state"], "resolved")
+            || OpenDistressProtocol.stringEquals(data["state"], "expired")) {
             finishIncidentFromStatus(query, data["state"]);
             return;
         }
@@ -2272,7 +2272,7 @@ class PanicView extends WatchUi.View {
             expireLocations();
             return;
         }
-        setState(PanicProtocol.stringEquals(data["state"], "acknowledged")
+        setState(OpenDistressProtocol.stringEquals(data["state"], "acknowledged")
             ? "RECIPIENT ACKNOWLEDGED"
             : "INCIDENT ACTIVE", "Verified relay status; acquisition continues");
         continueAfterStatus(receiveAt);
@@ -2304,7 +2304,7 @@ class PanicView extends WatchUi.View {
         var remaining = [];
         for (var i = 0; i < _queue.size(); i += 1) {
             if (_queue[i]["v"] == 1
-                || !PanicProtocol.stringEquals(
+                || !OpenDistressProtocol.stringEquals(
                     _queue[i]["incident_id"],
                     query["incident_id"]
                 )) {
@@ -2322,7 +2322,7 @@ class PanicView extends WatchUi.View {
             return;
         }
         _retryCount = 0;
-        setState(PanicProtocol.stringEquals(state, "resolved")
+        setState(OpenDistressProtocol.stringEquals(state, "resolved")
                 ? "INCIDENT RESOLVED"
                 : "INCIDENT EXPIRED",
             _personalLive
@@ -2343,9 +2343,9 @@ class PanicView extends WatchUi.View {
             setState("CLOCK INCONSISTENT", "Future GPS fix was not queued");
             return false;
         }
-        var record = PanicProtocol.locationRecord(info, path);
-        var recordHex = PanicProtocol.bytesHex(record);
-        if (PanicProtocol.stringEquals(recordHex, _activeIncident["last_location_hex"])) {
+        var record = OpenDistressProtocol.locationRecord(info, path);
+        var recordHex = OpenDistressProtocol.bytesHex(record);
+        if (OpenDistressProtocol.stringEquals(recordHex, _activeIncident["last_location_hex"])) {
             return false;
         }
         var config = liveConfiguration();
@@ -2355,9 +2355,9 @@ class PanicView extends WatchUi.View {
         var sequence = _activeIncident["next_sequence"];
         var event;
         try {
-            event = PanicProtocol.newEncryptedEvent(
-                PanicProtocol.V2_LOCATION_KIND,
-                PanicProtocol.randomId(),
+            event = OpenDistressProtocol.newEncryptedEvent(
+                OpenDistressProtocol.V2_LOCATION_KIND,
+                OpenDistressProtocol.randomId(),
                 _activeIncident["incident_id"],
                 config["device_id"],
                 sequence,
@@ -2372,7 +2372,7 @@ class PanicView extends WatchUi.View {
             setState("CONFIGURATION FAILURE", "Cannot encrypt location update");
             return false;
         }
-        if (!PanicProtocol.isEncryptedEvent(event)) {
+        if (!OpenDistressProtocol.isEncryptedEvent(event)) {
             setState("CONFIGURATION FAILURE", "Encrypted location event is invalid");
             return false;
         }
@@ -2401,9 +2401,9 @@ class PanicView extends WatchUi.View {
         var macKey = Properties.getValue("liveMacKeyHex");
         var templateId = Properties.getValue("liveTemplateIdHex");
         var keyVersion = Properties.getValue("liveKeyVersion");
-        if (!PanicProtocol.isHttpsBaseUrl(baseUrl)
-            || !PanicProtocol.isCanonicalId(deviceId)
-            || !PanicProtocol.isSafeLiveConfiguration(
+        if (!OpenDistressProtocol.isHttpsBaseUrl(baseUrl)
+            || !OpenDistressProtocol.isCanonicalId(deviceId)
+            || !OpenDistressProtocol.isSafeLiveConfiguration(
                 authKey,
                 encKey,
                 macKey,
@@ -2438,8 +2438,8 @@ class PanicView extends WatchUi.View {
         var keyHex = event["v"] == 1
             ? Properties.getValue("hmacKeyHex")
             : Properties.getValue("liveAuthKeyHex");
-        var keyIsSafe = PanicProtocol.isSafeAuthKey(keyHex);
-        if (!PanicProtocol.isEvent(event)) {
+        var keyIsSafe = OpenDistressProtocol.isSafeAuthKey(keyHex);
+        if (!OpenDistressProtocol.isEvent(event)) {
             setState("CONFIGURATION FAILURE", "Pending event is invalid");
             return;
         }
@@ -2466,15 +2466,15 @@ class PanicView extends WatchUi.View {
             }
             return;
         }
-        if (!PanicProtocol.isHttpsBaseUrl(baseUrl)
-            || !PanicProtocol.stringEquals(event["device_id"], deviceId)
+        if (!OpenDistressProtocol.isHttpsBaseUrl(baseUrl)
+            || !OpenDistressProtocol.stringEquals(event["device_id"], deviceId)
             || !keyIsSafe) {
             setState("CONFIGURATION FAILURE", "Pending event does not match this build");
             return;
         }
         var signature;
         try {
-            signature = PanicProtocol.requestSignature(keyHex, event);
+            signature = OpenDistressProtocol.requestSignature(keyHex, event);
         } catch (error) {
             setState("CONFIGURATION FAILURE", "Cannot authenticate pending event");
             return;
@@ -2489,7 +2489,7 @@ class PanicView extends WatchUi.View {
             :method => Communications.HTTP_REQUEST_METHOD_POST,
             :headers => {
                 "Content-Type" => Communications.REQUEST_CONTENT_TYPE_JSON,
-                "X-SPB-Signature" => signature
+                "X-OpenDistress-Signature" => signature
             },
             :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON,
             :context => event["event_id"]
@@ -2511,7 +2511,7 @@ class PanicView extends WatchUi.View {
 
     function sendDirectPushover(event, now) {
         var providerFingerprint = DirectPushoverAdapter.configurationFingerprint();
-        if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+        if (!OpenDistressProtocol.isCanonicalDigest(providerFingerprint)) {
             handleFailure("configuration_failure", "Pushover configuration changed");
             return;
         }
@@ -2570,7 +2570,7 @@ class PanicView extends WatchUi.View {
             return;
         }
         var providerFingerprint = DirectGrafanaAdapter.configurationFingerprint();
-        if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+        if (!OpenDistressProtocol.isCanonicalDigest(providerFingerprint)) {
             handleFailure("configuration_failure", "Grafana configuration changed");
             return;
         }
@@ -2621,7 +2621,7 @@ class PanicView extends WatchUi.View {
     ) as Void {
         if (!_inFlight
             || _statusQuery != null
-            || !PanicProtocol.stringEquals(requestContext, _requestEventId)) {
+            || !OpenDistressProtocol.stringEquals(requestContext, _requestEventId)) {
             return;
         }
         var providerFingerprint = _requestProviderFingerprint;
@@ -2629,7 +2629,7 @@ class PanicView extends WatchUi.View {
         _requestEventId = null;
         _requestProviderFingerprint = null;
         if (responseCode >= 200 && responseCode < 300) {
-            if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+            if (!OpenDistressProtocol.isCanonicalDigest(providerFingerprint)) {
                 setState("RESULT UNKNOWN", "Grafana accepted; route binding was lost");
                 return;
             }
@@ -2710,7 +2710,7 @@ class PanicView extends WatchUi.View {
         var trackingExpiresAt = 0;
         var captureStage = 3;
         if (acceptedAt != null
-            && acceptedAt <= PanicProtocol.MAX_TIME - LIVE_EXPIRY_SECONDS) {
+            && acceptedAt <= OpenDistressProtocol.MAX_TIME - LIVE_EXPIRY_SECONDS) {
             trackingExpiresAt = acceptedAt + LIVE_EXPIRY_SECONDS;
             captureStage = 0;
         }
@@ -2757,13 +2757,13 @@ class PanicView extends WatchUi.View {
     ) as Void {
         if (!_inFlight
             || _statusQuery != null
-            || !PanicProtocol.stringEquals(eventId, _requestEventId)) {
+            || !OpenDistressProtocol.stringEquals(eventId, _requestEventId)) {
             return;
         }
         var providerFingerprint = _requestProviderFingerprint;
         _inFlight = false;
         if (_queue.size() == 0
-            || !PanicProtocol.stringEquals(_queue[0]["event_id"], _requestEventId)) {
+            || !OpenDistressProtocol.stringEquals(_queue[0]["event_id"], _requestEventId)) {
             _requestEventId = null;
             _requestProviderFingerprint = null;
             setState("RESULT UNKNOWN", "Persistent queue changed during Pushover request");
@@ -2773,7 +2773,7 @@ class PanicView extends WatchUi.View {
         _requestEventId = null;
         _requestProviderFingerprint = null;
         if (responseCode == 200 && isPushoverAcceptance(data)) {
-            if (!PanicProtocol.isCanonicalDigest(providerFingerprint)) {
+            if (!OpenDistressProtocol.isCanonicalDigest(providerFingerprint)) {
                 setState("RESULT UNKNOWN", "Pushover accepted; route binding was lost");
                 return;
             }
@@ -2861,7 +2861,7 @@ class PanicView extends WatchUi.View {
             setState("ROUTE CHANGED", "Restore the accepted provider settings for GPS");
             return;
         }
-        var record = PanicProtocol.hexBytes(
+        var record = OpenDistressProtocol.hexBytes(
             _directResult["pending_location_hex"]
         );
         var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
@@ -2982,7 +2982,7 @@ class PanicView extends WatchUi.View {
     ) as Void {
         if (!_inFlight
             || _statusQuery != null
-            || !PanicProtocol.stringEquals(requestContext, _requestEventId)) {
+            || !OpenDistressProtocol.stringEquals(requestContext, _requestEventId)) {
             return;
         }
         _inFlight = false;
@@ -3013,7 +3013,7 @@ class PanicView extends WatchUi.View {
     ) as Void {
         if (!_inFlight
             || _statusQuery != null
-            || !PanicProtocol.stringEquals(requestContext, _requestEventId)) {
+            || !OpenDistressProtocol.stringEquals(requestContext, _requestEventId)) {
             return;
         }
         _inFlight = false;
@@ -3066,7 +3066,7 @@ class PanicView extends WatchUi.View {
             sendDirectLocation();
             return;
         }
-        var record = PanicProtocol.hexBytes(recordHex);
+        var record = OpenDistressProtocol.hexBytes(recordHex);
         var captureAt = record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
             :offset => 2,
             :endianness => Lang.ENDIAN_BIG
@@ -3144,12 +3144,12 @@ class PanicView extends WatchUi.View {
     ) as Void {
         if (!_inFlight
             || _statusQuery != null
-            || !PanicProtocol.stringEquals(eventId, _requestEventId)) {
+            || !OpenDistressProtocol.stringEquals(eventId, _requestEventId)) {
             return;
         }
         _inFlight = false;
         if (_queue.size() == 0
-            || !PanicProtocol.stringEquals(_queue[0]["event_id"], _requestEventId)) {
+            || !OpenDistressProtocol.stringEquals(_queue[0]["event_id"], _requestEventId)) {
             _activeKeyHex = null;
             _requestEventId = null;
             setState("RESULT UNKNOWN", "Persistent queue changed during request");
@@ -3163,7 +3163,7 @@ class PanicView extends WatchUi.View {
         if (responseCode == 202) {
             var verified = false;
             try {
-                verified = PanicProtocol.verifyDurablyAccepted(data, event, keyHex);
+                verified = OpenDistressProtocol.verifyDurablyAccepted(data, event, keyHex);
             } catch (error) {
                 verified = false;
             }
@@ -3186,7 +3186,7 @@ class PanicView extends WatchUi.View {
 
         var result = responseCode < 0
             ? transportFailure(responseCode)
-            : PanicProtocol.failureResult(data);
+            : OpenDistressProtocol.failureResult(data);
         if (responseCode < 0 && beginWifiFallback(event, responseCode)) {
             return;
         }
@@ -3197,7 +3197,7 @@ class PanicView extends WatchUi.View {
         if ((responseCode != Communications.BLE_CONNECTION_UNAVAILABLE
                 && responseCode != Communications.BLE_HOST_TIMEOUT)
             || _wifiCheckPending
-            || PanicProtocol.stringEquals(_wifiFallbackEventId, event["event_id"])
+            || OpenDistressProtocol.stringEquals(_wifiFallbackEventId, event["event_id"])
             || !(Communications has :checkWifiConnection)) {
             return false;
         }
@@ -3237,7 +3237,7 @@ class PanicView extends WatchUi.View {
         }
         _wifiCheckPending = false;
         if (_queue.size() == 0
-            || !PanicProtocol.stringEquals(
+            || !OpenDistressProtocol.stringEquals(
                 _queue[0]["event_id"],
                 _wifiFallbackEventId
             )) {
@@ -3269,13 +3269,13 @@ class PanicView extends WatchUi.View {
 
     function handleFailure(result, detail) {
         var testPending = _queue.size() > 0 && _queue[0]["v"] == 1;
-        if (PanicProtocol.stringEquals(result, "configuration_failure")) {
+        if (OpenDistressProtocol.stringEquals(result, "configuration_failure")) {
             setState(testPending ? "TEST CONFIG ERROR" : "CONFIGURATION FAILURE", detail);
             return;
         }
         if (testPending) {
             setState("TEST PENDING", detail);
-        } else if (PanicProtocol.stringEquals(result, "retryable_failure")) {
+        } else if (OpenDistressProtocol.stringEquals(result, "retryable_failure")) {
             setState("RETRYABLE FAILURE", detail);
         } else {
             setState("RESULT UNKNOWN", detail);
@@ -3436,7 +3436,7 @@ class PanicView extends WatchUi.View {
                 }
                 var nextActive = _activeIncident;
                 if (nextActive != null
-                    && PanicProtocol.stringEquals(nextActive["incident_id"], incidentId)) {
+                    && OpenDistressProtocol.stringEquals(nextActive["incident_id"], incidentId)) {
                     nextActive = null;
                 }
                 try {
@@ -3483,7 +3483,7 @@ class PanicView extends WatchUi.View {
     }
 }
 
-class PanicDelegate extends WatchUi.BehaviorDelegate {
+class OpenDistressDelegate extends WatchUi.BehaviorDelegate {
     var _view;
 
     function initialize(view) {
@@ -3530,7 +3530,7 @@ class PanicDelegate extends WatchUi.BehaviorDelegate {
 
 (:test)
 function bestAvailableGpsConfigurationStarts(logger) {
-    var view = new PanicView();
+    var view = new OpenDistressView();
     try {
         view.enableBestContinuousLocation();
         Position.enableLocationEvents(Position.LOCATION_DISABLE, null);
@@ -3574,23 +3574,23 @@ function directValidRestartStateRoundTrips(logger) {
         }
     });
 
-    var reloaded = new PanicView();
-    var survived = PanicProtocol.stringEquals(reloaded._state, "PROVIDER ACCEPTED")
+    var reloaded = new OpenDistressView();
+    var survived = OpenDistressProtocol.stringEquals(reloaded._state, "PROVIDER ACCEPTED")
         && reloaded._directResult != null
-        && PanicProtocol.stringEquals(reloaded._directResult["event_id"], eventId);
+        && OpenDistressProtocol.stringEquals(reloaded._directResult["event_id"], eventId);
     var coverProtected = survived && reloaded.shouldShowCover();
     reloaded.downAction();
     var detailsRevealed = reloaded._acceptedStatusVisible
         && !reloaded.shouldShowCover()
         && reloaded._directResult != null;
     reloaded.menuAction();
-    var resetFeedback = PanicProtocol.stringEquals(
+    var resetFeedback = OpenDistressProtocol.stringEquals(
         reloaded._acceptedActionFeedback, "RESET");
     reloaded.completeAcceptedActionFeedback();
     var storedAfterReset = Storage.getValue("event_state_v2");
     var reset = reloaded._directResult == null
         && !reloaded._acceptedStatusVisible
-        && PanicProtocol.hasExactKeys(storedAfterReset, ["queue", "active", "direct_result"])
+        && OpenDistressProtocol.hasExactKeys(storedAfterReset, ["queue", "active", "direct_result"])
         && (storedAfterReset as Lang.Dictionary)["direct_result"] == null;
     Storage.deleteValue("event_state_v2");
     if (!survived) {
@@ -3614,8 +3614,8 @@ function directInvalidRestartStateRecovers(logger) {
         }
     });
 
-    var reloaded = new PanicView();
-    var recovered = !PanicProtocol.stringEquals(
+    var reloaded = new OpenDistressView();
+    var recovered = !OpenDistressProtocol.stringEquals(
             reloaded._state,
             "CONFIGURATION FAILURE"
         )
@@ -3631,7 +3631,7 @@ function directInvalidRestartStateRecovers(logger) {
 
 (:test)
 function directInvalidQueuedStateFailsClosed(logger) {
-    var event = PanicProtocol.newTestEvent(
+    var event = OpenDistressProtocol.newTestEvent(
         "AAECAwQFBgcICQoLDA0ODw",
         "EBESExQVFhcYGRobHB0eHw",
         1788105600
@@ -3644,8 +3644,8 @@ function directInvalidQueuedStateFailsClosed(logger) {
         }
     });
 
-    var reloaded = new PanicView();
-    var retained = PanicProtocol.stringEquals(
+    var reloaded = new OpenDistressView();
+    var retained = OpenDistressProtocol.stringEquals(
             reloaded._state,
             "CONFIGURATION FAILURE"
         )

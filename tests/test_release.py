@@ -32,8 +32,8 @@ class SourceSbomTests(unittest.TestCase):
         self.assertEqual(document["packages"][0]["versionInfo"], "1.2.3")
         self.assertEqual(
             document["packages"][0]["downloadLocation"],
-            "https://github.com/tobomobo/smart-panic-button/releases/download/"
-            "v1.2.3/smart-panic-button-1.2.3.tar.gz",
+            "https://github.com/tobomobo/opendistress/releases/download/"
+            "v1.2.3/opendistress-1.2.3.tar.gz",
         )
         self.assertEqual(document["creationInfo"]["created"], "1970-01-01T00:00:00Z")
         self.assertEqual([entry["fileName"] for entry in document["files"]], ["./a.txt", "./b.txt"])
@@ -56,7 +56,7 @@ class SourceSbomTests(unittest.TestCase):
         self.assertIn("-f filter=latest", workflow)
         self.assertIn("cd dist", workflow)
         self.assertIn(
-            'sha256sum "smart-panic-button-${version}.tar.gz" '
+            'sha256sum "opendistress-${version}.tar.gz" '
             "source-sbom.spdx.json > SHA256SUMS",
             workflow,
         )

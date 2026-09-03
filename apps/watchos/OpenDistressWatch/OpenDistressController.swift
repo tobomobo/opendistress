@@ -54,7 +54,7 @@ func isMaterialLocation(plan: CapturePlan, point: LocationPoint) -> Bool {
 }
 
 @MainActor
-final class PanicController: NSObject, ObservableObject, CLLocationManagerDelegate {
+final class OpenDistressController: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var status = "Starting — no alert sent"
     @Published private(set) var buttonEnabled = true
     @Published private(set) var buttonTitle = "SEND / RETRY ALERT"

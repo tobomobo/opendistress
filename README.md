@@ -1,7 +1,11 @@
-# Smart Panic Button
+# OpenDistress
 
-An MIT-licensed, Garmin-first panic-notification prototype with independent
-Wear OS and watchOS clients.
+**Prepare quietly. Signal deliberately.**
+
+An MIT-licensed, Garmin-first discreet safety-signalling prototype with
+independent Wear OS and watchOS clients. OpenDistress is intended as a
+preconfigured security measure for people exposed to elevated personal risk,
+not as a general-purpose alarm or a replacement for emergency services.
 
 > **Not an emergency-ready product.** The source slices are implemented, but
 > Garmin strict/device validation, provider trials, native enrollment hardening,
@@ -17,6 +21,11 @@ trusted recipient CLI -> authenticate and decrypt v2 content locally
 The relay never receives v2 content keys. A signed HTTP 202 proves only that an
 event was durably recorded; provider acceptance, device delivery, recipient
 acknowledgement, and incident resolution remain separate evidence.
+
+Product copy, component names, colours, and Store metadata are defined in
+[`docs/branding.md`](docs/branding.md). This beta deliberately adopts new
+OpenDistress wire identifiers, application IDs, package IDs, and bundle IDs;
+there is no compatibility promise for pre-release builds.
 
 ## What is here
 
@@ -109,9 +118,9 @@ Copy both private configuration files outside the repository, replace every
 public/example value, and restrict their permissions:
 
 ```sh
-cp relay/devices.example.json /tmp/smart-panic-devices.json
-cp relay/routes.example.json /tmp/smart-panic-routes.json
-chmod 600 /tmp/smart-panic-devices.json /tmp/smart-panic-routes.json
+cp relay/devices.example.json /tmp/opendistress-devices.json
+cp relay/routes.example.json /tmp/opendistress-routes.json
+chmod 600 /tmp/opendistress-devices.json /tmp/opendistress-routes.json
 python3 -c 'import base64,secrets; print("device_id="+base64.urlsafe_b64encode(secrets.token_bytes(16)).decode().rstrip("=")); print("test_key="+secrets.token_hex(32)); print("live_key="+secrets.token_hex(32))'
 ```
 
@@ -121,10 +130,10 @@ keys belong in the route file; its application token stays in the environment:
 ```sh
 export PUSHOVER_APP_TOKEN='replace-me'
 python3 -m relay \
-  --devices /tmp/smart-panic-devices.json \
-  --routes /tmp/smart-panic-routes.json \
-  --mailboxes /tmp/smart-panic-mailboxes.json \
-  --database /tmp/smart-panic-relay.sqlite3
+  --devices /tmp/opendistress-devices.json \
+  --routes /tmp/opendistress-routes.json \
+  --mailboxes /tmp/opendistress-mailboxes.json \
+  --database /tmp/opendistress-relay.sqlite3
 ```
 
 `--mailboxes` is optional. Create one private enrollment bundle and a server
@@ -132,7 +141,7 @@ record containing only capability hashes with:
 
 ```sh
 python3 scripts/mailbox_enroll.py \
-  --server-record /tmp/smart-panic-mailboxes.json \
+  --server-record /tmp/opendistress-mailboxes.json \
   --enrollment /private/path/recipient-mailbox.json
 ```
 
@@ -151,7 +160,7 @@ credentials are unavailable or have rotated:
 
 ```sh
 python3 -m relay \
-  --database /tmp/smart-panic-relay.sqlite3 \
+  --database /tmp/opendistress-relay.sqlite3 \
   --resolve-incident DEVICE_ID:INCIDENT_ID
 ```
 

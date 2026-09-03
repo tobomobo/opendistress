@@ -49,10 +49,10 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           mkdir dist
-          git archive --format=tar --prefix="smart-panic-button-${version}/" HEAD | gzip -n > "dist/smart-panic-button-${version}.tar.gz"
+          git archive --format=tar --prefix="opendistress-${version}/" HEAD | gzip -n > "dist/opendistress-${version}.tar.gz"
           python3 scripts/source_sbom.py "$version" dist/source-sbom.spdx.json
           cd dist
-          sha256sum "smart-panic-button-${version}.tar.gz" source-sbom.spdx.json > SHA256SUMS
+          sha256sum "opendistress-${version}.tar.gz" source-sbom.spdx.json > SHA256SUMS
       - name: Publish source release
         env:
           GH_TOKEN: ${{ github.token }}

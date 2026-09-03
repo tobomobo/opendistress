@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-package dev.smartpanic.wear
+package dev.opendistress.wear
 
 import java.nio.file.Files
 import java.nio.file.Path
@@ -29,7 +29,7 @@ class ProtocolTest {
         val event = liveFixtureEvent()
         assertEquals(readFixture("live-trigger-v2.json"), event.wireJson())
         assertEquals(
-            "v2=vkHWr3fYtcYij4GqeJJ49dJhDn38m26ifCTJAU3SknY",
+            "v2=wKW2UM7B1hOF59JfjpW0ol4YB8sFWccUNT6d_7S28IQ",
             event.requestSignature,
         )
         assertTrue(Protocol.verifyContentTag(event, macKey))
@@ -38,7 +38,7 @@ class ProtocolTest {
                 (
                     "{\"v\":2,\"event_id\":\"AAECAwQFBgcICQoLDA0ODw\"," +
                         "\"result\":\"durably_accepted\"," +
-                        "\"response_signature\":\"v2=Z40vnSWhJ7rbDRz6kO8nAh8-Qen5RGpl20xiiQ6kCpI\"}"
+                        "\"response_signature\":\"v2=gtYwKUt7qrWFjCrtDJq4yns_1My1J0b67e9cgF7YOKw\"}"
                     ).toByteArray(),
                 event,
                 authKey,
@@ -78,7 +78,7 @@ class ProtocolTest {
         )
         assertEquals(readFixture("location-updated-v2.json"), event.wireJson())
         assertEquals(
-            "v2=uGLHdOkt0pA1daHA313hWEMUI2pdB5mQNuwQOB_uTM8",
+            "v2=s84IhlhENf3_q170hFyPLj9g5XKQhYIgfqC-LLc_QXk",
             event.requestSignature,
         )
         assertTrue(Protocol.verifyContentTag(event, macKey))
@@ -93,7 +93,7 @@ class ProtocolTest {
         assertFalse(Protocol.verifyContentTag(tampered, macKey))
 
         val validReordered =
-            "{\"response_signature\":\"v2=Z40vnSWhJ7rbDRz6kO8nAh8-Qen5RGpl20xiiQ6kCpI\"," +
+            "{\"response_signature\":\"v2=gtYwKUt7qrWFjCrtDJq4yns_1My1J0b67e9cgF7YOKw\"," +
                 "\"result\":\"durably_accepted\",\"event_id\":\"AAECAwQFBgcICQoLDA0ODw\",\"v\":2}"
         assertTrue(Protocol.verifyAcceptedResponse(validReordered.toByteArray(), event, authKey))
 
@@ -103,7 +103,7 @@ class ProtocolTest {
             validReordered.dropLast(1) + ",\"event_id\":\"AAECAwQFBgcICQoLDA0ODw\"}",
             validReordered.replace("\"v\":2", "\"v\":2e0"),
             validReordered.replace("event_id", "event\\u005fid"),
-            validReordered.replace("Z40vn", "A40vn"),
+            validReordered.replace("gtYwK", "AtYwK"),
         )
         invalid.forEach { response ->
             assertFalse(Protocol.verifyAcceptedResponse(response.toByteArray(), event, authKey))
@@ -137,7 +137,7 @@ class ProtocolTest {
         val invalid = listOf(
             response.replace(query.requestId, "AAECAwQFBgcICQoLDA0ODw"),
             response.replace("resolved", "acknowledged"),
-            response.replace("1PKgg", "APKgg"),
+            response.replace("7CcJC", "ACcJC"),
             response.dropLast(1) + ",\"extra\":0}",
             response.dropLast(1) + ",\"state\":\"resolved\"}",
         )
@@ -386,7 +386,7 @@ class ProtocolTest {
     )
 
     private fun readFixture(name: String): String {
-        val root = Path.of(requireNotNull(System.getProperty("spb.repo.root")))
+        val root = Path.of(requireNotNull(System.getProperty("opendistress.repo.root")))
         return String(
             Files.readAllBytes(root.resolve("protocol/fixtures/$name")),
             Charsets.UTF_8,
@@ -394,7 +394,7 @@ class ProtocolTest {
     }
 
     private fun readVector(name: String): Map<String, String> {
-        val root = Path.of(requireNotNull(System.getProperty("spb.repo.root")))
+        val root = Path.of(requireNotNull(System.getProperty("opendistress.repo.root")))
         return Files.readAllLines(root.resolve("protocol/fixtures/$name"))
             .filter { it.isNotEmpty() && !it.startsWith('#') }
             .associate { it.substringBefore('=') to it.substringAfter('=') }

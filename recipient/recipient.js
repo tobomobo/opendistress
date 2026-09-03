@@ -265,7 +265,7 @@ function validateEvent(event) {
 
 function canonicalContent(event) {
     return [
-        "spb.content.v2",
+        "opendistress.content.v2",
         "v=2",
         `event_id=${event.event_id}`,
         `incident_id=${event.incident_id}`,

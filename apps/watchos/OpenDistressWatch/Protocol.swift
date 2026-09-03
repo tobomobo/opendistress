@@ -85,7 +85,7 @@ final class RuntimeConfig {
             return value
         }
         guard
-            let endpoint = URL(string: try string("SPBEndpoint")),
+            let endpoint = URL(string: try string("OpenDistressEndpoint")),
             let components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false),
             components.scheme == "https",
             components.host != nil,
@@ -98,11 +98,11 @@ final class RuntimeConfig {
         else {
             throw ProtocolError.invalidConfiguration
         }
-        let deviceId = try string("SPBDeviceId")
+        let deviceId = try string("OpenDistressDeviceId")
         try Protocol.validateId(deviceId)
-        let auth = try Protocol.decodeHex(try string("SPBAuthKeyHex"), count: 32)
-        let encryption = try Protocol.decodeHex(try string("SPBEncKeyHex"), count: 32)
-        let mac = try Protocol.decodeHex(try string("SPBMacKeyHex"), count: 32)
+        let auth = try Protocol.decodeHex(try string("OpenDistressAuthKeyHex"), count: 32)
+        let encryption = try Protocol.decodeHex(try string("OpenDistressEncKeyHex"), count: 32)
+        let mac = try Protocol.decodeHex(try string("OpenDistressMacKeyHex"), count: 32)
         let publishedFixtureKeys = try [
             Protocol.decodeHex(
                 "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
@@ -126,9 +126,9 @@ final class RuntimeConfig {
             throw ProtocolError.invalidConfiguration
         }
         guard
-            let keyVersion = Int64(try string("SPBKeyVersion")),
+            let keyVersion = Int64(try string("OpenDistressKeyVersion")),
             (1...protocolMaximum).contains(keyVersion),
-            let ttl = Int64(try string("SPBTTLSeconds")),
+            let ttl = Int64(try string("OpenDistressTTLSeconds")),
             (1...86_400).contains(ttl)
         else {
             throw ProtocolError.invalidConfiguration
@@ -139,7 +139,7 @@ final class RuntimeConfig {
         encryptionKey = encryption
         macKey = mac
         self.keyVersion = keyVersion
-        templateId = try Protocol.decodeHex(try string("SPBTemplateIdHex"), count: 16)
+        templateId = try Protocol.decodeHex(try string("OpenDistressTemplateIdHex"), count: 16)
         ttlSeconds = ttl
     }
 
@@ -500,7 +500,7 @@ enum Protocol {
             let supplied = try decodeCanonical(String(signature.text.dropFirst(3)), count: 32, digest: true)
             let canonical = Data(
                 (
-                    "spb.result.v2\n" +
+                    "opendistress.result.v2\n" +
                         "v=2\n" +
                         "event_id=\(event.eventId)\n" +
                         "result=durably_accepted\n"
@@ -600,7 +600,7 @@ enum Protocol {
     ) -> Data {
         Data(
             (
-                "spb.status.query.v2\n" +
+                "opendistress.status.query.v2\n" +
                     "method=POST\n" +
                     "v=2\n" +
                     "request_id=\(requestId)\n" +
@@ -621,7 +621,7 @@ enum Protocol {
     ) -> Data {
         Data(
             (
-                "spb.status.result.v2\n" +
+                "opendistress.status.result.v2\n" +
                     "v=2\n" +
                     "request_id=\(requestId)\n" +
                     "incident_id=\(incidentId)\n" +
@@ -644,7 +644,7 @@ enum Protocol {
     ) -> Data {
         Data(
             (
-                "spb.content.v2\n" +
+                "opendistress.content.v2\n" +
                     "v=2\n" +
                     "event_id=\(eventId)\n" +
                     "incident_id=\(incidentId)\n" +
@@ -672,7 +672,7 @@ enum Protocol {
     ) -> Data {
         Data(
             (
-                "spb.submit.v2\n" +
+                "opendistress.submit.v2\n" +
                     "method=POST\n" +
                     "v=2\n" +
                     "event_id=\(eventId)\n" +

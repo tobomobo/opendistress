@@ -1,4 +1,4 @@
-# Garmin app
+# OpenDistress for Garmin
 
 This foreground Connect IQ app implements the Garmin slices of the protocol
 and a bounded relay-free direct-provider TEST path:
@@ -128,7 +128,7 @@ does not provision a separate `Authorization` bearer token.
 
 Install the Beta/App-Store artifact, then edit the route credentials, optional
 **Protected person name**, and optional **Prepared alert and response plan**.
-The verified primary route is the **Settings** control on the `Panic Button
+The verified primary route is the **Settings** control on the `OpenDistress
 TEST` product page in the Connect IQ Store app. Garmin also documents Garmin
 Connect and Garmin Express for Store-installed content, but Garmin Connect may
 show `no settings` for a USB-sideloaded developer copy. The settings begin
@@ -150,19 +150,18 @@ ID exist. Build the store artifact with:
 
 ```sh
 monkeyc -e -f beta.jungle \
-  -o bin/PanicButton-TEST.iq \
+  -o bin/OpenDistress-TEST.iq \
   -y private-resources/developer_key.der -l 1
 ```
 
 ### Why two app icons can appear
 
-`Panic Button TEST` is the Store beta and is the only build to keep for the
-current phone-settings and end-to-end drill. A previous USB install appears as
-the separate `Panic Button` app because its developer manifest, the Store beta,
-and the future production listing intentionally have different Garmin
-application IDs. Garmin therefore installs them side by side and cannot migrate
-or remove the old copy automatically. Remove `Panic Button` from the watch or
-Garmin device-app manager; do not remove `Panic Button TEST`.
+`OpenDistress TEST` uses a fresh Garmin application ID and is the only build to
+keep for the current phone-settings and end-to-end drill. Earlier `Panic Button`
+and `Panic Button TEST` beta builds have different application IDs, so Garmin
+installs them side by side and cannot migrate their settings or remove them
+automatically. Remove both legacy apps from the watch or Garmin device-app
+manager after the new OpenDistress test configuration is verified.
 
 The beta posts the TESTNOTRUF directly to Grafana, Pushover, or both. The
 initial alert title always starts with `TESTNOTRUF`; its message always starts
@@ -177,7 +176,7 @@ drill. A fallback acceptance retains Grafana as a separately retryable route.
 [`source/DirectAlertProviders.mc`](source/DirectAlertProviders.mc) owns the
 shared emergency-profile model and the concrete Grafana and Pushover payload
 adapters. Watch activation, persistence, provider ordering, acceptance, and GPS
-state remain in `PanicApp.mc`; adding another direct service should map the
+state remain in `OpenDistressApp.mc`; adding another direct service should map the
 shared profile at this adapter boundary without changing activation semantics.
 Because each provider has different acceptance and acknowledgement evidence,
 its pending/accepted state must still be added explicitly rather than hidden
@@ -257,7 +256,7 @@ capture time and age stay in the message.
 Use these Grafana **Mobile push notifications** templates:
 
 ```jinja2
-Title:   {{ payload.get("title", "Garmin Panic Button") }}
+Title:   {{ payload.get("title", "OpenDistress TEST") }}
 Message: {{ payload.get("message", "Open Grafana IRM for details.") }}
 ```
 
@@ -444,7 +443,7 @@ this directory:
 
 ```sh
 mkdir -p bin
-monkeyc -f monkey.jungle -d fenix847mm -o bin/SmartPanicButton.prg \
+monkeyc -f monkey.jungle -d fenix847mm -o bin/OpenDistress.prg \
   -y /absolute/path/to/developer_key.der -l 1 -w
 ```
 
@@ -457,9 +456,9 @@ are gitignored.
 Run the protocol vectors:
 
 ```sh
-monkeyc -f monkey.jungle -d fenix847mm -o bin/SmartPanicButton-tests.prg \
+monkeyc -f monkey.jungle -d fenix847mm -o bin/OpenDistress-tests.prg \
   -y /absolute/path/to/developer_key.der -l 1 -t -w
-monkeydo bin/SmartPanicButton-tests.prg fenix847mm -t
+monkeydo bin/OpenDistress-tests.prg fenix847mm -t
 ```
 
 Keep signing keys and private resources outside tracked repository content.

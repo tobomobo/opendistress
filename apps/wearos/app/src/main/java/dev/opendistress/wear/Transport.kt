@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-package dev.smartpanic.wear
+package dev.opendistress.wear
 
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -42,7 +42,7 @@ internal class Transport(private val config: RuntimeConfig) {
             active.setRequestProperty("Content-Type", "application/json")
             active.setRequestProperty("Accept", "application/json")
             active.setRequestProperty("Accept-Encoding", "identity")
-            active.setRequestProperty("X-SPB-Signature", event.requestSignature)
+            active.setRequestProperty("X-OpenDistress-Signature", event.requestSignature)
             active.outputStream.use { it.write(body) }
 
             if (active.responseCode != 202) {
@@ -89,7 +89,7 @@ internal class Transport(private val config: RuntimeConfig) {
             active.setRequestProperty("Content-Type", "application/json")
             active.setRequestProperty("Accept", "application/json")
             active.setRequestProperty("Accept-Encoding", "identity")
-            active.setRequestProperty("X-SPB-Signature", query.requestSignature)
+            active.setRequestProperty("X-OpenDistress-Signature", query.requestSignature)
             active.outputStream.use { it.write(body) }
 
             if (active.responseCode != 200) return StatusPollOutcome(null)

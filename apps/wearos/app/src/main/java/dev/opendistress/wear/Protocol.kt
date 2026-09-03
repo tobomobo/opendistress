@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-package dev.smartpanic.wear
+package dev.opendistress.wear
 
 import java.io.ByteArrayOutputStream
 import java.net.URI
@@ -96,7 +96,7 @@ internal class RuntimeConfig(
     companion object {
         fun fromBuildConfig(): RuntimeConfig {
             val uri = try {
-                URI(BuildConfig.SPB_ENDPOINT)
+                URI(BuildConfig.OPENDISTRESS_ENDPOINT)
             } catch (error: Exception) {
                 throw IllegalArgumentException("Endpoint is not a valid URI", error)
             }
@@ -109,10 +109,10 @@ internal class RuntimeConfig(
                     uri.rawFragment == null &&
                     uri.rawPath == "/v2/events",
             ) { "Endpoint must be a configured HTTPS /v2/events URL" }
-            Protocol.decodeCanonical(BuildConfig.SPB_DEVICE_ID, 16, ID_PATTERN)
-            val auth = Protocol.decodeHex(BuildConfig.SPB_AUTH_KEY_HEX, 32)
-            val enc = Protocol.decodeHex(BuildConfig.SPB_ENC_KEY_HEX, 32)
-            val mac = Protocol.decodeHex(BuildConfig.SPB_MAC_KEY_HEX, 32)
+            Protocol.decodeCanonical(BuildConfig.OPENDISTRESS_DEVICE_ID, 16, ID_PATTERN)
+            val auth = Protocol.decodeHex(BuildConfig.OPENDISTRESS_AUTH_KEY_HEX, 32)
+            val enc = Protocol.decodeHex(BuildConfig.OPENDISTRESS_ENC_KEY_HEX, 32)
+            val mac = Protocol.decodeHex(BuildConfig.OPENDISTRESS_MAC_KEY_HEX, 32)
             val configuredKeys = arrayOf(auth, enc, mac)
             require(configuredKeys.none { configured ->
                 PUBLIC_VECTOR_KEYS.any { published -> MessageDigest.isEqual(configured, published) }
@@ -120,17 +120,17 @@ internal class RuntimeConfig(
             require(!MessageDigest.isEqual(auth, enc)) { "Authentication and encryption keys must differ" }
             require(!MessageDigest.isEqual(auth, mac)) { "Authentication and MAC keys must differ" }
             require(!MessageDigest.isEqual(enc, mac)) { "Encryption and MAC keys must differ" }
-            require(BuildConfig.SPB_KEY_VERSION in 1..PROTOCOL_MAX) { "Invalid key version" }
-            require(BuildConfig.SPB_TTL_SECONDS in 1..86_400) { "Invalid incident lifetime" }
+            require(BuildConfig.OPENDISTRESS_KEY_VERSION in 1..PROTOCOL_MAX) { "Invalid key version" }
+            require(BuildConfig.OPENDISTRESS_TTL_SECONDS in 1..86_400) { "Invalid incident lifetime" }
             return RuntimeConfig(
                 endpoint = uri.toURL(),
-                deviceId = BuildConfig.SPB_DEVICE_ID,
+                deviceId = BuildConfig.OPENDISTRESS_DEVICE_ID,
                 authKey = auth,
                 encryptionKey = enc,
                 macKey = mac,
-                keyVersion = BuildConfig.SPB_KEY_VERSION,
-                templateId = Protocol.decodeHex(BuildConfig.SPB_TEMPLATE_ID_HEX, 16),
-                ttlSeconds = BuildConfig.SPB_TTL_SECONDS,
+                keyVersion = BuildConfig.OPENDISTRESS_KEY_VERSION,
+                templateId = Protocol.decodeHex(BuildConfig.OPENDISTRESS_TEMPLATE_ID_HEX, 16),
+                ttlSeconds = BuildConfig.OPENDISTRESS_TTL_SECONDS,
             )
         }
 
@@ -466,7 +466,7 @@ internal object Protocol {
         val expected = hmac(
             authKey,
             (
-                "spb.result.v2\n" +
+                "opendistress.result.v2\n" +
                     "v=2\n" +
                     "event_id=${event.eventId}\n" +
                     "result=durably_accepted\n"
@@ -549,7 +549,7 @@ internal object Protocol {
         createdAt: Long,
         expiresAt: Long,
     ): ByteArray = (
-        "spb.status.query.v2\n" +
+        "opendistress.status.query.v2\n" +
             "method=POST\n" +
             "v=2\n" +
             "request_id=$requestId\n" +
@@ -566,7 +566,7 @@ internal object Protocol {
         state: String,
         checkedAt: Long,
     ): ByteArray = (
-        "spb.status.result.v2\n" +
+        "opendistress.status.result.v2\n" +
             "v=2\n" +
             "request_id=$requestId\n" +
             "incident_id=$incidentId\n" +
@@ -585,7 +585,7 @@ internal object Protocol {
         expiresAt: Long,
         payload: EncryptedPayload,
     ): ByteArray = (
-        "spb.content.v2\n" +
+        "opendistress.content.v2\n" +
             "v=2\n" +
             "event_id=$eventId\n" +
             "incident_id=$incidentId\n" +
@@ -609,7 +609,7 @@ internal object Protocol {
         expiresAt: Long,
         payload: EncryptedPayload,
     ): ByteArray = (
-        "spb.submit.v2\n" +
+        "opendistress.submit.v2\n" +
             "method=POST\n" +
             "v=2\n" +
             "event_id=$eventId\n" +

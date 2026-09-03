@@ -2,9 +2,9 @@
 import SwiftUI
 
 @main
-struct PanicWatchApp: App {
+struct OpenDistressWatchApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var controller = PanicController()
+    @StateObject private var controller = OpenDistressController()
 
     var body: some Scene {
         WindowGroup {

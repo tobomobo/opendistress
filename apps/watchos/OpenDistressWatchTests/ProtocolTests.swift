@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import XCTest
-@testable import PanicWatch
+@testable import OpenDistressWatch
 
 final class ProtocolTests: XCTestCase {
     private let authKey = try! Protocol.decodeHex(
@@ -22,14 +22,14 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(event.wireJSON(), try fixture("live-trigger-v2.json"))
         XCTAssertEqual(
             event.requestSignature,
-            "v2=vkHWr3fYtcYij4GqeJJ49dJhDn38m26ifCTJAU3SknY"
+            "v2=wKW2UM7B1hOF59JfjpW0ol4YB8sFWccUNT6d_7S28IQ"
         )
         XCTAssertTrue(Protocol.verifyContentTag(event, macKey: macKey))
         let response = Data(
             (
                 "{\"v\":2,\"event_id\":\"AAECAwQFBgcICQoLDA0ODw\"," +
                     "\"result\":\"durably_accepted\"," +
-                    "\"response_signature\":\"v2=Z40vnSWhJ7rbDRz6kO8nAh8-Qen5RGpl20xiiQ6kCpI\"}"
+                    "\"response_signature\":\"v2=gtYwKUt7qrWFjCrtDJq4yns_1My1J0b67e9cgF7YOKw\"}"
                 ).utf8
         )
         XCTAssertTrue(Protocol.verifyAcceptedResponse(response, event: event, authKey: authKey))
@@ -65,7 +65,7 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(event.wireJSON(), try fixture("location-updated-v2.json"))
         XCTAssertEqual(
             event.requestSignature,
-            "v2=uGLHdOkt0pA1daHA313hWEMUI2pdB5mQNuwQOB_uTM8"
+            "v2=s84IhlhENf3_q170hFyPLj9g5XKQhYIgfqC-LLc_QXk"
         )
     }
 
@@ -90,7 +90,7 @@ final class ProtocolTests: XCTestCase {
         XCTAssertFalse(Protocol.verifyContentTag(tampered, macKey: macKey))
 
         let valid =
-            "{\"response_signature\":\"v2=Z40vnSWhJ7rbDRz6kO8nAh8-Qen5RGpl20xiiQ6kCpI\"," +
+            "{\"response_signature\":\"v2=gtYwKUt7qrWFjCrtDJq4yns_1My1J0b67e9cgF7YOKw\"," +
                 "\"result\":\"durably_accepted\",\"event_id\":\"AAECAwQFBgcICQoLDA0ODw\",\"v\":2}"
         XCTAssertTrue(Protocol.verifyAcceptedResponse(Data(valid.utf8), event: event, authKey: authKey))
         let invalid = [
@@ -99,7 +99,7 @@ final class ProtocolTests: XCTestCase {
             String(valid.dropLast()) + ",\"event_id\":\"AAECAwQFBgcICQoLDA0ODw\"}",
             valid.replacingOccurrences(of: "\"v\":2", with: "\"v\":2e0"),
             valid.replacingOccurrences(of: "event_id", with: "event\\u005fid"),
-            valid.replacingOccurrences(of: "Z40vn", with: "A40vn"),
+            valid.replacingOccurrences(of: "gtYwK", with: "AtYwK"),
         ]
         invalid.forEach {
             XCTAssertFalse(Protocol.verifyAcceptedResponse(Data($0.utf8), event: event, authKey: authKey))
@@ -143,7 +143,7 @@ final class ProtocolTests: XCTestCase {
         let invalid = [
             response.replacingOccurrences(of: query.requestId, with: query.incidentId),
             response.replacingOccurrences(of: "resolved", with: "acknowledged"),
-            response.replacingOccurrences(of: "1PKgg", with: "APKgg"),
+            response.replacingOccurrences(of: "7CcJC", with: "ACcJC"),
             String(response.dropLast()) + ",\"extra\":0}",
             String(response.dropLast()) + ",\"state\":\"resolved\"}",
         ]
@@ -172,7 +172,7 @@ final class ProtocolTests: XCTestCase {
     @MainActor
     func testAtomicQueuePersistsCiphertextAndOnlyRemovesMatchingHead() throws {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("spb-watch-test-\(UUID().uuidString).json")
+            .appendingPathComponent("opendistress-watch-test-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
         let live = try liveFixtureEvent()
         let store = try EventStore(fileURL: url)
@@ -189,7 +189,7 @@ final class ProtocolTests: XCTestCase {
     @MainActor
     func testExpiredIncidentRequiresExplicitArchive() throws {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("spb-watch-archive-\(UUID().uuidString).json")
+            .appendingPathComponent("opendistress-watch-archive-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
         let live = try liveFixtureEvent()
         let store = try EventStore(fileURL: url)
@@ -237,14 +237,14 @@ final class ProtocolTests: XCTestCase {
         ]
         for plan in invalidPlans {
             let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("spb-watch-invalid-plan-\(UUID().uuidString).json")
+                .appendingPathComponent("opendistress-watch-invalid-plan-\(UUID().uuidString).json")
             defer { try? FileManager.default.removeItem(at: url) }
             try JSONEncoder().encode(StoredState(capturePlan: plan)).write(to: url, options: .atomic)
             XCTAssertThrowsError(try EventStore(fileURL: url))
         }
 
         let maximumURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("spb-watch-max-archive-\(UUID().uuidString).json")
+            .appendingPathComponent("opendistress-watch-max-archive-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: maximumURL) }
         let maximumArchive = ArchivedIncident(
             incidentId: "AAECAwQFBgcICQoLDA0ODw",
@@ -260,7 +260,7 @@ final class ProtocolTests: XCTestCase {
     @MainActor
     func testRestartAfterExpiryScrubsCoordinatesButPreservesRecoveryEvidence() throws {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("spb-watch-expiry-scrub-\(UUID().uuidString).json")
+            .appendingPathComponent("opendistress-watch-expiry-scrub-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
         let live = try liveFixtureEvent()
         let archive = ArchivedIncident(
@@ -302,7 +302,7 @@ final class ProtocolTests: XCTestCase {
     @MainActor
     func testStaleTerminalStatusCannotArchiveANewIncident() throws {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("spb-watch-terminal-\(UUID().uuidString).json")
+            .appendingPathComponent("opendistress-watch-terminal-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
         let old = try liveFixtureEvent()
         let current = try secondLiveFixtureEvent()

@@ -43,7 +43,7 @@ test("fixed-size mailbox capsules hide v2 kind and round-trip both event types",
     });
     assert.equal(
         messageDigest(liveMessage),
-        "bae4682120b8ed891c0fc7e3a5aeab673ac171a6f8c6015c4d0d86942b6d5f15"
+        "df2238ba9e334fd870829ed24e5edb5e8ba89672fa8da23c8bb5cd890121a9cb"
     );
     const locationMessage = createMessage(location, config, {
         messageId: "MDEyMzQ1Njc4OTo7PD0-Pw",

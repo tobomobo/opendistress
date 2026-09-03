@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SmartPanicWear"
+rootProject.name = "OpenDistressWear"
 include(":app")

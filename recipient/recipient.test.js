@@ -211,7 +211,7 @@ test("an authenticated but unknown LIVE template fails closed", () => {
 });
 
 test("CLI reads named files, rejects public keys, and enforces chmod 0600 config", (context) => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "spb-recipient-"));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "opendistress-recipient-"));
     context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     const configPath = path.join(directory, "recipient.json");
     const eventPath = path.join(directory, "event.json");
@@ -244,7 +244,7 @@ test("CLI reads named files, rejects public keys, and enforces chmod 0600 config
 });
 
 test("CLI rejects an oversized event before reading beyond its bound", (context) => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "spb-recipient-size-"));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "opendistress-recipient-size-"));
     context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     const configPath = path.join(directory, "recipient.json");
     const eventPath = path.join(directory, "oversized.json");

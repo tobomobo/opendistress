@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-package dev.smartpanic.wear
+package dev.opendistress.wear
 
 import android.content.Context
 import android.util.AtomicFile

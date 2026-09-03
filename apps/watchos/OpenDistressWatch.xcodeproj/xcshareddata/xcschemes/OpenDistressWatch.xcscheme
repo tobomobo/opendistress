@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A50000000000000000000001"
-               BuildableName = "PanicWatch.app"
-               BlueprintName = "PanicWatch"
-               ReferencedContainer = "container:PanicWatch.xcodeproj">
+               BuildableName = "OpenDistressWatch.app"
+               BlueprintName = "OpenDistressWatch"
+               ReferencedContainer = "container:OpenDistressWatch.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -29,9 +29,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A50000000000000000000002"
-               BuildableName = "PanicWatchTests.xctest"
-               BlueprintName = "PanicWatchTests"
-               ReferencedContainer = "container:PanicWatch.xcodeproj">
+               BuildableName = "OpenDistressWatchTests.xctest"
+               BlueprintName = "OpenDistressWatchTests"
+               ReferencedContainer = "container:OpenDistressWatch.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -47,9 +47,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A50000000000000000000002"
-               BuildableName = "PanicWatchTests.xctest"
-               BlueprintName = "PanicWatchTests"
-               ReferencedContainer = "container:PanicWatch.xcodeproj">
+               BuildableName = "OpenDistressWatchTests.xctest"
+               BlueprintName = "OpenDistressWatchTests"
+               ReferencedContainer = "container:OpenDistressWatch.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -57,9 +57,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A50000000000000000000001"
-            BuildableName = "PanicWatch.app"
-            BlueprintName = "PanicWatch"
-            ReferencedContainer = "container:PanicWatch.xcodeproj">
+            BuildableName = "OpenDistressWatch.app"
+            BlueprintName = "OpenDistressWatch"
+            ReferencedContainer = "container:OpenDistressWatch.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </TestAction>
@@ -78,9 +78,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A50000000000000000000001"
-            BuildableName = "PanicWatch.app"
-            BlueprintName = "PanicWatch"
-            ReferencedContainer = "container:PanicWatch.xcodeproj">
+            BuildableName = "OpenDistressWatch.app"
+            BlueprintName = "OpenDistressWatch"
+            ReferencedContainer = "container:OpenDistressWatch.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -95,9 +95,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A50000000000000000000001"
-            BuildableName = "PanicWatch.app"
-            BlueprintName = "PanicWatch"
-            ReferencedContainer = "container:PanicWatch.xcodeproj">
+            BuildableName = "OpenDistressWatch.app"
+            BlueprintName = "OpenDistressWatch"
+            ReferencedContainer = "container:OpenDistressWatch.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

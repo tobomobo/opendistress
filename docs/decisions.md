@@ -287,8 +287,8 @@ when details are hidden or the app is reopened. No wording upgrades provider
 acceptance into phone delivery, recipient acknowledgement, or help.
 
 The Store beta retains its alternate Garmin application ID, as Garmin requires
-for beta staging. A USB-sideloaded `Panic Button` and Store-installed `Panic
-Button TEST` therefore appear as two apps; the former has no reliable mobile
+for beta staging. A USB-sideloaded developer build and Store-installed beta can
+therefore appear as two apps; the sideloaded copy has no reliable mobile
 settings path and should be removed for end-user testing.
 
 ## 2026-09-03 — Keep the acceptance cover visually clean
@@ -353,3 +353,18 @@ continuous request every 10 seconds for the first five minutes, then every
 minute for battery control. A later last-known snapshot retains the current
 stage instead of marking fresh acquisition complete. The accepted detail page
 exposes searching, queued, and sent GPS states without adding text to the cover.
+
+## 2026-09-03 — Brand the preparation system as OpenDistress
+
+`Smart Panic Button` described one interaction but not the system that now
+persists a signal, separates delivery evidence, and appends location updates.
+`OpenPanic` also framed the product as a public emotional reaction rather than
+a security measure configured in advance. The public brand is therefore
+`OpenDistress`, with the line `Prepare quietly. Signal deliberately.`
+
+Because the project still has no official users, the rename also replaces the
+pre-release wire domains and signature header, Garmin application IDs, Android
+and Apple identifiers, internal app/target names, schema IDs, release assets,
+and repository URLs. Existing beta builds are intentionally incompatible and
+their local settings are not migrated. This avoids carrying the discarded
+brand into the first public identity.

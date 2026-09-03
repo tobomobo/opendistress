@@ -25,7 +25,7 @@ class StatusVectorTests(unittest.TestCase):
         )
 
         request = (
-            "spb.status.query.v2\n"
+            "opendistress.status.query.v2\n"
             "method=POST\n"
             "v=2\n"
             f"request_id={query['request_id']}\n"
@@ -35,7 +35,7 @@ class StatusVectorTests(unittest.TestCase):
             f"expires_at={query['expires_at']}\n"
         ).encode("ascii")
         response = (
-            "spb.status.result.v2\n"
+            "opendistress.status.result.v2\n"
             "v=2\n"
             f"request_id={query['request_id']}\n"
             f"incident_id={query['incident_id']}\n"

@@ -54,7 +54,7 @@ final class Transport {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-        request.setValue(event.requestSignature, forHTTPHeaderField: "X-SPB-Signature")
+        request.setValue(event.requestSignature, forHTTPHeaderField: "X-OpenDistress-Signature")
         do {
             let (bytes, response) = try await session.bytes(for: request, delegate: redirects)
             let contentType = (response as? HTTPURLResponse)?
@@ -99,7 +99,7 @@ final class Transport {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-        request.setValue(query.requestSignature, forHTTPHeaderField: "X-SPB-Signature")
+        request.setValue(query.requestSignature, forHTTPHeaderField: "X-OpenDistress-Signature")
         do {
             let (bytes, response) = try await session.bytes(for: request, delegate: redirects)
             let contentType = (response as? HTTPURLResponse)?

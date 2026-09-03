@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-package dev.smartpanic.wear
+package dev.opendistress.wear
 
 import android.Manifest
 import android.annotation.SuppressLint

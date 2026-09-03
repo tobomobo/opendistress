@@ -39,31 +39,48 @@ class NativeContractTests(unittest.TestCase):
         self.assertEqual(standalone.attrib[android + "value"], "true")
 
         build = (WEAR / "app/build.gradle.kts").read_text()
+        settings = (WEAR / "settings.gradle.kts").read_text()
+        self.assertIn('rootProject.name = "OpenDistressWear"', settings)
+        self.assertIn('namespace = "dev.opendistress.wear"', build)
+        self.assertIn('applicationId = "dev.opendistress.wear"', build)
         self.assertIn('"https://invalid.example/v2/events"', build)
         self.assertGreaterEqual(build.count('"INVALID"'), 5)
         self.assertIn('setting("keyVersion", "0")', build)
-        self.assertIn("/panic.local.properties", (WEAR / ".gitignore").read_text().splitlines())
-        example = (WEAR / "panic.local.properties.example").read_text()
+        self.assertIn(
+            "/opendistress.local.properties",
+            (WEAR / ".gitignore").read_text().splitlines(),
+        )
+        example = (WEAR / "opendistress.local.properties.example").read_text()
         self.assertNotRegex(example, r"(?i)\b[0-9a-f]{64}\b")
 
     def test_watch_metadata_project_and_public_defaults_are_safe(self):
-        with (WATCH / "PanicWatch/Info.plist").open("rb") as stream:
+        with (WATCH / "OpenDistressWatch/Info.plist").open("rb") as stream:
             info = plistlib.load(stream)
         self.assertIs(info["WKApplication"], True)
         self.assertIs(info["WKWatchOnly"], True)
-        self.assertEqual(info["SPBEndpoint"], "$(SPB_ENDPOINT)")
-        for key in ("SPBDeviceId", "SPBAuthKeyHex", "SPBEncKeyHex", "SPBMacKeyHex"):
-            self.assertRegex(info[key], r"^\$\(SPB_[A-Z_]+\)$")
+        self.assertEqual(info["OpenDistressEndpoint"], "$(OPENDISTRESS_ENDPOINT)")
+        for key in (
+            "OpenDistressDeviceId",
+            "OpenDistressAuthKeyHex",
+            "OpenDistressEncKeyHex",
+            "OpenDistressMacKeyHex",
+        ):
+            self.assertRegex(info[key], r"^\$\(OPENDISTRESS_[A-Z_]+\)$")
 
-        ET.parse(WATCH / "PanicWatch.xcodeproj/project.xcworkspace/contents.xcworkspacedata")
+        ET.parse(WATCH / "OpenDistressWatch.xcodeproj/project.xcworkspace/contents.xcworkspacedata")
         scheme = ET.parse(
-            WATCH / "PanicWatch.xcodeproj/xcshareddata/xcschemes/PanicWatch.xcscheme"
+            WATCH / "OpenDistressWatch.xcodeproj/xcshareddata/xcschemes/OpenDistressWatch.xcscheme"
         ).getroot()
         self.assertIsNotNone(scheme.find("BuildAction"))
         self.assertIsNotNone(scheme.find("TestAction"))
         self.assertIsNotNone(scheme.find("ArchiveAction"))
 
-        project = (WATCH / "PanicWatch.xcodeproj/project.pbxproj").read_text()
+        project = (WATCH / "OpenDistressWatch.xcodeproj/project.pbxproj").read_text()
+        self.assertEqual(project.count("PRODUCT_BUNDLE_IDENTIFIER = dev.opendistress.watch;"), 2)
+        self.assertEqual(
+            project.count("PRODUCT_BUNDLE_IDENTIFIER = dev.opendistress.watch.tests;"),
+            2,
+        )
         self.assertIn("SKIP_INSTALL = NO;", project)
         self.assertIn("path = ../../protocol/fixtures;", project)
         for fixture in (
@@ -78,7 +95,7 @@ class NativeContractTests(unittest.TestCase):
         defaults = (WATCH / "Config/PublicDefaults.xcconfig").read_text()
         self.assertIn("invalid.example/v2/events", defaults)
         self.assertGreaterEqual(defaults.count("= INVALID"), 5)
-        self.assertIn("SPB_KEY_VERSION = 0", defaults)
+        self.assertIn("OPENDISTRESS_KEY_VERSION = 0", defaults)
         self.assertIn('#include? "Local.xcconfig"', defaults)
         self.assertIn("/Config/Local.xcconfig", (WATCH / ".gitignore").read_text().splitlines())
         example = (WATCH / "Config/Local.xcconfig.example").read_text()
@@ -107,14 +124,14 @@ class NativeContractTests(unittest.TestCase):
 
     def test_both_native_test_targets_resolve_shared_fixtures(self):
         android_test = (
-            WEAR / "app/src/test/java/dev/smartpanic/wear/ProtocolTest.kt"
+            WEAR / "app/src/test/java/dev/opendistress/wear/ProtocolTest.kt"
         ).read_text()
         self.assertIn('root.resolve("protocol/fixtures/$name")', android_test)
-        self.assertIn('systemProperty("spb.repo.root"', (WEAR / "app/build.gradle.kts").read_text())
+        self.assertIn('systemProperty("opendistress.repo.root"', (WEAR / "app/build.gradle.kts").read_text())
 
-        swift_test = (WATCH / "PanicWatchTests/ProtocolTests.swift").read_text()
+        swift_test = (WATCH / "OpenDistressWatchTests/ProtocolTests.swift").read_text()
         self.assertIn("Bundle(for: ProtocolTests.self).url(forResource: name", swift_test)
-        project = (WATCH / "PanicWatch.xcodeproj/project.pbxproj").read_text()
+        project = (WATCH / "OpenDistressWatch.xcodeproj/project.pbxproj").read_text()
         for fixture in (
             "live-trigger-v2.json in Resources",
             "location-updated-v2.json in Resources",
@@ -125,19 +142,19 @@ class NativeContractTests(unittest.TestCase):
 
     def test_status_polling_is_signed_strict_and_foreground_only(self):
         kotlin_protocol = (
-            WEAR / "app/src/main/java/dev/smartpanic/wear/Protocol.kt"
+            WEAR / "app/src/main/java/dev/opendistress/wear/Protocol.kt"
         ).read_text()
-        swift_protocol = (WATCH / "PanicWatch/Protocol.swift").read_text()
+        swift_protocol = (WATCH / "OpenDistressWatch/Protocol.swift").read_text()
         for source in (kotlin_protocol, swift_protocol):
-            self.assertIn("spb.status.query.v2", source)
-            self.assertIn("spb.status.result.v2", source)
+            self.assertIn("opendistress.status.query.v2", source)
+            self.assertIn("opendistress.status.result.v2", source)
             for state in ("active", "acknowledged", "resolved", "expired"):
                 self.assertIn(state, source)
 
         kotlin_transport = (
-            WEAR / "app/src/main/java/dev/smartpanic/wear/Transport.kt"
+            WEAR / "app/src/main/java/dev/opendistress/wear/Transport.kt"
         ).read_text()
-        swift_transport = (WATCH / "PanicWatch/Transport.swift").read_text()
+        swift_transport = (WATCH / "OpenDistressWatch/Transport.swift").read_text()
         self.assertIn('"/v2/status"', kotlin_transport)
         self.assertIn("active.responseCode != 200", kotlin_transport)
         self.assertIn('appendingPathComponent("status")', swift_transport)
@@ -146,9 +163,9 @@ class NativeContractTests(unittest.TestCase):
         self.assertIn("delegate: redirects", swift_transport)
 
         kotlin_controller = (
-            WEAR / "app/src/main/java/dev/smartpanic/wear/MainActivity.kt"
+            WEAR / "app/src/main/java/dev/opendistress/wear/MainActivity.kt"
         ).read_text()
-        swift_controller = (WATCH / "PanicWatch/PanicController.swift").read_text()
+        swift_controller = (WATCH / "OpenDistressWatch/OpenDistressController.swift").read_text()
         self.assertIn("!isForeground", kotlin_controller)
         self.assertIn("pendingStatusRequestId != query.requestId", kotlin_controller)
         self.assertIn("if (now >= event.expiresAt)", kotlin_controller)
@@ -169,9 +186,9 @@ class NativeContractTests(unittest.TestCase):
         self.assertNotIn("WKExtendedRuntimeSession", swift_controller)
 
         kotlin_store = (
-            WEAR / "app/src/main/java/dev/smartpanic/wear/EventStore.kt"
+            WEAR / "app/src/main/java/dev/opendistress/wear/EventStore.kt"
         ).read_text()
-        swift_store = (WATCH / "PanicWatch/EventStore.swift").read_text()
+        swift_store = (WATCH / "OpenDistressWatch/EventStore.swift").read_text()
         self.assertIn("queue.filterNot { it.incidentId == incidentId }", kotlin_store)
         self.assertIn("next.queue.removeAll { $0.incidentId == incidentId }", swift_store)
         self.assertIn("plan.expiresAt - plan.startedAt in 1..MAX_EVENT_LIFETIME_SECONDS", kotlin_store)
@@ -186,19 +203,19 @@ class NativeContractTests(unittest.TestCase):
         self.assertIn("now >= $0", swift_store)
         self.assertIn(
             "staleTerminalStatusCannotArchiveANewIncident",
-            (WEAR / "app/src/test/java/dev/smartpanic/wear/ProtocolTest.kt").read_text(),
+            (WEAR / "app/src/test/java/dev/opendistress/wear/ProtocolTest.kt").read_text(),
         )
         self.assertIn(
             "testStaleTerminalStatusCannotArchiveANewIncident",
-            (WATCH / "PanicWatchTests/ProtocolTests.swift").read_text(),
+            (WATCH / "OpenDistressWatchTests/ProtocolTests.swift").read_text(),
         )
         self.assertIn(
             "loadedExpiredStateScrubsCoordinatesButPreservesRecoveryEvidence",
-            (WEAR / "app/src/test/java/dev/smartpanic/wear/ProtocolTest.kt").read_text(),
+            (WEAR / "app/src/test/java/dev/opendistress/wear/ProtocolTest.kt").read_text(),
         )
         self.assertIn(
             "testRestartAfterExpiryScrubsCoordinatesButPreservesRecoveryEvidence",
-            (WATCH / "PanicWatchTests/ProtocolTests.swift").read_text(),
+            (WATCH / "OpenDistressWatchTests/ProtocolTests.swift").read_text(),
         )
 
 

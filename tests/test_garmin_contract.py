@@ -63,7 +63,16 @@ class GarminContractTests(unittest.TestCase):
         self.assertEqual(beta_products, products)
         production_app = manifest.find("./iq:application", namespace)
         beta_app = beta_manifest.find("./iq:application", namespace)
-        self.assertNotEqual(beta_app.attrib["id"], production_app.attrib["id"])
+        self.assertEqual(
+            production_app.attrib["id"],
+            "eab2248e-a772-48c6-9036-f1ec97cf3c24",
+        )
+        self.assertEqual(
+            beta_app.attrib["id"],
+            "b9eb9236-66c4-4119-94c5-ba11d891deb0",
+        )
+        self.assertEqual(production_app.attrib["entry"], "OpenDistressApp")
+        self.assertEqual(beta_app.attrib["entry"], "OpenDistressApp")
         self.assertEqual(beta_app.attrib["name"], "@Strings.BetaAppName")
         beta_jungle = (GARMIN / "beta.jungle").read_text()
         self.assertIn("project.manifest = manifest-beta.xml", beta_jungle)
@@ -120,16 +129,16 @@ class GarminContractTests(unittest.TestCase):
         )
 
     def test_status_and_cover_scale_across_round_and_rectangular_displays(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         update = source[
-            source.index("function onUpdate(dc)", source.index("class PanicView"))
+            source.index("function onUpdate(dc)", source.index("class OpenDistressView"))
             : source.index("function activate()")
         ]
         strings = ET.parse(GARMIN / "resources/strings/strings.xml").getroot()
         app_name = next(item.text for item in strings.findall("./string") if item.attrib["id"] == "AppName")
         launcher = (GARMIN / "resources/drawables/launcher.svg").read_text()
 
-        self.assertEqual(app_name, "Panic Button")
+        self.assertEqual(app_name, "OpenDistress")
         self.assertIn("var isRound = width == height", update)
         self.assertIn("var compactRound = isRound && width < 220", update)
         self.assertIn("compactRound ? 62 : (isRound ? 76 : 88)", update)
@@ -141,8 +150,9 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("Graphics.FONT_SMALL, Graphics.FONT_TINY", update)
         self.assertIn("compactDisplayId(_displayEventId)", update)
         self.assertIn('id.substring(0, 4) + "..."', source)
-        self.assertEqual(launcher.count("<circle"), 1)
-        self.assertEqual(launcher.count("<polygon"), 1)
+        self.assertEqual(launcher.count("<circle"), 2)
+        self.assertEqual(launcher.count("<path"), 1)
+        self.assertNotIn("<polygon", launcher)
         self.assertNotIn("<rect", launcher)
 
         cover = source[source.index("function drawAnalogCover(") : source.index("function drawHand(")]
@@ -154,7 +164,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("if (minSize >= 220)", cover)
 
     def test_failed_test_event_uses_clearable_non_live_language(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         failure = source[
             source.index("function handleFailure(") : source.index("function retryPending()")
         ]
@@ -174,17 +184,17 @@ class GarminContractTests(unittest.TestCase):
             for line in (ROOT / "protocol/fixtures/encryption-v2.txt").read_text().splitlines()
             if line and not line.startswith(("#", "["))
         )
-        source = (GARMIN / "source/PanicProtocol.mc").read_text()
+        source = (GARMIN / "source/OpenDistressProtocol.mc").read_text()
 
         self.assertIn(v1["request_signature"], source)
-        self.assertIn("v1=6eCuAfV44rtvISQNtNPfUXpt50fm_U5sUj4POwx42UM", source)
+        self.assertIn("v1=IGVfaGn9w07jtO7OSgKsqMxvzU513EH9ByEFi6hTNhk", source)
         for value in (
-            "v2=vkHWr3fYtcYij4GqeJJ49dJhDn38m26ifCTJAU3SknY",
-            "v2=Z40vnSWhJ7rbDRz6kO8nAh8-Qen5RGpl20xiiQ6kCpI",
-            "v2=uGLHdOkt0pA1daHA313hWEMUI2pdB5mQNuwQOB_uTM8",
-            "v2=fsU52lMaXLa4DAu00Awg8-uFZgePLPLim_P4OzRMTiQ",
-            "v2=O7ik82fJBgz3-OwXGZeUALuSlufZvQT2Gr9rkFVnGdw",
-            "v2=1PKgg7-Pz7Ko7_jtlrQaJoWxOLwI16D6FGCt4YnnzIM",
+            "v2=wKW2UM7B1hOF59JfjpW0ol4YB8sFWccUNT6d_7S28IQ",
+            "v2=gtYwKUt7qrWFjCrtDJq4yns_1My1J0b67e9cgF7YOKw",
+            "v2=s84IhlhENf3_q170hFyPLj9g5XKQhYIgfqC-LLc_QXk",
+            "v2=8gGf-GSWjBKTLFZmsv9HaAynRz-fLJTNAh39_mKjehw",
+            "v2=wZis26a3WNgkwkoulKYMWOptlpAWPJarVkJzSAKFlCU",
+            "v2=7CcJC9UNljfOlMkrh1J0-pbyF_PTNRPRpw_xEvGJ1Vc",
         ):
             self.assertIn(value, source)
         for key_name in ("auth_key_hex", "enc_key_hex", "mac_key_hex"):
@@ -193,7 +203,7 @@ class GarminContractTests(unittest.TestCase):
             self.assertIn(key[32:], source)
 
     def test_monkey_c_self_tests_cover_adversarial_protocol_paths(self):
-        source = (GARMIN / "source/PanicProtocol.mc").read_text()
+        source = (GARMIN / "source/OpenDistressProtocol.mc").read_text()
 
         for test_name in (
             "protocolConformance",
@@ -204,29 +214,29 @@ class GarminContractTests(unittest.TestCase):
             self.assertIn(f"(:test)\nfunction {test_name}(logger)", source)
         for required_probe in (
             'testEvent["extra"] = 1',
-            "PanicProtocol.MAX_V1_CREATED_AT + 1",
+            "OpenDistressProtocol.MAX_V1_CREATED_AT + 1",
             'liveEvent["expires_at"] = 1788192001',
             'liveEvent["expires_at"] = 1788105600',
-            "PanicProtocol.PUBLIC_MAC_KEY,\n            macKey",
-            "PanicProtocol.PUBLIC_ENC_KEY",
+            "OpenDistressProtocol.PUBLIC_MAC_KEY,\n            macKey",
+            "OpenDistressProtocol.PUBLIC_ENC_KEY",
             'accepted["extra"] = null',
             'status["state"] = "closed"',
             'status["request_id"] = "sLGys7S1tre4ubq7vL2-vw"',
             "1788106001",
-            'PanicProtocol.failureResult({"result" => "untrusted"})',
+            'OpenDistressProtocol.failureResult({"result" => "untrusted"})',
         ):
             self.assertIn(required_probe, source)
 
     def test_public_vector_key_cannot_authenticate_configured_test_events(self):
-        app = (GARMIN / "source/PanicApp.mc").read_text()
-        protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
+        app = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        protocol = (GARMIN / "source/OpenDistressProtocol.mc").read_text()
 
-        self.assertEqual(app.count("PanicProtocol.isSafeAuthKey(keyHex)"), 2)
+        self.assertEqual(app.count("OpenDistressProtocol.isSafeAuthKey(keyHex)"), 2)
         self.assertIn("return isLowerHexKey(value) && !isPublicFixtureKey(value)", protocol)
-        self.assertIn("PanicProtocol.PUBLIC_AUTH_KEY,\n        testEvent", protocol)
+        self.assertIn("OpenDistressProtocol.PUBLIC_AUTH_KEY,\n        testEvent", protocol)
 
     def test_live_rejects_public_fixture_keys_in_every_key_role(self):
-        protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
+        protocol = (GARMIN / "source/OpenDistressProtocol.mc").read_text()
         safety = protocol[
             protocol.index("function isSafeLiveConfiguration(")
             : protocol.index("function truncateE7(")
@@ -239,7 +249,7 @@ class GarminContractTests(unittest.TestCase):
             self.assertIn(f"stringEquals(value, {fixture})", protocol)
 
     def test_trigger_is_durable_and_submission_starts_before_positioning(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         live = source[source.index("function activateLive()") : source.index("function captureLocations()")]
 
         self.assertEqual(source.count("Communications.makeWebRequest("), 6)
@@ -251,9 +261,9 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("Repeated press keeps the same incident", source)
 
     def test_all_alert_modes_require_exact_hardware_hold_and_touch_is_inert(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         on_show = source[source.index("function onShow()") : source.index("function onHide()")]
-        delegate = source[source.index("class PanicDelegate") :]
+        delegate = source[source.index("class OpenDistressDelegate") :]
         pressed = source[
             source.index("function startActionPressed()")
             : source.index("function startActionReleased()")
@@ -274,7 +284,7 @@ class GarminContractTests(unittest.TestCase):
             "_retryTimer.start(method(:advanceAlertArm), ALERT_ARM_FRAME_MS, true)",
             pressed,
         )
-        self.assertNotIn('PanicProtocol.stringEquals(_mode, "LIVE")', pressed)
+        self.assertNotIn('OpenDistressProtocol.stringEquals(_mode, "LIVE")', pressed)
         self.assertNotIn("activate();", pressed)
         self.assertIn("cancelAlertArm();", released)
         self.assertIn("activate();", commit)
@@ -294,9 +304,9 @@ class GarminContractTests(unittest.TestCase):
         )
 
     def test_alert_hold_draws_elapsed_symmetric_progress_from_six_oclock(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         update = source[
-            source.index("function onUpdate(dc)", source.index("class PanicView"))
+            source.index("function onUpdate(dc)", source.index("class OpenDistressView"))
             : source.index("function compactDisplayId")
         ]
         progress = source[
@@ -323,7 +333,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("commitArmedAlert();", advance)
 
     def test_test_mode_select_and_short_press_do_not_trigger(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         pressed = source[
             source.index("function startActionPressed()")
             : source.index("function startActionReleased()")
@@ -340,13 +350,13 @@ class GarminContractTests(unittest.TestCase):
             source.index("function selectStartupMode()")
             : source.index("function settingsChanged()")
         ]
-        self.assertIn('PanicProtocol.stringEquals(_mode, "DIRECT_TEST")', startup)
+        self.assertIn('OpenDistressProtocol.stringEquals(_mode, "DIRECT_TEST")', startup)
         self.assertIn("hasDirectAlertConfiguration()", startup)
         self.assertIn("refreshConfiguredMode();", startup)
 
     def test_phone_settings_changes_refresh_idle_test_mode(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
-        app = source[source.index("class PanicApp") : source.index("(:glance)")]
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        app = source[source.index("class OpenDistressApp") : source.index("(:glance)")]
         changed = source[
             source.index("function settingsChanged()")
             : source.index("function hasRelayTestConfiguration()")
@@ -362,8 +372,8 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("_directResult != null", changed)
 
     def test_analog_cover_is_only_provider_acceptance_feedback(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
-        update = source[source.index("function onUpdate(dc)", source.index("class PanicView")) :]
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        update = source[source.index("function onUpdate(dc)", source.index("class OpenDistressView")) :]
         cover = source[source.index("function shouldShowCover()") : source.index("function selectStartupMode()")]
 
         self.assertIn("return _directResult != null", cover)
@@ -385,9 +395,9 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn('"READY', cover)
 
     def test_accepted_test_cover_reveals_details_before_explicit_reset(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         update = source[
-            source.index("function onUpdate(dc)", source.index("class PanicView"))
+            source.index("function onUpdate(dc)", source.index("class OpenDistressView"))
             : source.index("function compactDisplayId")
         ]
         cover = source[
@@ -481,7 +491,7 @@ class GarminContractTests(unittest.TestCase):
         )
 
     def test_direct_pushover_test_is_emergency_and_contains_no_live_payload(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         direct = source[
             source.index("function sendDirectPushover(")
@@ -503,7 +513,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("live", direct.lower())
 
     def test_direct_test_identity_is_phone_editable_optional_and_test_only(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         properties = ET.parse(GARMIN / "resources/properties/properties.xml").getroot()
         settings = ET.parse(GARMIN / "resources/settings/settings.xml").getroot()
@@ -522,7 +532,7 @@ class GarminContractTests(unittest.TestCase):
         string_values = {item.attrib["id"]: item.text for item in strings.findall("./string")}
         self.assertIn("person wearing the watch", string_values["ProtectedPersonNameTitle"])
         self.assertIn("person sending the alert", string_values["PersonDescriptionPrompt"])
-        self.assertIn('const TEST_TITLE = "TESTNOTRUF"', providers)
+        self.assertIn('const TEST_TITLE = "TESTNOTRUF — OPENDISTRESS"', providers)
         self.assertIn("function locationTitle(sequence)", providers)
         self.assertIn("KEIN ECHTER NOTFALL", providers)
         self.assertIn('optionalText("protectedPersonName", 40)', providers)
@@ -533,7 +543,7 @@ class GarminContractTests(unittest.TestCase):
         )
 
     def test_optional_emergency_profile_is_shared_by_provider_adapters(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         settings = ET.parse(GARMIN / "resources/settings/settings.xml").getroot()
         profile_limits = {
@@ -645,7 +655,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("DirectGrafanaAdapter.initialPayload(eventId)", source)
 
     def test_direct_gps_starts_only_after_a_provider_acceptance(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         pushover_request = source[
             source.index("function sendDirectPushover(")
             : source.index("function grafanaAlertPayload(")
@@ -682,9 +692,9 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("trackingDisabled", binding_validation)
 
     def test_grafana_formatted_webhook_is_validated_and_acceptance_is_not_ack(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
-        protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
+        protocol = (GARMIN / "source/OpenDistressProtocol.mc").read_text()
         request = source[
             source.index("function grafanaAlertPayload(")
             : source.index("function onGrafanaAlertResponse(")
@@ -714,7 +724,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("acknowledged", response.lower())
 
     def test_pushover_and_grafana_are_independent_direct_alert_routes(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         send = source[source.index("function sendPending()") : source.index("function onResponse(")]
         pushover_send = source[
             source.index("function sendDirectPushover(")
@@ -739,7 +749,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("sendDirectGrafanaInitial(event);", pushover)
 
     def test_direct_gps_uses_real_position_and_persists_before_sending(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         manifest = (GARMIN / "manifest.xml").read_text()
         direct = source[
             source.index("function resumeDirectLocations()")
@@ -759,7 +769,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("Activity.TIMER_STATE_ON", direct)
         self.assertIn("activity.currentLocation", direct)
         self.assertIn("activity.currentLocationAccuracy", direct)
-        self.assertIn("PanicProtocol.locationRecordFromValues(", direct)
+        self.assertIn("OpenDistressProtocol.locationRecordFromValues(", direct)
         self.assertIn("pollDirectFallbackLocation()", source)
         self.assertIn("Position.getInfo()", fallback_poll)
         self.assertNotIn(
@@ -792,7 +802,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("locationRecord(null", direct)
 
     def test_gps_prefers_best_supported_configuration_with_legacy_fallback(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         helper = source[
             source.index("function enableBestContinuousLocation()")
             : source.index("function stopLocations()")
@@ -820,7 +830,7 @@ class GarminContractTests(unittest.TestCase):
             )
 
     def test_direct_gps_sends_real_map_link_and_requires_provider_acceptance(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         providers = (GARMIN / "source/DirectAlertProviders.mc").read_text()
         send = source[
             source.index("function sendDirectLocation()")
@@ -892,7 +902,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("receipt", acceptance)
 
     def test_invalid_direct_test_state_recovers_without_clearing_live_or_queue(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         load = source[
             source.index("function loadState()")
             : source.index("function migrateLegacyTest()")
@@ -901,14 +911,14 @@ class GarminContractTests(unittest.TestCase):
 
         self.assertIn("if (isRecoverableInvalidDirectTestState(stored))", load)
         self.assertIn("clearInvalidDirectTestState();", load)
-        self.assertIn("PanicProtocol.hasExactKeys(value, STATE_KEYS)", recovery)
+        self.assertIn("OpenDistressProtocol.hasExactKeys(value, STATE_KEYS)", recovery)
         self.assertIn('value["queue"].size() == 0', recovery)
         self.assertIn('value["active"] == null', recovery)
         self.assertIn('value["direct_result"] != null', recovery)
         self.assertIn("Storage.deleteValue(STATE_KEY)", recovery)
 
     def test_direct_gps_resumes_retries_and_scrubs_location_state(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         on_show = source[source.index("function onShow()") : source.index("function onHide()")]
         expiry = source[
             source.index("function expireDirectLocations()")
@@ -958,7 +968,7 @@ class GarminContractTests(unittest.TestCase):
             self.assertIn(f'"{key}"', source)
 
     def test_live_confirmation_haptic_follows_durable_commit(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         live = source[source.index("function activateLive()") : source.index("function captureLocations()")]
 
         self.assertLess(live.index("!persistState([event], active)"), live.index("confirmDurableTrigger();"))
@@ -966,11 +976,11 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("Attention.vibrate([new Attention.VibeProfile(25, 120)])", live)
 
     def test_restart_preserves_active_live_semantics_and_retry_timer_cannot_go_stale(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         activate = source[source.index("function activate()") : source.index("function activateTest()")]
         send = source[source.index("function sendPending()") : source.index("function onResponse(")]
 
-        mode_check = 'PanicProtocol.stringEquals(_mode, "LIVE")'
+        mode_check = 'OpenDistressProtocol.stringEquals(_mode, "LIVE")'
         self.assertLess(activate.index("_activeIncident != null"), activate.index(mode_check))
         self.assertIn('now < _activeIncident["expires_at"]', activate)
         self.assertIn("Repeated press keeps the same incident", activate)
@@ -978,16 +988,16 @@ class GarminContractTests(unittest.TestCase):
         self.assertLess(send.index("_retryTimer.stop();"), send.index("Communications.makeWebRequest("))
 
     def test_only_expired_live_events_can_be_explicitly_removed(self):
-        source = (GARMIN / "source/PanicApp.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         menu = source[source.index("function menuAction()") : source.index("function setState(")]
 
         self.assertIn('now < _queue[j]["expires_at"]', menu)
         self.assertIn('if (_queue[k]["v"] == 1)', menu)
-        self.assertIn('PanicProtocol.stringEquals(nextActive["incident_id"], incidentId)', menu)
+        self.assertIn('OpenDistressProtocol.stringEquals(nextActive["incident_id"], incidentId)', menu)
         self.assertIn('setState("RESULT UNKNOWN — EXPIRED"', menu)
         self.assertIn('setState("LIVE RETAINED"', menu)
         self.assertIn("refreshConfiguredMode();", menu)
-        self.assertNotIn('PanicProtocol.stringEquals(_mode, "TEST") ? "LIVE" : "TEST"', menu)
+        self.assertNotIn('OpenDistressProtocol.stringEquals(_mode, "TEST") ? "LIVE" : "TEST"', menu)
         send = source[source.index("function sendPending()") : source.index("function onResponse(")]
         self.assertIn('now >= event["expires_at"]', send)
         self.assertLess(send.index('now >= event["expires_at"]'), send.index("makeWebRequest("))
@@ -1009,11 +1019,11 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('queue[i]["expires_at"] != archivedExpiresAt', validation)
 
     def test_queue_clears_only_for_exact_signed_durable_acceptance(self):
-        app = (GARMIN / "source/PanicApp.mc").read_text()
-        protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
+        app = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        protocol = (GARMIN / "source/OpenDistressProtocol.mc").read_text()
 
         self.assertIn("responseCode == 202", app)
-        self.assertIn("PanicProtocol.verifyDurablyAccepted(data, event, keyHex)", app)
+        self.assertIn("OpenDistressProtocol.verifyDurablyAccepted(data, event, keyHex)", app)
         self.assertIn("result=durably_accepted", protocol)
         relay_response = app[
             app.index("function onResponse(") : app.index("function beginWifiFallback(")
@@ -1023,8 +1033,8 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("LIVE events cannot be abandoned", app)
 
     def test_relay_live_location_is_fixed_size_encrypted_and_never_sent_as_plain_json(self):
-        app = (GARMIN / "source/PanicApp.mc").read_text()
-        protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
+        app = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        protocol = (GARMIN / "source/OpenDistressProtocol.mc").read_text()
         schema = json.loads((ROOT / "protocol/incident-v2.schema.json").read_text())
 
         self.assertIn("new Cryptography.Cipher", protocol)
@@ -1044,7 +1054,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertEqual(schema["properties"]["kind"]["enum"], ["live.triggered", "location.updated"])
 
     def test_location_acquisition_stage_is_durable_and_resumed(self):
-        app = (GARMIN / "source/PanicApp.mc").read_text()
+        app = (GARMIN / "source/OpenDistressApp.mc").read_text()
         capture = app[app.index("function captureLocations()") : app.index("function liveConfiguration()")]
         append = app[app.index("function appendLocation(") : app.index("function liveConfiguration()")]
 
@@ -1070,7 +1080,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotRegex(app, r'_activeIncident\["capture_stage"\]\s*=(?!=)')
 
     def test_later_location_cadence_is_foreground_bounded(self):
-        app = (GARMIN / "source/PanicApp.mc").read_text()
+        app = (GARMIN / "source/OpenDistressApp.mc").read_text()
         readme = (GARMIN / "README.md").read_text()
         normalized_readme = " ".join(readme.split())
 
@@ -1101,8 +1111,8 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("-l 1 -w", readme)
 
     def test_signed_status_poll_shares_foreground_cadence_and_request_gate(self):
-        app = (GARMIN / "source/PanicApp.mc").read_text()
-        protocol = (GARMIN / "source/PanicProtocol.mc").read_text()
+        app = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        protocol = (GARMIN / "source/OpenDistressProtocol.mc").read_text()
         poll = app[app.index("function pollStatus()") : app.index("function sendStatusQuery(")]
         send = app[app.index("function sendStatusQuery(") : app.index("function onStatusResponse(")]
         response = app[
@@ -1127,34 +1137,34 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("sendPending();", poll)
         self.assertIn("_queue.size() == 0", bypass)
         self.assertIn("_activeIncident == null", bypass)
-        self.assertIn("PanicProtocol.isEncryptedEvent(head)", bypass)
+        self.assertIn("OpenDistressProtocol.isEncryptedEvent(head)", bypass)
         self.assertIn(
-            'PanicProtocol.stringEquals(head["kind"], PanicProtocol.V2_LOCATION_KIND)',
+            'OpenDistressProtocol.stringEquals(head["kind"], OpenDistressProtocol.V2_LOCATION_KIND)',
             bypass,
         )
         self.assertIn('head["incident_id"],', bypass)
         self.assertIn('_activeIncident["incident_id"]', bypass)
         self.assertIn('head["expires_at"] == _activeIncident["expires_at"]', bypass)
         self.assertIn("!canPollStatus()", send)
-        self.assertIn("PanicProtocol.randomId()", send)
+        self.assertIn("OpenDistressProtocol.randomId()", send)
         self.assertIn('config["base_url"] + "/v2/status"', send)
         self.assertIn(':context => query["request_id"]', send)
         self.assertIn("method(:onStatusResponse)", send)
         self.assertIn("responseCode == 200", response)
-        self.assertIn("PanicProtocol.verifyStatusResult(data, query, keyHex, receiveAt)", response)
+        self.assertIn("OpenDistressProtocol.verifyStatusResult(data, query, keyHex, receiveAt)", response)
         self.assertLess(response.index("verifyStatusResult"), response.index("finishIncidentFromStatus"))
-        self.assertIn('PanicProtocol.stringEquals(data["state"], "resolved")', response)
-        self.assertIn('PanicProtocol.stringEquals(data["state"], "expired")', response)
-        self.assertIn('PanicProtocol.stringEquals(data["state"], "acknowledged")', response)
+        self.assertIn('OpenDistressProtocol.stringEquals(data["state"], "resolved")', response)
+        self.assertIn('OpenDistressProtocol.stringEquals(data["state"], "expired")', response)
+        self.assertIn('OpenDistressProtocol.stringEquals(data["state"], "acknowledged")', response)
         self.assertLess(continuation.index("sendPending();"), continuation.index("scheduleStatusPoll(now);"))
         self.assertNotIn("persistState(", failure)
         self.assertIn("persistState(remaining, null)", terminal)
-        self.assertIn('!PanicProtocol.stringEquals(', terminal)
+        self.assertIn('!OpenDistressProtocol.stringEquals(', terminal)
         self.assertIn('_queue[i]["incident_id"],', terminal)
         self.assertIn("refreshConfiguredMode();", terminal)
         self.assertNotIn("ACCEPTED", terminal)
 
-        for domain in ("spb.status.query.v2", "spb.status.result.v2"):
+        for domain in ("opendistress.status.query.v2", "opendistress.status.result.v2"):
             self.assertIn(domain, protocol)
         self.assertIn("hasExactKeys(data, STATUS_RESULT_KEYS)", protocol)
         self.assertIn('!stringEquals(data["request_id"], query["request_id"])', protocol)
@@ -1165,27 +1175,27 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('data["checked_at"] - receiveAt > 300', protocol)
 
         event_response = app[app.index("function onResponse(") : app.index("function handleFailure(")]
-        self.assertIn("!PanicProtocol.stringEquals(eventId, _requestEventId)", event_response)
+        self.assertIn("!OpenDistressProtocol.stringEquals(eventId, _requestEventId)", event_response)
         self.assertIn(
-            '!PanicProtocol.stringEquals(requestId, _statusQuery["request_id"])',
+            '!OpenDistressProtocol.stringEquals(requestId, _statusQuery["request_id"])',
             response,
         )
 
     def test_glance_and_complication_only_launch_or_label_the_foreground_app(self):
-        app = (GARMIN / "source/PanicApp.mc").read_text()
+        app = (GARMIN / "source/OpenDistressApp.mc").read_text()
         complication = ET.parse(
             GARMIN / "resources/complications/complications.xml"
         ).getroot()
 
         self.assertIn("(:glance)\n    function getGlanceView()", app)
-        self.assertIn("(:glance)\nclass PanicGlanceView", app)
+        self.assertIn("(:glance)\nclass OpenDistressGlanceView", app)
         self.assertEqual(len(complication.findall("./complication")), 1)
-        glance_class = app[app.index("class PanicGlanceView") : app.index("class PanicView")]
+        glance_class = app[app.index("class OpenDistressGlanceView") : app.index("class OpenDistressView")]
         self.assertNotIn("makeWebRequest", glance_class)
         self.assertNotIn("Position.", glance_class)
 
     def test_wifi_fallback_never_delays_first_attempt_or_discards_pending_event(self):
-        app = (GARMIN / "source/PanicApp.mc").read_text()
+        app = (GARMIN / "source/OpenDistressApp.mc").read_text()
         send = app[app.index("function sendPending(") : app.index("function onResponse(")]
         response = app[app.index("function onResponse(") : app.index("function handleFailure(")]
         fallback = app[

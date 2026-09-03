@@ -22,7 +22,7 @@ TEST_MESSAGE = "TEST ONLY — Garmin alert transport check. No emergency action 
 
 def _configuration_fingerprint(transport: str, *values: str) -> bytes:
     digest = hashlib.sha256()
-    digest.update(b"spb.provider-configuration.v1\0")
+    digest.update(b"opendistress.provider-configuration.v1\0")
     for value in (transport, *values):
         encoded = value.encode("utf-8")
         digest.update(len(encoded).to_bytes(4, "big"))

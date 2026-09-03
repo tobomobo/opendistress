@@ -6,18 +6,18 @@ import Toybox.Math;
 import Toybox.Position;
 import Toybox.StringUtil;
 
-module PanicProtocol {
+module OpenDistressProtocol {
     const V1_KIND = "test.triggered";
     const V2_LIVE_KIND = "live.triggered";
     const V2_LOCATION_KIND = "location.updated";
 
-    const V1_SUBMIT_DOMAIN = "spb.test.submit.v1";
-    const V1_RESULT_DOMAIN = "spb.test.intake-result.v1";
-    const V2_SUBMIT_DOMAIN = "spb.submit.v2";
-    const V2_CONTENT_DOMAIN = "spb.content.v2";
-    const V2_RESULT_DOMAIN = "spb.result.v2";
-    const V2_STATUS_QUERY_DOMAIN = "spb.status.query.v2";
-    const V2_STATUS_RESULT_DOMAIN = "spb.status.result.v2";
+    const V1_SUBMIT_DOMAIN = "opendistress.test.submit.v1";
+    const V1_RESULT_DOMAIN = "opendistress.test.intake-result.v1";
+    const V2_SUBMIT_DOMAIN = "opendistress.submit.v2";
+    const V2_CONTENT_DOMAIN = "opendistress.content.v2";
+    const V2_RESULT_DOMAIN = "opendistress.result.v2";
+    const V2_STATUS_QUERY_DOMAIN = "opendistress.status.query.v2";
+    const V2_STATUS_RESULT_DOMAIN = "opendistress.status.result.v2";
 
     const LOWER_HEX = "0123456789abcdef";
     const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -673,9 +673,9 @@ module PanicProtocol {
 function protocolConformance(logger) {
     var eventId = "AAECAwQFBgcICQoLDA0ODw";
     var deviceId = "EBESExQVFhcYGRobHB0eHw";
-    var testEvent = PanicProtocol.newTestEvent(eventId, deviceId, 1788105600);
-    var liveEvent = PanicProtocol.newEncryptedEventWithIv(
-        PanicProtocol.V2_LIVE_KIND,
+    var testEvent = OpenDistressProtocol.newTestEvent(eventId, deviceId, 1788105600);
+    var liveEvent = OpenDistressProtocol.newEncryptedEventWithIv(
+        OpenDistressProtocol.V2_LIVE_KIND,
         eventId,
         eventId,
         deviceId,
@@ -683,13 +683,13 @@ function protocolConformance(logger) {
         1788105600,
         1788109200,
         1,
-        PanicProtocol.hexBytes("a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"),
-        PanicProtocol.PUBLIC_ENC_KEY,
-        PanicProtocol.PUBLIC_MAC_KEY,
-        PanicProtocol.hexBytes("606162636465666768696a6b6c6d6e6f")
+        OpenDistressProtocol.hexBytes("a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"),
+        OpenDistressProtocol.PUBLIC_ENC_KEY,
+        OpenDistressProtocol.PUBLIC_MAC_KEY,
+        OpenDistressProtocol.hexBytes("606162636465666768696a6b6c6d6e6f")
     );
-    var locationEvent = PanicProtocol.newEncryptedEventWithIv(
-        PanicProtocol.V2_LOCATION_KIND,
+    var locationEvent = OpenDistressProtocol.newEncryptedEventWithIv(
+        OpenDistressProtocol.V2_LOCATION_KIND,
         "sLGys7S1tre4ubq7vL2-vw",
         eventId,
         deviceId,
@@ -697,12 +697,12 @@ function protocolConformance(logger) {
         1788105660,
         1788109200,
         1,
-        PanicProtocol.hexBytes("01026a9453b2075bcd15e4c5f3ec0401"),
-        PanicProtocol.PUBLIC_ENC_KEY,
-        PanicProtocol.PUBLIC_MAC_KEY,
-        PanicProtocol.hexBytes("c0c1c2c3c4c5c6c7c8c9cacbcccdcecf")
+        OpenDistressProtocol.hexBytes("01026a9453b2075bcd15e4c5f3ec0401"),
+        OpenDistressProtocol.PUBLIC_ENC_KEY,
+        OpenDistressProtocol.PUBLIC_MAC_KEY,
+        OpenDistressProtocol.hexBytes("c0c1c2c3c4c5c6c7c8c9cacbcccdcecf")
     );
-    var statusQuery = PanicProtocol.newStatusQuery(
+    var statusQuery = OpenDistressProtocol.newStatusQuery(
         "ICEiIyQlJicoKSorLC0uLw",
         eventId,
         deviceId,
@@ -716,26 +716,26 @@ function protocolConformance(logger) {
         "device_id" => deviceId,
         "state" => "resolved",
         "checked_at" => 1788105701,
-        "response_signature" => "v2=1PKgg7-Pz7Ko7_jtlrQaJoWxOLwI16D6FGCt4YnnzIM"
+        "response_signature" => "v2=7CcJC9UNljfOlMkrh1J0-pbyF_PTNRPRpw_xEvGJ1Vc"
     };
 
-    if (!PanicProtocol.isTestEvent(testEvent)) {
-        if (!PanicProtocol.hasExactKeys(testEvent, PanicProtocol.EVENT_KEYS)) {
+    if (!OpenDistressProtocol.isTestEvent(testEvent)) {
+        if (!OpenDistressProtocol.hasExactKeys(testEvent, OpenDistressProtocol.EVENT_KEYS)) {
             logger.error("V1 event keys failed");
-        } else if (!PanicProtocol.isCanonicalId(testEvent["event_id"])
-            || !PanicProtocol.isCanonicalId(testEvent["device_id"])) {
+        } else if (!OpenDistressProtocol.isCanonicalId(testEvent["event_id"])
+            || !OpenDistressProtocol.isCanonicalId(testEvent["device_id"])) {
             logger.error("V1 event identifiers failed");
         } else if (!(testEvent["created_at"] instanceof Lang.Number)
             || !(testEvent["expires_at"] instanceof Lang.Number)) {
             logger.error("V1 event timestamp types failed");
         } else if (testEvent["v"] != 1) {
             logger.error("V1 event version failed");
-        } else if (!PanicProtocol.stringEquals(
+        } else if (!OpenDistressProtocol.stringEquals(
             testEvent["incident_id"],
             testEvent["event_id"]
         )) {
             logger.error("V1 event incident failed");
-        } else if (!PanicProtocol.stringEquals(testEvent["kind"], PanicProtocol.V1_KIND)) {
+        } else if (!OpenDistressProtocol.stringEquals(testEvent["kind"], OpenDistressProtocol.V1_KIND)) {
             logger.error("V1 event kind failed");
         } else if (testEvent["sequence"] != 0) {
             logger.error("V1 event sequence failed");
@@ -751,82 +751,82 @@ function protocolConformance(logger) {
         }
         return false;
     }
-    var v1RequestSignature = PanicProtocol.requestSignature(
-        PanicProtocol.PUBLIC_AUTH_KEY,
+    var v1RequestSignature = OpenDistressProtocol.requestSignature(
+        OpenDistressProtocol.PUBLIC_AUTH_KEY,
         testEvent
     );
-    if (!PanicProtocol.stringEquals(
+    if (!OpenDistressProtocol.stringEquals(
         v1RequestSignature,
-        "v1=8k8O8CI4Qixqv4CbzsfUo5kPAxekGoYsyssb7IeAZRs"
+        "v1=rTW45SzkARiYCIiat6WMMb89ZfsJLxY0qnLHe5iEhIk"
     )) {
         logger.error("V1 request signature failed: " + v1RequestSignature);
         return false;
     }
-    var v1ResponseSignature = PanicProtocol.responseSignature(
-        PanicProtocol.PUBLIC_AUTH_KEY,
+    var v1ResponseSignature = OpenDistressProtocol.responseSignature(
+        OpenDistressProtocol.PUBLIC_AUTH_KEY,
         1,
         eventId
     );
-    if (!PanicProtocol.stringEquals(
+    if (!OpenDistressProtocol.stringEquals(
         v1ResponseSignature,
-        "v1=6eCuAfV44rtvISQNtNPfUXpt50fm_U5sUj4POwx42UM"
+        "v1=IGVfaGn9w07jtO7OSgKsqMxvzU513EH9ByEFi6hTNhk"
     )) {
         logger.error("V1 response signature failed: " + v1ResponseSignature);
         return false;
     }
-    if (!(PanicProtocol.isEncryptedEvent(liveEvent)
-        && PanicProtocol.stringEquals(
+    if (!(OpenDistressProtocol.isEncryptedEvent(liveEvent)
+        && OpenDistressProtocol.stringEquals(
             liveEvent["payload"]["ciphertext"],
             "8eRa_JOzxdPOO3l494xv5Q"
         )
-        && PanicProtocol.stringEquals(
+        && OpenDistressProtocol.stringEquals(
             liveEvent["payload"]["tag"],
-            "QOA-t_kexwtJrWsQaj8FZuEb9TdOhPAcHCDMbgkrCB8"
+            "Od2xdL8I6MFPc2V44iVzICC1eChn4NcItWb9GWpA4N4"
         )
-        && PanicProtocol.stringEquals(
-            PanicProtocol.requestSignature(PanicProtocol.PUBLIC_AUTH_KEY, liveEvent),
-            "v2=vkHWr3fYtcYij4GqeJJ49dJhDn38m26ifCTJAU3SknY"
+        && OpenDistressProtocol.stringEquals(
+            OpenDistressProtocol.requestSignature(OpenDistressProtocol.PUBLIC_AUTH_KEY, liveEvent),
+            "v2=wKW2UM7B1hOF59JfjpW0ol4YB8sFWccUNT6d_7S28IQ"
         )
-        && PanicProtocol.stringEquals(
-            PanicProtocol.responseSignature(PanicProtocol.PUBLIC_AUTH_KEY, 2, eventId),
-            "v2=Z40vnSWhJ7rbDRz6kO8nAh8-Qen5RGpl20xiiQ6kCpI"
+        && OpenDistressProtocol.stringEquals(
+            OpenDistressProtocol.responseSignature(OpenDistressProtocol.PUBLIC_AUTH_KEY, 2, eventId),
+            "v2=gtYwKUt7qrWFjCrtDJq4yns_1My1J0b67e9cgF7YOKw"
         ))) {
         logger.error("LIVE v2 conformance vector failed");
         return false;
     }
-    if (!(PanicProtocol.isEncryptedEvent(locationEvent)
-        && PanicProtocol.stringEquals(
+    if (!(OpenDistressProtocol.isEncryptedEvent(locationEvent)
+        && OpenDistressProtocol.stringEquals(
             locationEvent["payload"]["ciphertext"],
             "Ni1HgpKbRi0gcHT2Ms7Xkw"
         )
-        && PanicProtocol.stringEquals(
+        && OpenDistressProtocol.stringEquals(
             locationEvent["payload"]["tag"],
-            "nMEC__4q1F-LpD8k3ISQ1i1zdYK2aO8LOzvDGlfEj-Y"
+            "S8R_5VcmENMUis6bks2I5krpdi3wws7Txmcq9nv9G1M"
         )
-        && PanicProtocol.stringEquals(
-            PanicProtocol.requestSignature(PanicProtocol.PUBLIC_AUTH_KEY, locationEvent),
-            "v2=uGLHdOkt0pA1daHA313hWEMUI2pdB5mQNuwQOB_uTM8"
+        && OpenDistressProtocol.stringEquals(
+            OpenDistressProtocol.requestSignature(OpenDistressProtocol.PUBLIC_AUTH_KEY, locationEvent),
+            "v2=s84IhlhENf3_q170hFyPLj9g5XKQhYIgfqC-LLc_QXk"
         )
-        && PanicProtocol.stringEquals(
-            PanicProtocol.responseSignature(
-                PanicProtocol.PUBLIC_AUTH_KEY,
+        && OpenDistressProtocol.stringEquals(
+            OpenDistressProtocol.responseSignature(
+                OpenDistressProtocol.PUBLIC_AUTH_KEY,
                 2,
                 locationEvent["event_id"]
             ),
-            "v2=fsU52lMaXLa4DAu00Awg8-uFZgePLPLim_P4OzRMTiQ"
+            "v2=8gGf-GSWjBKTLFZmsv9HaAynRz-fLJTNAh39_mKjehw"
         ))) {
         logger.error("Location v2 conformance vector failed");
         return false;
     }
-    if (!(PanicProtocol.isStatusQuery(statusQuery)
-        && PanicProtocol.stringEquals(
-            PanicProtocol.statusRequestSignature(PanicProtocol.PUBLIC_AUTH_KEY, statusQuery),
-            "v2=O7ik82fJBgz3-OwXGZeUALuSlufZvQT2Gr9rkFVnGdw"
+    if (!(OpenDistressProtocol.isStatusQuery(statusQuery)
+        && OpenDistressProtocol.stringEquals(
+            OpenDistressProtocol.statusRequestSignature(OpenDistressProtocol.PUBLIC_AUTH_KEY, statusQuery),
+            "v2=wZis26a3WNgkwkoulKYMWOptlpAWPJarVkJzSAKFlCU"
         )
-        && PanicProtocol.verifyStatusResult(
+        && OpenDistressProtocol.verifyStatusResult(
             statusResult,
             statusQuery,
-            PanicProtocol.PUBLIC_AUTH_KEY,
+            OpenDistressProtocol.PUBLIC_AUTH_KEY,
             1788105701
         ))) {
         logger.error("Status v2 conformance vector failed");
@@ -839,22 +839,22 @@ function protocolConformance(logger) {
 function protocolRejectsMalformedEvents(logger) {
     var eventId = "AAECAwQFBgcICQoLDA0ODw";
     var deviceId = "EBESExQVFhcYGRobHB0eHw";
-    var testEvent = PanicProtocol.newTestEvent(eventId, deviceId, 1788105600);
+    var testEvent = OpenDistressProtocol.newTestEvent(eventId, deviceId, 1788105600);
 
-    if (!PanicProtocol.isTestEvent(testEvent)
-        || PanicProtocol.isTestEvent(
-            PanicProtocol.newTestEvent(eventId, deviceId, -1)
+    if (!OpenDistressProtocol.isTestEvent(testEvent)
+        || OpenDistressProtocol.isTestEvent(
+            OpenDistressProtocol.newTestEvent(eventId, deviceId, -1)
         )
-        || PanicProtocol.isTestEvent(
-            PanicProtocol.newTestEvent(
+        || OpenDistressProtocol.isTestEvent(
+            OpenDistressProtocol.newTestEvent(
                 eventId,
                 deviceId,
-                PanicProtocol.MAX_V1_CREATED_AT + 1
+                OpenDistressProtocol.MAX_V1_CREATED_AT + 1
             )
         )
-        || PanicProtocol.isCanonicalId("AAECAwQFBgcICQoLDA0ODx")
-        || PanicProtocol.isCanonicalId("AAECAwQFBgcICQoLDA0ODw=")
-        || PanicProtocol.isCanonicalDigest(
+        || OpenDistressProtocol.isCanonicalId("AAECAwQFBgcICQoLDA0ODx")
+        || OpenDistressProtocol.isCanonicalId("AAECAwQFBgcICQoLDA0ODw=")
+        || OpenDistressProtocol.isCanonicalDigest(
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
         )) {
         logger.error("Canonical identifier or V1 timestamp boundary failed");
@@ -862,13 +862,13 @@ function protocolRejectsMalformedEvents(logger) {
     }
 
     testEvent["extra"] = 1;
-    if (PanicProtocol.isTestEvent(testEvent)) {
+    if (OpenDistressProtocol.isTestEvent(testEvent)) {
         logger.error("V1 event accepted an extra key");
         return false;
     }
 
-    var liveEvent = PanicProtocol.newEncryptedEventWithIv(
-        PanicProtocol.V2_LIVE_KIND,
+    var liveEvent = OpenDistressProtocol.newEncryptedEventWithIv(
+        OpenDistressProtocol.V2_LIVE_KIND,
         eventId,
         eventId,
         deviceId,
@@ -876,39 +876,39 @@ function protocolRejectsMalformedEvents(logger) {
         1788105600,
         1788192000,
         1,
-        PanicProtocol.hexBytes("a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"),
-        PanicProtocol.PUBLIC_ENC_KEY,
-        PanicProtocol.PUBLIC_MAC_KEY,
-        PanicProtocol.hexBytes("606162636465666768696a6b6c6d6e6f")
+        OpenDistressProtocol.hexBytes("a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"),
+        OpenDistressProtocol.PUBLIC_ENC_KEY,
+        OpenDistressProtocol.PUBLIC_MAC_KEY,
+        OpenDistressProtocol.hexBytes("606162636465666768696a6b6c6d6e6f")
     );
-    if (!PanicProtocol.isEncryptedEvent(liveEvent)) {
+    if (!OpenDistressProtocol.isEncryptedEvent(liveEvent)) {
         logger.error("V2 maximum lifetime boundary failed");
         return false;
     }
     liveEvent["expires_at"] = 1788192001;
-    if (PanicProtocol.isEncryptedEvent(liveEvent)) {
+    if (OpenDistressProtocol.isEncryptedEvent(liveEvent)) {
         logger.error("V2 event exceeded maximum lifetime");
         return false;
     }
     liveEvent["expires_at"] = 1788105600;
-    if (PanicProtocol.isEncryptedEvent(liveEvent)) {
+    if (OpenDistressProtocol.isEncryptedEvent(liveEvent)) {
         logger.error("V2 event accepted a zero lifetime");
         return false;
     }
     liveEvent["expires_at"] = 1788109200;
-    liveEvent["kind"] = PanicProtocol.V2_LOCATION_KIND;
+    liveEvent["kind"] = OpenDistressProtocol.V2_LOCATION_KIND;
     liveEvent["sequence"] = 1;
-    if (PanicProtocol.isEncryptedEvent(liveEvent)) {
+    if (OpenDistressProtocol.isEncryptedEvent(liveEvent)) {
         logger.error("Location event reused its incident identifier");
         return false;
     }
     liveEvent["event_id"] = "sLGys7S1tre4ubq7vL2-vw";
-    if (!PanicProtocol.isEncryptedEvent(liveEvent)) {
+    if (!OpenDistressProtocol.isEncryptedEvent(liveEvent)) {
         logger.error("Valid location event was rejected");
         return false;
     }
     liveEvent["payload"]["tag"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAx";
-    if (PanicProtocol.isEncryptedEvent(liveEvent)) {
+    if (OpenDistressProtocol.isEncryptedEvent(liveEvent)) {
         logger.error("V2 event accepted a non-canonical digest");
         return false;
     }
@@ -925,48 +925,48 @@ function protocolRejectsUnsafeConfiguration(logger) {
         + "33333333333333333333333333333333";
     var templateId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    if (!PanicProtocol.isSafeAuthKey(authKey)
-        || PanicProtocol.isSafeAuthKey(PanicProtocol.PUBLIC_AUTH_KEY)
-        || PanicProtocol.isSafeAuthKey(
+    if (!OpenDistressProtocol.isSafeAuthKey(authKey)
+        || OpenDistressProtocol.isSafeAuthKey(OpenDistressProtocol.PUBLIC_AUTH_KEY)
+        || OpenDistressProtocol.isSafeAuthKey(
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
             + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         )
-        || !PanicProtocol.isSafeLiveConfiguration(
+        || !OpenDistressProtocol.isSafeLiveConfiguration(
             authKey,
             encryptionKey,
             macKey,
             templateId,
             1
         )
-        || PanicProtocol.isSafeLiveConfiguration(
+        || OpenDistressProtocol.isSafeLiveConfiguration(
             authKey,
             authKey,
             macKey,
             templateId,
             1
         )
-        || PanicProtocol.isSafeLiveConfiguration(
+        || OpenDistressProtocol.isSafeLiveConfiguration(
             authKey,
             encryptionKey,
             encryptionKey,
             templateId,
             1
         )
-        || PanicProtocol.isSafeLiveConfiguration(
+        || OpenDistressProtocol.isSafeLiveConfiguration(
             authKey,
-            PanicProtocol.PUBLIC_MAC_KEY,
+            OpenDistressProtocol.PUBLIC_MAC_KEY,
             macKey,
             templateId,
             1
         )
-        || PanicProtocol.isSafeLiveConfiguration(
+        || OpenDistressProtocol.isSafeLiveConfiguration(
             authKey,
             encryptionKey,
-            PanicProtocol.PUBLIC_ENC_KEY,
+            OpenDistressProtocol.PUBLIC_ENC_KEY,
             templateId,
             1
         )
-        || PanicProtocol.isSafeLiveConfiguration(
+        || OpenDistressProtocol.isSafeLiveConfiguration(
             authKey,
             encryptionKey,
             macKey,
@@ -976,35 +976,35 @@ function protocolRejectsUnsafeConfiguration(logger) {
         logger.error("LIVE key separation or fixture-key rejection failed");
         return false;
     }
-    if (!PanicProtocol.isHttpsBaseUrl("https://alerts.example")
-        || PanicProtocol.isHttpsBaseUrl("http://alerts.example")
-        || PanicProtocol.isHttpsBaseUrl("https://alerts.example/")
-        || PanicProtocol.isHttpsBaseUrl("https://alerts.example/v2")
-        || PanicProtocol.isHttpsBaseUrl("https://user@alerts.example")
-        || PanicProtocol.isHttpsBaseUrl("https://alerts.example?test=1")
-        || PanicProtocol.isHttpsBaseUrl("https://alerts.example#fragment")) {
+    if (!OpenDistressProtocol.isHttpsBaseUrl("https://alerts.example")
+        || OpenDistressProtocol.isHttpsBaseUrl("http://alerts.example")
+        || OpenDistressProtocol.isHttpsBaseUrl("https://alerts.example/")
+        || OpenDistressProtocol.isHttpsBaseUrl("https://alerts.example/v2")
+        || OpenDistressProtocol.isHttpsBaseUrl("https://user@alerts.example")
+        || OpenDistressProtocol.isHttpsBaseUrl("https://alerts.example?test=1")
+        || OpenDistressProtocol.isHttpsBaseUrl("https://alerts.example#fragment")) {
         logger.error("Relay origin validation failed");
         return false;
     }
-    if (!PanicProtocol.isGrafanaWebhookUrl(
+    if (!OpenDistressProtocol.isGrafanaWebhookUrl(
             "https://oncall-prod-eu-west-0.grafana.net/oncall/"
             + "integrations/v1/formatted_webhook/"
             + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/"
         )
-        || PanicProtocol.isGrafanaWebhookUrl(
+        || OpenDistressProtocol.isGrafanaWebhookUrl(
             "http://oncall-prod-eu-west-0.grafana.net/oncall/"
             + "integrations/v1/formatted_webhook/"
             + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/"
         )
-        || PanicProtocol.isGrafanaWebhookUrl(
+        || OpenDistressProtocol.isGrafanaWebhookUrl(
             "https://evil.example/oncall/integrations/v1/formatted_webhook/"
             + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/"
         )
-        || PanicProtocol.isGrafanaWebhookUrl(
+        || OpenDistressProtocol.isGrafanaWebhookUrl(
             "https://oncall-prod-eu-west-0.grafana.net/oncall/"
             + "integrations/v1/formatted_webhook/short/"
         )
-        || PanicProtocol.isGrafanaWebhookUrl(
+        || OpenDistressProtocol.isGrafanaWebhookUrl(
             "https://oncall-prod-eu-west-0.grafana.net/oncall/"
             + "integrations/v1/formatted_webhook/"
             + "AbCdEfGhIjKlMnOpQrStUvWxYz012345/?leak=1"
@@ -1013,7 +1013,7 @@ function protocolRejectsUnsafeConfiguration(logger) {
         return false;
     }
     var dynamicValue = StringUtil.charArrayToString("durably_accepted".toCharArray());
-    if (!PanicProtocol.stringEquals(dynamicValue, "durably_accepted")) {
+    if (!OpenDistressProtocol.stringEquals(dynamicValue, "durably_accepted")) {
         logger.error("String value equality failed");
         return false;
     }
@@ -1024,51 +1024,51 @@ function protocolRejectsUnsafeConfiguration(logger) {
 function protocolRejectsTamperedResults(logger) {
     var eventId = "AAECAwQFBgcICQoLDA0ODw";
     var deviceId = "EBESExQVFhcYGRobHB0eHw";
-    var testEvent = PanicProtocol.newTestEvent(eventId, deviceId, 1788105600);
+    var testEvent = OpenDistressProtocol.newTestEvent(eventId, deviceId, 1788105600);
     var accepted = {
         "v" => 1,
         "event_id" => eventId,
         "result" => "durably_accepted",
-        "response_signature" => PanicProtocol.responseSignature(
-            PanicProtocol.PUBLIC_AUTH_KEY,
+        "response_signature" => OpenDistressProtocol.responseSignature(
+            OpenDistressProtocol.PUBLIC_AUTH_KEY,
             1,
             eventId
         )
     };
-    if (!PanicProtocol.verifyDurablyAccepted(
+    if (!OpenDistressProtocol.verifyDurablyAccepted(
         accepted,
         testEvent,
-        PanicProtocol.PUBLIC_AUTH_KEY
+        OpenDistressProtocol.PUBLIC_AUTH_KEY
     )) {
         logger.error("Valid durable result was rejected");
         return false;
     }
     accepted["response_signature"] =
-        "v1=6eCuAfV44rtvISQNtNPfUXpt50fm_U5sUj4POwx42UA";
-    if (PanicProtocol.verifyDurablyAccepted(
+        "v1=IGVfaGn9w07jtO7OSgKsqMxvzU513EH9ByEFi6hTNhA";
+    if (OpenDistressProtocol.verifyDurablyAccepted(
         accepted,
         testEvent,
-        PanicProtocol.PUBLIC_AUTH_KEY
+        OpenDistressProtocol.PUBLIC_AUTH_KEY
     )) {
         logger.error("Tampered durable signature was accepted");
         return false;
     }
-    accepted["response_signature"] = PanicProtocol.responseSignature(
-        PanicProtocol.PUBLIC_AUTH_KEY,
+    accepted["response_signature"] = OpenDistressProtocol.responseSignature(
+        OpenDistressProtocol.PUBLIC_AUTH_KEY,
         1,
         eventId
     );
     accepted["extra"] = null;
-    if (PanicProtocol.verifyDurablyAccepted(
+    if (OpenDistressProtocol.verifyDurablyAccepted(
         accepted,
         testEvent,
-        PanicProtocol.PUBLIC_AUTH_KEY
+        OpenDistressProtocol.PUBLIC_AUTH_KEY
     )) {
         logger.error("Durable result accepted an extra key");
         return false;
     }
 
-    var query = PanicProtocol.newStatusQuery(
+    var query = OpenDistressProtocol.newStatusQuery(
         "ICEiIyQlJicoKSorLC0uLw",
         eventId,
         deviceId,
@@ -1082,22 +1082,22 @@ function protocolRejectsTamperedResults(logger) {
         "device_id" => deviceId,
         "state" => "resolved",
         "checked_at" => 1788105701,
-        "response_signature" => "v2=1PKgg7-Pz7Ko7_jtlrQaJoWxOLwI16D6FGCt4YnnzIM"
+        "response_signature" => "v2=7CcJC9UNljfOlMkrh1J0-pbyF_PTNRPRpw_xEvGJ1Vc"
     };
-    if (!PanicProtocol.verifyStatusResult(
+    if (!OpenDistressProtocol.verifyStatusResult(
         status,
         query,
-        PanicProtocol.PUBLIC_AUTH_KEY,
+        OpenDistressProtocol.PUBLIC_AUTH_KEY,
         1788105701
     )) {
         logger.error("Valid status result was rejected");
         return false;
     }
     status["state"] = "closed";
-    if (PanicProtocol.verifyStatusResult(
+    if (OpenDistressProtocol.verifyStatusResult(
         status,
         query,
-        PanicProtocol.PUBLIC_AUTH_KEY,
+        OpenDistressProtocol.PUBLIC_AUTH_KEY,
         1788105701
     )) {
         logger.error("Unknown status state was accepted");
@@ -1105,30 +1105,30 @@ function protocolRejectsTamperedResults(logger) {
     }
     status["state"] = "resolved";
     status["request_id"] = "sLGys7S1tre4ubq7vL2-vw";
-    if (PanicProtocol.verifyStatusResult(
+    if (OpenDistressProtocol.verifyStatusResult(
         status,
         query,
-        PanicProtocol.PUBLIC_AUTH_KEY,
+        OpenDistressProtocol.PUBLIC_AUTH_KEY,
         1788105701
     )) {
         logger.error("Mismatched status request was accepted");
         return false;
     }
     status["request_id"] = "ICEiIyQlJicoKSorLC0uLw";
-    if (PanicProtocol.verifyStatusResult(
+    if (OpenDistressProtocol.verifyStatusResult(
         status,
         query,
-        PanicProtocol.PUBLIC_AUTH_KEY,
+        OpenDistressProtocol.PUBLIC_AUTH_KEY,
         1788106001
     )) {
         logger.error("Stale status result was accepted");
         return false;
     }
-    if (!PanicProtocol.stringEquals(
-        PanicProtocol.failureResult({"result" => "retryable_failure"}),
+    if (!OpenDistressProtocol.stringEquals(
+        OpenDistressProtocol.failureResult({"result" => "retryable_failure"}),
         "retryable_failure"
-    ) || !PanicProtocol.stringEquals(
-        PanicProtocol.failureResult({"result" => "untrusted"}),
+    ) || !OpenDistressProtocol.stringEquals(
+        OpenDistressProtocol.failureResult({"result" => "untrusted"}),
         "result_unknown"
     )) {
         logger.error("Failure result classification failed closed");
