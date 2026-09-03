@@ -289,7 +289,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("_view.downAction();", next_page)
         self.assertNotIn("activate", next_page)
         self.assertIn(
-            'setState("SETUP REQUIRED", "Enter Grafana webhook or Pushover keys")',
+            'setState("SETUP REQUIRED", "Connect IQ Store: add webhook or keys")',
             source,
         )
 
@@ -379,6 +379,32 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("_coverTimer", source)
         self.assertIn('"LOCATION SCRUB UNSAVED"', cover)
         self.assertNotIn('"READY', cover)
+
+    def test_accepted_test_cover_reveals_details_before_explicit_reset(self):
+        source = (GARMIN / "source/PanicApp.mc").read_text()
+        update = source[
+            source.index("function onUpdate(dc)", source.index("class PanicView"))
+            : source.index("function compactDisplayId")
+        ]
+        cover = source[
+            source.index("function shouldShowCover()")
+            : source.index("function scheduleIdleCoverRefresh()")
+        ]
+        select = source[
+            source.index("function selectAction()")
+            : source.index("function activateTest()")
+        ]
+        menu = source[source.index("function menuAction()") : source.index("function setState(")]
+
+        self.assertIn("var _acceptedStatusVisible = false", source)
+        self.assertIn("&& !_acceptedStatusVisible", cover)
+        self.assertIn('drawAcceptedCoverHint(dc, "TEST ACCEPTED", "DOWN: DETAILS")', update)
+        self.assertEqual(select.count("toggleAcceptedStatus();"), 2)
+        self.assertNotIn("persistStateWithDirect", select)
+        self.assertNotIn("activate", select)
+        self.assertIn('"Recipient unknown; MENU resets TEST"', select)
+        self.assertIn("persistStateWithDirect([], _activeIncident, null)", menu)
+        self.assertIn("_acceptedStatusVisible = false", menu)
 
         pushover = source[
             source.index("function onPushoverResponse(")

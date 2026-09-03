@@ -57,8 +57,11 @@ from the configured formatted webhook. A double haptic accompanies the first
 stored acceptance. The cover means only **a provider accepted the request**;
 it does not mean a receiver phone displayed or sounded it, a person ACKed it,
 or help is coming. The cover is an ordinary foreground app view, not a
-replacement system watch face. MENU clears accepted TEST evidence and returns
-to readiness.
+replacement system watch face. In the TEST beta it carries small
+`TEST ACCEPTED` and `DOWN: DETAILS` labels. DOWN or a screen tap reveals the
+provider-evidence page without stopping GPS or clearing anything; DOWN or tap
+again returns to the cover. MENU explicitly clears accepted TEST evidence and
+returns to readiness so another test can be triggered.
 
 After that stored acceptance, and never before it, the beta requests a real
 watch position for up to one hour. Every provider that accepted the trigger is
@@ -105,8 +108,11 @@ for this beta: the current watch setting contains the generated webhook URL but
 does not provision a separate `Authorization` bearer token.
 
 Install the Beta/App-Store artifact, then edit the route credentials, optional
-**Protected person name**, and optional **Prepared alert and response plan** in
-the Connect IQ Store app, Garmin Connect, or Garmin Express. The settings begin
+**Protected person name**, and optional **Prepared alert and response plan**.
+The verified primary route is the **Settings** control on the `Panic Button
+TEST` product page in the Connect IQ Store app. Garmin also documents Garmin
+Connect and Garmin Express for Store-installed content, but Garmin Connect may
+show `no settings` for a USB-sideloaded developer copy. The settings begin
 with a prepared alert message and a concise response-plan template, followed by
 home address, children/family information, person description, relevant
 background, and an HTTPS photo URL. Prompts ask the owner to decide in calm
@@ -128,6 +134,16 @@ monkeyc -e -f beta.jungle \
   -o bin/PanicButton-TEST.iq \
   -y private-resources/developer_key.der -l 1
 ```
+
+### Why two app icons can appear
+
+`Panic Button TEST` is the Store beta and is the only build to keep for the
+current phone-settings and end-to-end drill. A previous USB install appears as
+the separate `Panic Button` app because its developer manifest, the Store beta,
+and the future production listing intentionally have different Garmin
+application IDs. Garmin therefore installs them side by side and cannot migrate
+or remove the old copy automatically. Remove `Panic Button` from the watch or
+Garmin device-app manager; do not remove `Panic Button TEST`.
 
 The beta posts the TESTNOTRUF directly to Grafana, Pushover, or both. The
 initial alert title always starts with `TESTNOTRUF`; its message always starts

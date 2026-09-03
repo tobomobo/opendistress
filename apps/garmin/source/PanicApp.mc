@@ -176,6 +176,7 @@ class PanicView extends WatchUi.View {
     var _wifiFallbackEventId = null;
     var _directLocationRetryBlocked = false;
     var _directGrafanaRetryBlocked = false;
+    var _acceptedStatusVisible = false;
 
     function initialize() {
         View.initialize();
@@ -208,6 +209,7 @@ class PanicView extends WatchUi.View {
 
     function onHide() {
         _visible = false;
+        _acceptedStatusVisible = false;
         cancelAlertArm();
         stopLocations();
         try {
@@ -219,6 +221,7 @@ class PanicView extends WatchUi.View {
 
     function shouldShowCover() {
         return _directResult != null
+            && !_acceptedStatusVisible
             && !PanicProtocol.stringEquals(_state, "LOCATION SCRUB UNSAVED")
             && !PanicProtocol.stringEquals(_state, "LOCATION STATE UNSAVED")
             && !PanicProtocol.stringEquals(_state, "ROUTE CHANGED");
@@ -314,6 +317,39 @@ class PanicView extends WatchUi.View {
         );
     }
 
+    function drawAcceptedCoverHint(dc, title, action) {
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var isRound = width == height;
+        var compactRound = isRound && width < 220;
+        var safeWidth = (width * (compactRound ? 58 : (isRound ? 68 : 84))) / 100;
+        var safeLeft = compactRound ? (width * 8) / 100 : (width - safeWidth) / 2;
+        var top = new WatchUi.TextArea({
+            :text => title,
+            :color => Graphics.COLOR_LT_GRAY,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => safeLeft,
+            :locY => (height * (compactRound ? 6 : 4)) / 100,
+            :width => safeWidth,
+            :height => (height * 12) / 100
+        });
+        top.draw(dc);
+        var bottom = new WatchUi.TextArea({
+            :text => action,
+            :color => Graphics.COLOR_DK_GRAY,
+            :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => safeLeft,
+            :locY => (height * (compactRound ? 84 : 86)) / 100,
+            :width => safeWidth,
+            :height => (height * 11) / 100
+        });
+        bottom.draw(dc);
+    }
+
     function selectStartupMode() {
         refreshConfiguredMode();
         if (!PanicProtocol.stringEquals(_state, "READY — TEST")
@@ -332,7 +368,7 @@ class PanicView extends WatchUi.View {
             _detail = "Hold top button 2.5 seconds";
         } else {
             _state = "SETUP REQUIRED";
-            _detail = "Enter Grafana webhook or Pushover keys";
+            _detail = "Connect IQ Store: add webhook or keys";
         }
     }
 
@@ -785,6 +821,7 @@ class PanicView extends WatchUi.View {
         dc.clear();
         if (shouldShowCover()) {
             drawAnalogCover(dc);
+            drawAcceptedCoverHint(dc, "TEST ACCEPTED", "DOWN: DETAILS");
             return;
         }
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
@@ -1033,11 +1070,25 @@ class PanicView extends WatchUi.View {
     }
 
     function selectAction() {
+        toggleAcceptedStatus();
         return true;
     }
 
     function downAction() {
+        toggleAcceptedStatus();
         return true;
+    }
+
+    function toggleAcceptedStatus() {
+        if (_directResult == null) {
+            return;
+        }
+        _acceptedStatusVisible = !_acceptedStatusVisible;
+        if (_acceptedStatusVisible) {
+            _state = "PROVIDER ACCEPTED";
+            _detail = "Recipient unknown; MENU resets TEST";
+        }
+        WatchUi.requestUpdate();
     }
 
     function activateTest() {
@@ -1049,7 +1100,7 @@ class PanicView extends WatchUi.View {
             && (!PanicProtocol.isHttpsBaseUrl(baseUrl)
             || !PanicProtocol.isCanonicalId(deviceId)
             || !PanicProtocol.isSafeAuthKey(keyHex))) {
-            setState("SETUP REQUIRED", "Enter Grafana webhook or Pushover keys");
+            setState("SETUP REQUIRED", "Connect IQ Store: add webhook or keys");
             return;
         }
         var now = currentTime();
@@ -3060,6 +3111,7 @@ class PanicView extends WatchUi.View {
         if (_directResult != null) {
             stopLocations();
             if (persistStateWithDirect([], _activeIncident, null)) {
+                _acceptedStatusVisible = false;
                 _state = "READY — TEST";
                 _detail = "Hold top button 2.5 seconds";
                 selectStartupMode();
@@ -3165,9 +3217,24 @@ function directValidRestartStateRoundTrips(logger) {
     var survived = PanicProtocol.stringEquals(reloaded._state, "PROVIDER ACCEPTED")
         && reloaded._directResult != null
         && PanicProtocol.stringEquals(reloaded._directResult["event_id"], eventId);
+    var coverProtected = survived && reloaded.shouldShowCover();
+    reloaded.downAction();
+    var detailsRevealed = reloaded._acceptedStatusVisible
+        && !reloaded.shouldShowCover()
+        && reloaded._directResult != null;
+    reloaded.menuAction();
+    var storedAfterReset = Storage.getValue("event_state_v2");
+    var reset = reloaded._directResult == null
+        && !reloaded._acceptedStatusVisible
+        && PanicProtocol.hasExactKeys(storedAfterReset, ["queue", "active", "direct_result"])
+        && (storedAfterReset as Lang.Dictionary)["direct_result"] == null;
     Storage.deleteValue("event_state_v2");
     if (!survived) {
         logger.error("Valid Grafana direct state did not survive storage roundtrip");
+        return false;
+    }
+    if (!coverProtected || !detailsRevealed || !reset) {
+        logger.error("Accepted direct TEST could not reveal details and reset safely");
         return false;
     }
     return true;
