@@ -317,39 +317,6 @@ class PanicView extends WatchUi.View {
         );
     }
 
-    function drawAcceptedCoverHint(dc, title, action) {
-        var width = dc.getWidth();
-        var height = dc.getHeight();
-        var isRound = width == height;
-        var compactRound = isRound && width < 220;
-        var safeWidth = (width * (compactRound ? 58 : (isRound ? 68 : 84))) / 100;
-        var safeLeft = compactRound ? (width * 8) / 100 : (width - safeWidth) / 2;
-        var top = new WatchUi.TextArea({
-            :text => title,
-            :color => Graphics.COLOR_LT_GRAY,
-            :backgroundColor => Graphics.COLOR_BLACK,
-            :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
-            :justification => Graphics.TEXT_JUSTIFY_CENTER,
-            :locX => safeLeft,
-            :locY => (height * (compactRound ? 6 : 4)) / 100,
-            :width => safeWidth,
-            :height => (height * 12) / 100
-        });
-        top.draw(dc);
-        var bottom = new WatchUi.TextArea({
-            :text => action,
-            :color => Graphics.COLOR_DK_GRAY,
-            :backgroundColor => Graphics.COLOR_BLACK,
-            :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
-            :justification => Graphics.TEXT_JUSTIFY_CENTER,
-            :locX => safeLeft,
-            :locY => (height * (compactRound ? 84 : 86)) / 100,
-            :width => safeWidth,
-            :height => (height * 11) / 100
-        });
-        bottom.draw(dc);
-    }
-
     function selectStartupMode() {
         refreshConfiguredMode();
         if (!PanicProtocol.stringEquals(_state, "READY — TEST")
@@ -821,7 +788,6 @@ class PanicView extends WatchUi.View {
         dc.clear();
         if (shouldShowCover()) {
             drawAnalogCover(dc);
-            drawAcceptedCoverHint(dc, "TEST ACCEPTED", "DOWN: DETAILS");
             return;
         }
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);

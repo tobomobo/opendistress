@@ -57,11 +57,11 @@ from the configured formatted webhook. A double haptic accompanies the first
 stored acceptance. The cover means only **a provider accepted the request**;
 it does not mean a receiver phone displayed or sounded it, a person ACKed it,
 or help is coming. The cover is an ordinary foreground app view, not a
-replacement system watch face. In the TEST beta it carries small
-`TEST ACCEPTED` and `DOWN: DETAILS` labels. DOWN or a screen tap reveals the
-provider-evidence page without stopping GPS or clearing anything; DOWN or tap
-again returns to the cover. MENU explicitly clears accepted TEST evidence and
-returns to readiness so another test can be triggered.
+replacement system watch face. It deliberately contains no alert text or
+controls: DOWN or a screen tap reveals a separate provider-evidence page
+without stopping GPS or clearing anything, and DOWN or tap again returns to the
+clean cover. MENU explicitly clears accepted TEST evidence and returns to
+readiness so another test can be triggered.
 
 After that stored acceptance, and never before it, the beta requests a real
 watch position for up to one hour. Every provider that accepted the trigger is
@@ -466,6 +466,13 @@ storage roundtrip, narrow invalid direct-TEST recovery, and last-known/live GPS
 age boundaries plus a queued-state fail-closed control. Its result was
 `PASSED (passed=8, failed=0, errors=0)`. This remains simulator evidence only;
 it does not replace physical GPS or provider delivery evidence.
+
+On 2026-09-03 the native macOS simulator rendered the accepted state on
+`fenix847mm` as a clean, text-free analog cover. A physical DOWN input opened
+the separate provider-evidence page with no clipped text. The visual run used
+a synthetic accepted result to avoid a real provider alert; the final source
+was then rebuilt and passed all eight structured simulator tests. Screenshots
+are recorded in `tests/end-to-end/evidence/`.
 
 Earlier native macOS simulator runs verified the public setup state and the
 former pre-trigger cover behavior. That cover behavior was intentionally
