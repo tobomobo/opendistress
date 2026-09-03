@@ -88,6 +88,8 @@ class PanicView extends WatchUi.View {
     const ALERT_ARM_START_DEGREES = 270;
     const ACCEPTED_ACTION_FEEDBACK_MS = 180;
     const COVER_REFRESH_MS = 60000;
+    const LOCATION_ACQUIRE_REFRESH_MS = 10000;
+    const LOCATION_ACQUIRE_FAST_SECONDS = 300;
     const RETRY_DELAY_MS = 5000;
     const WIFI_CHECK_TIMEOUT_MS = 10000;
     const PROVIDER_REFERENCE_ALPHABET =
@@ -246,12 +248,23 @@ class PanicView extends WatchUi.View {
         if (!_visible || _directResult == null) {
             return;
         }
+        var refreshMs = COVER_REFRESH_MS;
+        if (_directResult["last_location_hex"].length() == 0) {
+            var now = currentTime();
+            var acceptedAt = _directResult["accepted_at"];
+            if (now != null
+                && acceptedAt > 0
+                && now >= acceptedAt
+                && now - acceptedAt < LOCATION_ACQUIRE_FAST_SECONDS) {
+                refreshMs = LOCATION_ACQUIRE_REFRESH_MS;
+            }
+        }
         try {
             _statusTimer.stop();
         } catch (error) {
         }
         try {
-            _statusTimer.start(method(:refreshIdleCover), COVER_REFRESH_MS, false);
+            _statusTimer.start(method(:refreshIdleCover), refreshMs, false);
         } catch (error) {
             // A frozen cover is safer than turning a timer failure into a trigger.
         }
@@ -357,6 +370,7 @@ class PanicView extends WatchUi.View {
 
         var detail = new WatchUi.TextArea({
             :text => acceptedProviderSummary()
+                + "\n" + acceptedLocationSummary()
                 + "\nDelivery not confirmed",
             :color => Graphics.COLOR_LT_GRAY,
             :backgroundColor => Graphics.COLOR_BLACK,
@@ -1189,6 +1203,21 @@ class PanicView extends WatchUi.View {
         return "Provider accepted";
     }
 
+    function acceptedLocationSummary() {
+        if (_directResult == null) {
+            return "GPS status unknown";
+        }
+        if (_directResult["pending_location_hex"].length() > 0) {
+            return "GPS update pending";
+        }
+        if (_directResult["last_location_hex"].length() > 0) {
+            return "GPS update sent";
+        }
+        return _directResult["capture_stage"] == 3
+            ? "GPS tracking ended"
+            : "GPS searching";
+    }
+
     function toggleAcceptedStatus() {
         if (_directResult == null) {
             return;
@@ -1602,9 +1631,7 @@ class PanicView extends WatchUi.View {
         if (activityRecord != null
             && shouldQueueDirectCadenceRecord(activityRecord, now)) {
             queueDirectLocationRecord(activityRecord, 2, now);
-            return;
-        }
-        if (_directResult["capture_stage"] != 2) {
+            startDirectContinuousLocations();
             return;
         }
         var snapshot = null;
@@ -1614,8 +1641,9 @@ class PanicView extends WatchUi.View {
         }
         if (snapshot != null
             && shouldQueueDirectCadenceLocation(snapshot, now, 0)) {
-            queueDirectLocation(snapshot, 0, 2);
+            queueDirectLocation(snapshot, 0, _directResult["capture_stage"]);
         }
+        startDirectContinuousLocations();
     }
 
     function startDirectContinuousLocations() {

@@ -372,6 +372,10 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("drawAnalogCover(dc);", update)
         self.assertIn("System.getClockTime()", cover)
         self.assertIn("COVER_REFRESH_MS = 60000", source)
+        self.assertIn("LOCATION_ACQUIRE_REFRESH_MS = 10000", source)
+        self.assertIn("LOCATION_ACQUIRE_FAST_SECONDS = 300", source)
+        self.assertIn('_directResult["last_location_hex"].length() == 0', cover)
+        self.assertIn("refreshMs = LOCATION_ACQUIRE_REFRESH_MS", cover)
         self.assertIn("_statusTimer.start(method(:refreshIdleCover)", cover)
         self.assertIn("scheduleIdleCoverRefresh();", cover)
         poll = source[source.index("function pollStatus()") : source.index("function canPollStatus()")]
@@ -423,6 +427,14 @@ class GarminContractTests(unittest.TestCase):
         ]
         self.assertIn('"ALERT STATUS"', accepted_ui)
         self.assertIn(":text => acceptedProviderSummary()", accepted_ui)
+        self.assertIn("acceptedLocationSummary()", accepted_ui)
+        location_summary = source[
+            source.index("function acceptedLocationSummary()")
+            : source.index("function toggleAcceptedStatus()")
+        ]
+        self.assertIn('"GPS searching"', location_summary)
+        self.assertIn('return "GPS update pending"', location_summary)
+        self.assertIn('return "GPS update sent"', location_summary)
         self.assertIn("Delivery not confirmed", accepted_ui)
         self.assertIn("drawAcceptedButtonIndicators(dc);", accepted_ui)
         self.assertIn("function drawAcceptedButtonIndicator(", accepted_ui)
@@ -737,6 +749,10 @@ class GarminContractTests(unittest.TestCase):
             direct.index("function queueDirectLocation(")
             : direct.index("function shouldQueueDirectCadenceLocation(")
         ]
+        fallback_poll = direct[
+            direct.index("function pollDirectFallbackLocation()")
+            : direct.index("function startDirectContinuousLocations()")
+        ]
 
         self.assertIn("Position.getInfo()", direct)
         self.assertIn("Activity.getActivityInfo()", direct)
@@ -745,6 +761,22 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("activity.currentLocationAccuracy", direct)
         self.assertIn("PanicProtocol.locationRecordFromValues(", direct)
         self.assertIn("pollDirectFallbackLocation()", source)
+        self.assertIn("Position.getInfo()", fallback_poll)
+        self.assertNotIn(
+            'if (_directResult["capture_stage"] != 2)',
+            fallback_poll,
+            "A missing initial fix must not disable later last-known polling",
+        )
+        self.assertIn(
+            "startDirectContinuousLocations();",
+            fallback_poll,
+            "A transient positioning-start failure must be retried while acquiring",
+        )
+        self.assertIn(
+            'queueDirectLocation(snapshot, 0, _directResult["capture_stage"])',
+            " ".join(fallback_poll.split()),
+            "A polled stale fix must not suppress the first fresh callback",
+        )
         self.assertIn("enableBestContinuousLocation()", direct)
         self.assertIn("Position.QUALITY_NOT_AVAILABLE", direct)
         self.assertIn("DirectAlertSafety.isFreshCapture(", direct)
