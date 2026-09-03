@@ -1,8 +1,8 @@
 <strings>
-    <string id="AppName">Panic Button</string>
-    <string id="BetaAppName">Panic Button TEST</string>
-    <string id="TestIdentityGroupTitle">TEST alert identity</string>
-    <string id="TestIdentityGroupDescription">Optional name of the person wearing the watch and sending the alert. Every beta notification remains clearly marked TESTNOTRUF and KEIN ECHTER NOTFALL. The name syncs through Garmin services, is stored on the watch, and is visible to configured providers.</string>
+    <string id="AppName">OpenDistress</string>
+    <string id="BetaAppName">OpenDistress TEST</string>
+    <string id="TestIdentityGroupTitle">OpenDistress TEST identity</string>
+    <string id="TestIdentityGroupDescription">Optional name of the person wearing the watch and sending the signal. Every beta notification remains clearly marked TESTNOTRUF and KEIN ECHTER NOTFALL. The name syncs through Garmin services, is stored on the watch, and is visible to configured providers.</string>
     <string id="ProtectedPersonNameTitle">Name of person wearing the watch</string>
     <string id="ProtectedPersonNamePrompt">For example: Alex; the person who will send the alert</string>
     <string id="EmergencyProfileGroupTitle">Prepared alert and response plan</string>
@@ -21,7 +21,7 @@
     <string id="ResponseInstructionsPrompt">Template: 1) Contact [person/number]. 2) Do [first action]. 3) Avoid [unsafe action]. 4) State how to verify genuine safety or an all-clear.</string>
     <string id="ProfilePhotoUrlTitle">Photo HTTPS URL (advanced)</string>
     <string id="ProfilePhotoUrlPrompt">Publicly reachable https:// image URL; Grafana or Pushover links it and the image host can see access</string>
-    <string id="PushoverGroupTitle">Pushover TEST setup</string>
+    <string id="PushoverGroupTitle">OpenDistress Pushover TEST setup</string>
     <string id="PushoverGroupDescription">Optional independent TEST route. Emergency profile text and its photo link are visible to Pushover and may appear on the lock screen. After acceptance, the best available watch GPS is shared with Pushover and Google Maps for up to 24 hours while the app remains open.</string>
     <string id="PushoverUserKeyTitle">Pushover User Key</string>
     <string id="PushoverUserKeyPrompt">30 characters from the receiving Pushover account</string>
@@ -31,7 +31,7 @@
     <string id="GrafanaGroupDescription">Formatted-webhook TEST delivery. Receiver setup can add Important Push and in-app acknowledgement. Alert text and GPS links are visible to Grafana. The secret URL syncs through Garmin services and is stored on the watch.</string>
     <string id="GrafanaWebhookTitle">Formatted webhook URL</string>
     <string id="GrafanaWebhookPrompt">https://...grafana.net/integrations/v1/formatted_webhook/.../</string>
-    <string id="ComplicationLongLabel">Open panic app</string>
-    <string id="ComplicationShortLabel">PANIC</string>
+    <string id="ComplicationLongLabel">Launch OpenDistress</string>
+    <string id="ComplicationShortLabel">SIGNAL</string>
     <string id="ComplicationText">OPEN</string>
 </strings>

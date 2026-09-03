@@ -137,7 +137,7 @@ def validate_ack(ack) -> str | None:
 def canonical_message(message: dict) -> bytes:
     payload = message["payload"]
     return (
-        "spb.mailbox.message.v1\n"
+        "opendistress.mailbox.message.v1\n"
         "v=1\n"
         f"mailbox_id={message['mailbox_id']}\n"
         f"message_id={message['message_id']}\n"
@@ -151,7 +151,7 @@ def canonical_message(message: dict) -> bytes:
 def canonical_ack(ack: dict) -> bytes:
     payload = ack["payload"]
     return (
-        "spb.mailbox.ack.v1\n"
+        "opendistress.mailbox.ack.v1\n"
         "v=1\n"
         f"message_id={ack['message_id']}\n"
         f"capsule_sha256={ack['capsule_sha256']}\n"
@@ -215,7 +215,7 @@ def _decode_capability_header(header: str | None) -> bytes | None:
 
 def _result_mac(capability: bytes, message_id: str, result: str) -> str:
     canonical = (
-        "spb.mailbox.result.v1\n"
+        "opendistress.mailbox.result.v1\n"
         "v=1\n"
         f"message_id={message_id}\n"
         f"result={result}\n"

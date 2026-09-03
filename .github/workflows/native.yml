@@ -36,8 +36,8 @@ jobs:
       - name: Compile watch-only app
         run: >-
           xcodebuild
-          -project apps/watchos/PanicWatch.xcodeproj
-          -scheme PanicWatch
+          -project apps/watchos/OpenDistressWatch.xcodeproj
+          -scheme OpenDistressWatch
           -configuration Debug
           -destination 'generic/platform=watchOS'
           CODE_SIGNING_ALLOWED=NO
@@ -45,11 +45,11 @@ jobs:
       - name: Archive watch-only app
         run: >-
           xcodebuild
-          -project apps/watchos/PanicWatch.xcodeproj
-          -scheme PanicWatch
+          -project apps/watchos/OpenDistressWatch.xcodeproj
+          -scheme OpenDistressWatch
           -configuration Release
           -destination 'generic/platform=watchOS'
-          -archivePath "$RUNNER_TEMP/PanicWatch.xcarchive"
+          -archivePath "$RUNNER_TEMP/OpenDistressWatch.xcarchive"
           CODE_SIGNING_ALLOWED=NO
           archive
       - name: Test watchOS
@@ -69,8 +69,8 @@ jobs:
           print(matches[0])
           ')"
           xcodebuild \
-            -project apps/watchos/PanicWatch.xcodeproj \
-            -scheme PanicWatch \
+            -project apps/watchos/OpenDistressWatch.xcodeproj \
+            -scheme OpenDistressWatch \
             -configuration Debug \
             -destination "platform=watchOS Simulator,id=${watch_id}" \
             -enableAddressSanitizer YES \

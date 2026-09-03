@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/tobomobo/smart-panic-button/protocol/status-v2.schema.json",
-  "title": "Smart Panic Button incident status query v2",
+  "$id": "https://github.com/tobomobo/opendistress/protocol/status-v2.schema.json",
+  "title": "OpenDistress incident status query v2",
   "description": "Token-level integer checks, clock validation, and stored incident/expiry matching in protocol/README.md are additionally mandatory.",
   "type": "object",
   "additionalProperties": false,

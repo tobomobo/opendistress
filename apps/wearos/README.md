@@ -1,4 +1,4 @@
-# Wear OS client
+# OpenDistress for Wear OS
 
 This is a standalone Wear OS application: it sends encrypted v2 events
 directly over HTTPS and has no phone companion, tile, or complication. The app
@@ -26,7 +26,8 @@ in CI, compile/target SDK 35, and Play Services Location 21.4.0. There is no
 checked-in wrapper because no local Gradle installation was available to
 generate the official wrapper artifacts.
 
-Copy `panic.local.properties.example` to `panic.local.properties` and replace
+Copy `opendistress.local.properties.example` to
+`opendistress.local.properties` and replace
 every invalid value. The local file is ignored. Keys are lowercase or uppercase
 hex: the authentication, encryption, and content-MAC keys are three different
 32-byte values; `templateIdHex` is the provisioned 16-byte recipient template
@@ -37,6 +38,10 @@ The personal prototype build embeds those locally supplied values in Android
 `BuildConfig`; anyone who obtains that APK can extract them. Do not distribute a
 provisioned artifact. Hardware-backed Keystore enrollment and key rotation are
 production gates, not implemented by this build-time provisioning path.
+
+The launcher uses an OpenDistress adaptive icon with separate graphite
+background, readiness-ring foreground, and API 33 monochrome themed-icon
+layers. The round launcher reference uses the same safe-zone-aware artwork.
 
 ```sh
 gradle --no-daemon -p apps/wearos :app:testDebugUnitTest :app:assembleDebug

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/tobomobo/smart-panic-button/protocol/incident-v2.schema.json",
-  "title": "Smart Panic Button encrypted incident event v2",
+  "$id": "https://github.com/tobomobo/opendistress/protocol/incident-v2.schema.json",
+  "title": "OpenDistress encrypted incident event v2",
   "description": "Token-level integer checks and cross-field equality/order rules in protocol/README.md are additionally mandatory.",
   "type": "object",
   "additionalProperties": false,

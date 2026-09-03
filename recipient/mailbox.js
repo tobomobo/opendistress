@@ -10,8 +10,8 @@ const {
 
 const MESSAGE_PLAINTEXT_BYTES = 512;
 const ACK_PLAINTEXT_BYTES = 256;
-const MESSAGE_MAGIC = Buffer.from("SPBM", "ascii");
-const ACK_MAGIC = Buffer.from("SPBA", "ascii");
+const MESSAGE_MAGIC = Buffer.from("ODMM", "ascii");
+const ACK_MAGIC = Buffer.from("ODMA", "ascii");
 const OUTER_KEYS = ["v", "mailbox_id", "message_id", "expires_at", "payload"];
 const ACK_OUTER_KEYS = ["v", "message_id", "capsule_sha256", "payload"];
 const PAYLOAD_KEYS = ["iv", "ciphertext", "tag"];
@@ -136,7 +136,7 @@ function canonicalInnerEvent(event) {
 
 function canonicalMessageMac(message) {
     return [
-        "spb.mailbox.content.v1",
+        "opendistress.mailbox.content.v1",
         "v=1",
         `mailbox_id=${message.mailbox_id}`,
         `message_id=${message.message_id}`,
@@ -149,7 +149,7 @@ function canonicalMessageMac(message) {
 
 function canonicalMessage(message) {
     return [
-        "spb.mailbox.message.v1",
+        "opendistress.mailbox.message.v1",
         "v=1",
         `mailbox_id=${message.mailbox_id}`,
         `message_id=${message.message_id}`,
@@ -163,7 +163,7 @@ function canonicalMessage(message) {
 
 function canonicalAckMac(ack) {
     return [
-        "spb.mailbox.ack-content.v1",
+        "opendistress.mailbox.ack-content.v1",
         "v=1",
         `message_id=${ack.message_id}`,
         `capsule_sha256=${ack.capsule_sha256}`,
@@ -175,7 +175,7 @@ function canonicalAckMac(ack) {
 
 function canonicalAck(ack) {
     return [
-        "spb.mailbox.ack.v1",
+        "opendistress.mailbox.ack.v1",
         "v=1",
         `message_id=${ack.message_id}`,
         `capsule_sha256=${ack.capsule_sha256}`,

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/tobomobo/smart-panic-button/protocol/alert-v1.schema.json",
-  "title": "Smart Panic Button TEST event v1",
+  "$id": "https://github.com/tobomobo/opendistress/protocol/alert-v1.schema.json",
+  "title": "OpenDistress TEST event v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

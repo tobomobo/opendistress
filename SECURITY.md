@@ -1,7 +1,7 @@
 # Security policy
 
 Report vulnerabilities through [GitHub private vulnerability
-reporting](https://github.com/tobomobo/smart-panic-button/security/advisories/new).
+reporting](https://github.com/tobomobo/opendistress/security/advisories/new).
 Do not include credentials, real contacts, coordinates, acknowledgement links,
 or production incident data. If private reporting is unavailable, open a public
 issue with no sensitive detail and ask for a private contact path.

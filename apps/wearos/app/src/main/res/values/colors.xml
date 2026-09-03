@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<resources>
+    <color name="opendistress_graphite">#101820</color>
+    <color name="opendistress_warm_white">#F4F0E6</color>
+    <color name="opendistress_signal_amber">#F5A623</color>
+</resources>

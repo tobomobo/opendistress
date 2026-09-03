@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
     <iq:application
-        id="01619649-6bb2-40b8-9d45-c5a524217aad"
+        id="b9eb9236-66c4-4119-94c5-ba11d891deb0"
         type="watch-app"
         name="@Strings.BetaAppName"
-        entry="PanicApp"
+        entry="OpenDistressApp"
         launcherIcon="@Drawables.LauncherIcon"
         minApiLevel="6.0.0">
         <iq:products>

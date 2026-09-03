@@ -7,7 +7,7 @@ plugins {
 }
 
 val localConfig = Properties().apply {
-    val file = rootProject.file("panic.local.properties")
+    val file = rootProject.file("opendistress.local.properties")
     if (file.isFile) {
         file.inputStream().use { load(it) }
     }
@@ -20,11 +20,11 @@ fun quoted(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
-    namespace = "dev.smartpanic.wear"
+    namespace = "dev.opendistress.wear"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.smartpanic.wear"
+        applicationId = "dev.opendistress.wear"
         minSdk = 30
         targetSdk = 35
         versionCode = 1
@@ -32,16 +32,16 @@ android {
 
         buildConfigField(
             "String",
-            "SPB_ENDPOINT",
+            "OPENDISTRESS_ENDPOINT",
             quoted(setting("endpoint", "https://invalid.example/v2/events")),
         )
-        buildConfigField("String", "SPB_DEVICE_ID", quoted(setting("deviceId", "INVALID")))
-        buildConfigField("String", "SPB_AUTH_KEY_HEX", quoted(setting("authKeyHex", "INVALID")))
-        buildConfigField("String", "SPB_ENC_KEY_HEX", quoted(setting("encKeyHex", "INVALID")))
-        buildConfigField("String", "SPB_MAC_KEY_HEX", quoted(setting("macKeyHex", "INVALID")))
-        buildConfigField("String", "SPB_TEMPLATE_ID_HEX", quoted(setting("templateIdHex", "INVALID")))
-        buildConfigField("long", "SPB_KEY_VERSION", "${setting("keyVersion", "0").toLongOrNull() ?: 0}L")
-        buildConfigField("long", "SPB_TTL_SECONDS", "${setting("ttlSeconds", "3600").toLongOrNull() ?: 0}L")
+        buildConfigField("String", "OPENDISTRESS_DEVICE_ID", quoted(setting("deviceId", "INVALID")))
+        buildConfigField("String", "OPENDISTRESS_AUTH_KEY_HEX", quoted(setting("authKeyHex", "INVALID")))
+        buildConfigField("String", "OPENDISTRESS_ENC_KEY_HEX", quoted(setting("encKeyHex", "INVALID")))
+        buildConfigField("String", "OPENDISTRESS_MAC_KEY_HEX", quoted(setting("macKeyHex", "INVALID")))
+        buildConfigField("String", "OPENDISTRESS_TEMPLATE_ID_HEX", quoted(setting("templateIdHex", "INVALID")))
+        buildConfigField("long", "OPENDISTRESS_KEY_VERSION", "${setting("keyVersion", "0").toLongOrNull() ?: 0}L")
+        buildConfigField("long", "OPENDISTRESS_TTL_SECONDS", "${setting("ttlSeconds", "3600").toLongOrNull() ?: 0}L")
     }
 
     buildFeatures {
@@ -55,7 +55,7 @@ android {
 
     testOptions {
         unitTests.all {
-            it.systemProperty("spb.repo.root", rootProject.projectDir.resolve("../..").canonicalPath)
+            it.systemProperty("opendistress.repo.root", rootProject.projectDir.resolve("../..").canonicalPath)
         }
     }
 }

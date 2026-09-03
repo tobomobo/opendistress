@@ -72,7 +72,7 @@ STATUS_FIELDS = {
 }
 DUMMY_KEY = bytes(32)
 PUBLIC_VECTOR_KEY = bytes(range(32))
-LOGGER = logging.getLogger("smart-panic-relay")
+LOGGER = logging.getLogger("opendistress-relay")
 
 
 class RelayHTTPServer(ThreadingHTTPServer):
@@ -440,7 +440,7 @@ def validate_status_query(query) -> str | None:
 
 def canonical_event(event: dict) -> bytes:
     return (
-        "spb.test.submit.v1\n"
+        "opendistress.test.submit.v1\n"
         "method=POST\n"
         "v=1\n"
         f"event_id={event['event_id']}\n"
@@ -457,7 +457,7 @@ def canonical_event(event: dict) -> bytes:
 def canonical_v2_event(event: dict) -> bytes:
     payload = event["payload"]
     return (
-        "spb.submit.v2\n"
+        "opendistress.submit.v2\n"
         "method=POST\n"
         "v=2\n"
         f"event_id={event['event_id']}\n"
@@ -476,7 +476,7 @@ def canonical_v2_event(event: dict) -> bytes:
 
 def canonical_status_query(query: dict) -> bytes:
     return (
-        "spb.status.query.v2\n"
+        "opendistress.status.query.v2\n"
         "method=POST\n"
         "v=2\n"
         f"request_id={query['request_id']}\n"
@@ -495,7 +495,7 @@ def canonical_status_result(
     checked_at: int,
 ) -> bytes:
     return (
-        "spb.status.result.v2\n"
+        "opendistress.status.result.v2\n"
         "v=2\n"
         f"request_id={request_id}\n"
         f"incident_id={incident_id}\n"
@@ -507,7 +507,7 @@ def canonical_status_result(
 
 def canonical_result(event_id: str) -> bytes:
     return (
-        "spb.test.intake-result.v1\n"
+        "opendistress.test.intake-result.v1\n"
         "v=1\n"
         f"event_id={event_id}\n"
         "result=durably_accepted\n"
@@ -516,7 +516,7 @@ def canonical_result(event_id: str) -> bytes:
 
 def canonical_v2_result(event_id: str) -> bytes:
     return (
-        "spb.result.v2\n"
+        "opendistress.result.v2\n"
         "v=2\n"
         f"event_id={event_id}\n"
         "result=durably_accepted\n"
@@ -2677,7 +2677,7 @@ def make_server(host: str, port: int, relay: Relay) -> ThreadingHTTPServer:
                     ),
                 )
                 return
-            signatures = self.headers.get_all("X-SPB-Signature") or []
+            signatures = self.headers.get_all("X-OpenDistress-Signature") or []
             signature = signatures[0] if len(signatures) == 1 else None
             try:
                 body = self.rfile.read(length)
@@ -2816,7 +2816,7 @@ def resolve_database(database: str, target: str, clock=time.time) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Smart Panic Button relay")
+    parser = argparse.ArgumentParser(description="OpenDistress relay")
     parser.add_argument("--devices", help="path to the device JSON file")
     parser.add_argument("--routes", help="path to the private route JSON file")
     parser.add_argument(

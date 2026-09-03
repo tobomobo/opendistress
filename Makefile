@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: MIT
 
-.PHONY: test ci
+.PHONY: test ci native-icons protocol-vectors
+
+native-icons:
+	xcrun swift scripts/generate_native_icons.swift apps/watchos/OpenDistressWatch/Assets.xcassets/AppIcon.appiconset/OpenDistress-AppIcon.png
+
+protocol-vectors:
+	node scripts/generate_protocol_vectors.js
 
 test:
 	python3 -m unittest discover -s tests -p 'test_*.py'
@@ -11,6 +17,7 @@ ci: test
 	python3 -m compileall -q relay scripts tests
 	node --check recipient/recipient.js
 	node --check recipient/mailbox.js
+	node --check scripts/generate_protocol_vectors.js
 	python3 -m json.tool protocol/alert-v1.schema.json >/dev/null
 	python3 -m json.tool protocol/incident-v2.schema.json >/dev/null
 	python3 -m json.tool protocol/status-v2.schema.json >/dev/null

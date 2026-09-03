@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>WKApplication</key>
+    <true/>
+    <key>WKWatchOnly</key>
+    <true/>
+    <key>OpenDistressEndpoint</key>
+    <string>$(OPENDISTRESS_ENDPOINT)</string>
+    <key>OpenDistressDeviceId</key>
+    <string>$(OPENDISTRESS_DEVICE_ID)</string>
+    <key>OpenDistressAuthKeyHex</key>
+    <string>$(OPENDISTRESS_AUTH_KEY_HEX)</string>
+    <key>OpenDistressEncKeyHex</key>
+    <string>$(OPENDISTRESS_ENC_KEY_HEX)</string>
+    <key>OpenDistressMacKeyHex</key>
+    <string>$(OPENDISTRESS_MAC_KEY_HEX)</string>
+    <key>OpenDistressKeyVersion</key>
+    <string>$(OPENDISTRESS_KEY_VERSION)</string>
+    <key>OpenDistressTemplateIdHex</key>
+    <string>$(OPENDISTRESS_TEMPLATE_ID_HEX)</string>
+    <key>OpenDistressTTLSeconds</key>
+    <string>$(OPENDISTRESS_TTL_SECONDS)</string>
+</dict>
+</plist>

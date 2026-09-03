@@ -49,7 +49,7 @@ def build_document(root: Path, files: list[str], version: str) -> dict:
         )
 
     verification = hashlib.sha1("".join(sorted(verification_hashes)).encode()).hexdigest()
-    repository = "https://github.com/tobomobo/smart-panic-button"
+    repository = "https://github.com/tobomobo/opendistress"
     epoch = os.environ.get("SOURCE_DATE_EPOCH")
     created = (
         datetime.fromtimestamp(int(epoch), timezone.utc)
@@ -60,7 +60,7 @@ def build_document(root: Path, files: list[str], version: str) -> dict:
         "spdxVersion": "SPDX-2.3",
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
-        "name": f"smart-panic-button-{version}",
+        "name": f"opendistress-{version}",
         "documentNamespace": f"{repository}/releases/download/v{version}/source-sbom.spdx.json",
         "creationInfo": {
             "created": created.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -68,12 +68,12 @@ def build_document(root: Path, files: list[str], version: str) -> dict:
         },
         "packages": [
             {
-                "name": "smart-panic-button",
+                "name": "opendistress",
                 "SPDXID": "SPDXRef-Package",
                 "versionInfo": version,
                 "downloadLocation": (
                     f"{repository}/releases/download/v{version}/"
-                    f"smart-panic-button-{version}.tar.gz"
+                    f"opendistress-{version}.tar.gz"
                 ),
                 "filesAnalyzed": True,
                 "packageVerificationCode": {"packageVerificationCodeValue": verification},

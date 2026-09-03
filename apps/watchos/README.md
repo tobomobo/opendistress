@@ -1,4 +1,4 @@
-# watchOS client
+# OpenDistress for watchOS
 
 This is a watch-only SwiftUI application with no iPhone companion, complication,
 or background location service. It sends encrypted v2 events directly over an
@@ -27,7 +27,7 @@ the encrypted queue and result-unknown recovery remain.
 Copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` and replace all
 invalid values. The local file is ignored. Authentication, encryption, and
 content-MAC keys must be three distinct 32-byte hex values;
-`SPB_TEMPLATE_ID_HEX` is the provisioned 16-byte recipient template identifier.
+`OPENDISTRESS_TEMPLATE_ID_HEX` is the provisioned 16-byte recipient template identifier.
 The endpoint must be HTTPS and end at `/v2/events`. The production loader
 rejects all three published protocol-vector keys.
 
@@ -36,9 +36,13 @@ app's `Info.plist`; anyone who obtains that bundle can extract them. Do not
 distribute a provisioned artifact. Keychain-backed enrollment and key rotation
 are production gates, not implemented by this build-time provisioning path.
 
+The `AppIcon` asset catalog contains an opaque 1024 x 1024 OpenDistress master.
+Regenerate it from the checked-in Core Graphics source on macOS with
+`make native-icons`; watchOS applies the final launcher mask.
+
 ```sh
-xcodebuild -project apps/watchos/PanicWatch.xcodeproj \
-  -scheme PanicWatch \
+xcodebuild -project apps/watchos/OpenDistressWatch.xcodeproj \
+  -scheme OpenDistressWatch \
   -destination 'platform=watchOS Simulator,name=Apple Watch Series 11 (46mm),OS=26.5' \
   test
 ```

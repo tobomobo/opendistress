@@ -36,17 +36,17 @@ module DirectAlertSafety {
             :key => keyBytes
         });
         hmac.update(messageBytes);
-        return PanicProtocol.base64Url(hmac.digest());
+        return OpenDistressProtocol.base64Url(hmac.digest());
     }
 
     function isBound(storedFingerprint, currentFingerprint) {
-        if (!PanicProtocol.isCanonicalDigest(storedFingerprint)) {
+        if (!OpenDistressProtocol.isCanonicalDigest(storedFingerprint)) {
             return false;
         }
-        if (!PanicProtocol.isCanonicalDigest(currentFingerprint)) {
+        if (!OpenDistressProtocol.isCanonicalDigest(currentFingerprint)) {
             return false;
         }
-        return PanicProtocol.secureEquals(storedFingerprint, currentFingerprint);
+        return OpenDistressProtocol.secureEquals(storedFingerprint, currentFingerprint);
     }
 
     function isActiveRoute(
@@ -100,8 +100,8 @@ module DirectAlertSafety {
 
 module DirectAlertProfile {
     const TEST_MESSAGE =
-        "KEIN ECHTER NOTFALL. Garmin Testausloesung; keine Hilfeleistung erforderlich.";
-    const TEST_TITLE = "TESTNOTRUF";
+        "KEIN ECHTER NOTFALL. OpenDistress Testausloesung; keine Hilfeleistung erforderlich.";
+    const TEST_TITLE = "TESTNOTRUF — OPENDISTRESS";
     const PUSHOVER_MAX_MESSAGE_CHARACTERS = 1024;
     const PUSHOVER_ALERT_MESSAGE_CHARACTERS = 160;
     const PUSHOVER_RESPONSE_CHARACTERS = 170;
@@ -163,7 +163,8 @@ module DirectAlertProfile {
     }
 
     function locationTitle(sequence) {
-        return "GPS-UPDATE " + sequence.format("%d") + " — TESTNOTRUF";
+        return "GPS-UPDATE " + sequence.format("%d")
+            + " — TESTNOTRUF — OPENDISTRESS";
     }
 
     function locationSource(path) {
@@ -294,7 +295,7 @@ module DirectPushoverAdapter {
         var validatedUserKey = userKey as Lang.String;
         var validatedApiToken = apiToken as Lang.String;
         return DirectAlertSafety.fingerprint(
-            "spb.direct.pushover.config.v1",
+            "opendistress.direct.pushover.config.v1",
             validatedApiToken,
             "user=" + validatedUserKey + "\ntoken=" + validatedApiToken + "\n"
         );
@@ -349,7 +350,7 @@ module DirectPushoverAdapter {
 
 module DirectGrafanaAdapter {
     function isConfigured() {
-        return PanicProtocol.isGrafanaWebhookUrl(
+        return OpenDistressProtocol.isGrafanaWebhookUrl(
             Properties.getValue("grafanaWebhookUrl")
         );
     }
@@ -363,12 +364,12 @@ module DirectGrafanaAdapter {
     }
 
     function configurationFingerprintFor(webhookUrl) as Lang.String {
-        if (!PanicProtocol.isGrafanaWebhookUrl(webhookUrl)) {
+        if (!OpenDistressProtocol.isGrafanaWebhookUrl(webhookUrl)) {
             return "";
         }
         var validatedWebhookUrl = webhookUrl as Lang.String;
         return DirectAlertSafety.fingerprint(
-            "spb.direct.grafana.config.v1",
+            "opendistress.direct.grafana.config.v1",
             validatedWebhookUrl,
             "webhook=" + validatedWebhookUrl + "\n"
         );
@@ -544,9 +545,9 @@ function directProviderSafetyTransitions(logger) {
         logger.error("Untimestamped activity GPS was presented as fresh");
         return false;
     }
-    if (!PanicProtocol.stringEquals(
+    if (!OpenDistressProtocol.stringEquals(
             DirectAlertProfile.locationTitle(2),
-            "GPS-UPDATE 2 — TESTNOTRUF"
+            "GPS-UPDATE 2 — TESTNOTRUF — OPENDISTRESS"
         )) {
         logger.error("GPS update title is not update-first");
         return false;
@@ -558,7 +559,7 @@ function directProviderSafetyTransitions(logger) {
         + "\nQualitaet: gut\n\n"
         + "GPS-ALTER LAUT UHR\n5 s\n\n"
         + "KARTE\nhttps://maps.google.com/?q=1,2";
-    if (!PanicProtocol.stringEquals(
+    if (!OpenDistressProtocol.stringEquals(
             DirectAlertProfile.locationMessage(
                 2,
                 1,
@@ -571,11 +572,11 @@ function directProviderSafetyTransitions(logger) {
         logger.error("GPS update message lost its section formatting");
         return false;
     }
-    if (!PanicProtocol.stringEquals(
+    if (!OpenDistressProtocol.stringEquals(
             DirectAlertProfile.clippedText("123456", 5),
             "12..."
         )
-        || !PanicProtocol.stringEquals(
+        || !OpenDistressProtocol.stringEquals(
             DirectAlertProfile.clippedText("12345", 5),
             "12345"
         )) {

@@ -816,7 +816,7 @@ class RelayTests(unittest.TestCase):
 
         relay = self.relay(BrokenProvider())
         self.assertEqual(relay.process(self.body, self.signature)[0], 202)
-        with self.assertLogs("smart-panic-relay", level="ERROR") as captured:
+        with self.assertLogs("opendistress-relay", level="ERROR") as captured:
             self.assertTrue(relay.run_worker_once())
         self.assertNotIn("SENTINEL_PROVIDER_SECRET", "\n".join(captured.output))
 
@@ -2155,7 +2155,7 @@ class WorkerLoopTests(unittest.TestCase):
                 return None
 
         relay = FlakyRelay()
-        with self.assertLogs("smart-panic-relay", level="ERROR") as logs:
+        with self.assertLogs("opendistress-relay", level="ERROR") as logs:
             server = make_server("127.0.0.1", 0, relay)
             try:
                 self.assertTrue(relay.recovered.wait(2))
@@ -2194,7 +2194,7 @@ class HttpTests(unittest.TestCase):
             self.body,
             {
                 "Content-Type": "application/json",
-                "X-SPB-Signature": signature_for(KEY, canonical_event(self.event)),
+                "X-OpenDistress-Signature": signature_for(KEY, canonical_event(self.event)),
             },
         )
         self.assertEqual(status, 202)
@@ -2206,7 +2206,7 @@ class HttpTests(unittest.TestCase):
             LIVE_FIXTURE.read_bytes(),
             {
                 "Content-Type": "application/json",
-                "X-SPB-Signature": signature_for(KEY, canonical_v2_event(event), 2),
+                "X-OpenDistress-Signature": signature_for(KEY, canonical_v2_event(event), 2),
             },
             "/v2/events",
         )
@@ -2220,7 +2220,7 @@ class HttpTests(unittest.TestCase):
                 LIVE_FIXTURE.read_bytes(),
                 {
                     "Content-Type": "application/json",
-                    "X-SPB-Signature": signature_for(
+                    "X-OpenDistress-Signature": signature_for(
                         KEY, canonical_v2_event(event), 2
                     ),
                 },
@@ -2233,7 +2233,7 @@ class HttpTests(unittest.TestCase):
             STATUS_FIXTURE.read_bytes(),
             {
                 "Content-Type": "application/json",
-                "X-SPB-Signature": signature_for(
+                "X-OpenDistress-Signature": signature_for(
                     KEY, canonical_status_query(query), 2
                 ),
             },

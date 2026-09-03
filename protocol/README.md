@@ -1,4 +1,4 @@
-# Incident protocol
+# OpenDistress Protocol
 
 ## TEST v1
 
@@ -26,7 +26,7 @@ lowercase hexadecimal characters. Send exactly one signature header containing
 the full HMAC-SHA256 digest as unpadded base64url:
 
 ```text
-X-SPB-Signature: v1=<43-character unpadded-base64url digest>
+X-OpenDistress-Signature: v1=<43-character unpadded-base64url digest>
 ```
 
 Signature values are strictly decoded to 32 bytes and re-encoded identically;
@@ -37,7 +37,7 @@ The signed request bytes are exactly the UTF-8/ASCII bytes below, with LF
 angle-bracketed values come from the strictly validated event:
 
 ```text
-spb.test.submit.v1
+opendistress.test.submit.v1
 method=POST
 v=1
 event_id=<event_id>
@@ -91,14 +91,14 @@ attempts are committed separately from intake evidence.
 Successful intake is HTTP 202 with exactly:
 
 ```json
-{"v":1,"event_id":"AAECAwQFBgcICQoLDA0ODw","result":"durably_accepted","response_signature":"v1=6eCuAfV44rtvISQNtNPfUXpt50fm_U5sUj4POwx42UM"}
+{"v":1,"event_id":"AAECAwQFBgcICQoLDA0ODw","result":"durably_accepted","response_signature":"v1=IGVfaGn9w07jtO7OSgKsqMxvzU513EH9ByEFi6hTNhk"}
 ```
 
 `response_signature` is HMAC-SHA256 with the same device key over these exact
 UTF-8/ASCII bytes, again with a final LF:
 
 ```text
-spb.test.intake-result.v1
+opendistress.test.intake-result.v1
 v=1
 event_id=<event_id>
 result=durably_accepted
@@ -162,7 +162,7 @@ nine outer members:
     "key_version": 1,
     "iv": "YGFiY2RlZmdoaWprbG1ubw",
     "ciphertext": "8eRa_JOzxdPOO3l494xv5Q",
-    "tag": "QOA-t_kexwtJrWsQaj8FZuEb9TdOhPAcHCDMbgkrCB8"
+    "tag": "Od2xdL8I6MFPc2V44iVzICC1eChn4NcItWb9GWpA4N4"
   }
 }
 ```
@@ -217,7 +217,7 @@ HMAC-SHA256 tag under `K_mac[key_version]` over the following exact
 UTF-8/ASCII bytes, with LF (`0a`) after every line, including the last:
 
 ```text
-spb.content.v2
+opendistress.content.v2
 v=2
 event_id=<event_id>
 incident_id=<incident_id>
@@ -262,14 +262,14 @@ Send exactly one header containing the full HMAC-SHA256 digest under
 `K_auth`, encoded as canonical unpadded base64url:
 
 ```text
-X-SPB-Signature: v2=<43-character unpadded-base64url digest>
+X-OpenDistress-Signature: v2=<43-character unpadded-base64url digest>
 ```
 
 The authenticated bytes are exactly the following UTF-8/ASCII text, again
 with a final LF:
 
 ```text
-spb.submit.v2
+opendistress.submit.v2
 method=POST
 v=2
 event_id=<event_id>
@@ -294,14 +294,14 @@ After durably recording an authenticated event, the relay returns HTTP 202
 with exactly:
 
 ```json
-{"v":2,"event_id":"AAECAwQFBgcICQoLDA0ODw","result":"durably_accepted","response_signature":"v2=Z40vnSWhJ7rbDRz6kO8nAh8-Qen5RGpl20xiiQ6kCpI"}
+{"v":2,"event_id":"AAECAwQFBgcICQoLDA0ODw","result":"durably_accepted","response_signature":"v2=gtYwKUt7qrWFjCrtDJq4yns_1My1J0b67e9cgF7YOKw"}
 ```
 
 `response_signature` is the full HMAC-SHA256 under `K_auth` over these exact
 UTF-8/ASCII bytes, including the final LF:
 
 ```text
-spb.result.v2
+opendistress.result.v2
 v=2
 event_id=<event_id>
 result=durably_accepted
@@ -339,11 +339,11 @@ same strict JSON and canonical-encoding rules as event intake and accepts only
 when `created_at <= server_now + 300` and `server_now <= created_at + 300`,
 inclusively.
 
-Authenticate with `K_auth` and exactly one `X-SPB-Signature` header. The signed
+Authenticate with `K_auth` and exactly one `X-OpenDistress-Signature` header. The signed
 UTF-8/ASCII text is below, with LF after every line including the last:
 
 ```text
-spb.status.query.v2
+opendistress.status.query.v2
 method=POST
 v=2
 request_id=<request_id>
@@ -357,7 +357,7 @@ An authenticated query for an incident owned by that device returns HTTP 200
 with exactly these seven members:
 
 ```json
-{"v":2,"request_id":"ICEiIyQlJicoKSorLC0uLw","incident_id":"AAECAwQFBgcICQoLDA0ODw","device_id":"EBESExQVFhcYGRobHB0eHw","state":"resolved","checked_at":1788105701,"response_signature":"v2=1PKgg7-Pz7Ko7_jtlrQaJoWxOLwI16D6FGCt4YnnzIM"}
+{"v":2,"request_id":"ICEiIyQlJicoKSorLC0uLw","incident_id":"AAECAwQFBgcICQoLDA0ODw","device_id":"EBESExQVFhcYGRobHB0eHw","state":"resolved","checked_at":1788105701,"response_signature":"v2=7CcJC9UNljfOlMkrh1J0-pbyF_PTNRPRpw_xEvGJ1Vc"}
 ```
 
 `state` is exactly `active`, `acknowledged`, `resolved`, or `expired`.
@@ -367,7 +367,7 @@ Thus acknowledgement remains evidence and never becomes resolution.
 signature is HMAC-SHA256 under `K_auth` over:
 
 ```text
-spb.status.result.v2
+opendistress.status.result.v2
 v=2
 request_id=<request_id>
 incident_id=<incident_id>
@@ -426,7 +426,7 @@ binary members are strictly decoded and re-encoded. Parsers reject duplicates,
 unknown members, coercion, non-integer number tokens, and trailing content.
 
 Serialize the strictly validated v2 event in its fixed normative member order.
-Create an exact 512-byte plaintext containing ASCII `SPBM` at bytes 0-3, an
+Create an exact 512-byte plaintext containing ASCII `ODMM` at bytes 0-3, an
 unsigned big-endian inner JSON byte length at bytes 4-5, the UTF-8 v2 event from
 byte 6, and cryptographically random padding through the end. Encrypt the whole
 block with AES-256-CBC and no padding under the mailbox send-encryption key and
@@ -434,7 +434,7 @@ a fresh random 16-byte IV. Authenticate with a distinct send-MAC key over this
 exact text, including the final LF:
 
 ```text
-spb.mailbox.content.v1
+opendistress.mailbox.content.v1
 v=1
 mailbox_id=<mailbox_id>
 message_id=<message_id>
@@ -452,7 +452,7 @@ and inner event size; it does not hide traffic timing or outer expiry.
 The capsule digest is SHA-256 over the following text, including its final LF:
 
 ```text
-spb.mailbox.message.v1
+opendistress.mailbox.message.v1
 v=1
 mailbox_id=<mailbox_id>
 message_id=<message_id>
@@ -473,7 +473,7 @@ A successful append is HTTP 202 with `v`, `message_id`,
 under the append capability over:
 
 ```text
-spb.mailbox.result.v1
+opendistress.mailbox.result.v1
 v=1
 message_id=<message_id>
 result=durably_accepted
@@ -492,12 +492,12 @@ submit [`mailbox-ack-v1.schema.json`](mailbox-ack-v1.schema.json) to
 
 The encrypted inner acknowledgement contains exactly `v`, `incident_id`,
 `sequence`, `message_id`, `capsule_sha256`, and `acknowledged_at`. Pack it into
-an exact 256-byte block using ASCII `SPBA`, the same two-byte length, and random
+an exact 256-byte block using ASCII `ODMA`, the same two-byte length, and random
 padding. Encrypt with the independent ACK-encryption key. Its outer HMAC uses
 the independent ACK-MAC key over:
 
 ```text
-spb.mailbox.ack-content.v1
+opendistress.mailbox.ack-content.v1
 v=1
 message_id=<message_id>
 capsule_sha256=<capsule_sha256>
@@ -515,4 +515,4 @@ and ACKs are removed after expiry plus 24 hours.
 [`fixtures/mailbox-message-v1.json`](fixtures/mailbox-message-v1.json) is the
 deterministic Node reference capsule. Python and Node tests require its semantic
 SHA-256 to remain
-`bae4682120b8ed891c0fc7e3a5aeab673ac171a6f8c6015c4d0d86942b6d5f15`.
+`df2238ba9e334fd870829ed24e5edb5e8ba89672fa8da23c8bb5cd890121a9cb`.

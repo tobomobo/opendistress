@@ -144,7 +144,7 @@ class MailboxStoreTests(unittest.TestCase):
         )
         self.assertEqual(
             capsule_sha256(fixture).hex(),
-            "bae4682120b8ed891c0fc7e3a5aeab673ac171a6f8c6015c4d0d86942b6d5f15",
+            "df2238ba9e334fd870829ed24e5edb5e8ba89672fa8da23c8bb5cd890121a9cb",
         )
 
     def test_unknown_disabled_and_wrong_capability_are_indistinguishable(self):
