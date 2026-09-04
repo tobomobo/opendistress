@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- The complete badge stays inside the 72-unit adaptive-icon safe circle. -->
+    <path
+        android:fillColor="#101820"
+        android:pathData="M54,21 A33,33 0,1 1 54,87 A33,33 0,1 1 54,21" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M32,62 C27,44 36,30 54,30 C72,30 81,44 76,62"
+        android:strokeColor="#F4F0E6"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+    <path
+        android:fillColor="#F5A623"
+        android:pathData="M54,65 A5,5 0,1 1 54,75 A5,5 0,1 1 54,65" />
+</vector>

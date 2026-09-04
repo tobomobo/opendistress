@@ -4,6 +4,8 @@ package dev.opendistress.mobile
 import android.app.Activity
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.InputFilter
 import android.text.InputType
@@ -11,26 +13,30 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
-import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.TextView
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.Wearable
+import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import com.google.android.material.textview.MaterialTextView
 import dev.opendistress.shared.DirectConfig
 
 class MainActivity : Activity(), DataClient.OnDataChangedListener {
     private lateinit var coordinator: ProvisioningCoordinator
-    private lateinit var status: TextView
-    private lateinit var save: Button
+    private lateinit var status: MaterialTextView
+    private lateinit var statusTitle: MaterialTextView
+    private lateinit var statusIndicator: MaterialTextView
+    private lateinit var statusCard: MaterialCardView
+    private lateinit var save: MaterialButton
     private val fields = linkedMapOf<String, EditText>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,14 +46,14 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         coordinator = try {
             ProvisioningCoordinator(this)
         } catch (_: Exception) {
-            status.setText(R.string.storage_authentication_failed)
+            showStatus(getString(R.string.storage_authentication_failed))
             save.isEnabled = false
             return
         }
         coordinator.snapshot().config?.let(::populate)
-        status.text = coordinator.statusDescription()
+        showStatus(coordinator.statusDescription())
         save.setOnClickListener { saveConfiguration() }
-        findViewById<Button>(SYNC_BUTTON_ID).setOnClickListener {
+        findViewById<MaterialButton>(SYNC_BUTTON_ID).setOnClickListener {
             coordinator.synchronize(::showStatus, force = true)
         }
     }
@@ -98,36 +104,31 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
     }
 
     private fun buildInterface() {
-        val padding = dp(20)
         val surface = color(com.google.android.material.R.attr.colorSurface, Color.WHITE)
         val onSurface = color(com.google.android.material.R.attr.colorOnSurface, Color.rgb(36, 25, 26))
+        val onSurfaceVariant = color(com.google.android.material.R.attr.colorOnSurfaceVariant, Color.DKGRAY)
         val primary = color(androidx.appcompat.R.attr.colorPrimary, Color.rgb(140, 29, 39))
         val outline = color(com.google.android.material.R.attr.colorOutline, Color.rgb(133, 115, 116))
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(surface)
+        }
+        page.addView(MaterialToolbar(this).apply {
+            title = getString(R.string.app_bar_title)
+            subtitle = getString(R.string.app_bar_subtitle)
+            setTitleTextAppearance(this@MainActivity, R.style.TextAppearance_OpenDistress_Brand)
+            setTitleTextColor(onSurface)
+            setSubtitleTextColor(onSurfaceVariant)
+            setBackgroundColor(surface)
+            contentInsetStartWithNavigation = dp(20)
+            setContentInsetsRelative(dp(20), dp(20))
+        }, matchWidth())
+
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(padding, padding, padding, padding)
+            setPadding(dp(20), dp(12), dp(20), dp(32))
         }
-        content.addView(TextView(this).apply {
-            setText(R.string.setup_eyebrow)
-            textSize = 12f
-            letterSpacing = 0.12f
-            setTextColor(primary)
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        })
-        content.addView(TextView(this).apply {
-            setText(R.string.setup_title)
-            textSize = 32f
-            setTextColor(onSurface)
-            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
-            setPadding(0, dp(6), 0, 0)
-        })
-        content.addView(TextView(this).apply {
-            setText(R.string.setup_explanation)
-            textSize = 16f
-            setTextColor(color(com.google.android.material.R.attr.colorOnSurfaceVariant, Color.DKGRAY))
-            setLineSpacing(0f, 1.12f)
-            setPadding(0, dp(8), 0, dp(24))
-        })
+        content.addView(heroCard(), matchWidth())
 
         val delivery = addSection(
             content,
@@ -152,23 +153,48 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         addField(emergency, "responseInstructions", R.string.response_instructions, 180, multiline = true)
         addField(emergency, "profilePhotoUrl", R.string.profile_photo_url, 512)
 
-        status = TextView(this).apply {
-            textSize = 15f
+        statusIndicator = MaterialTextView(this).apply {
+            gravity = Gravity.CENTER
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
             setTextColor(onSurface)
-            setLineSpacing(0f, 1.08f)
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            accessibilityLiveRegion = TextView.ACCESSIBILITY_LIVE_REGION_POLITE
         }
-        content.addView(MaterialCardView(this).apply {
-            radius = dp(20).toFloat()
+        statusTitle = MaterialTextView(this).apply {
+            setTextAppearance(R.style.TextAppearance_OpenDistress_Status)
+            setTextColor(onSurface)
+        }
+        status = MaterialTextView(this).apply {
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+            setTextColor(onSurfaceVariant)
+            setLineSpacing(0f, 1.08f)
+            accessibilityLiveRegion = MaterialTextView.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        val statusCopy = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(statusTitle, matchWidth())
+            addView(status, matchWidth(topMargin = dp(4)))
+        }
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            addView(statusIndicator, LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+                marginEnd = dp(14)
+            })
+            addView(statusCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        statusCard = MaterialCardView(this).apply {
+            radius = dp(24).toFloat()
             cardElevation = 0f
-            strokeWidth = dp(1)
-            strokeColor = outline
-            setCardBackgroundColor(
-                color(com.google.android.material.R.attr.colorSurfaceContainerHigh, surface),
-            )
-            addView(status, matchWidth())
-        }, matchWidth(topMargin = dp(20)))
+            strokeWidth = 0
+            addView(statusRow, matchWidth())
+        }
+        content.addView(MaterialTextView(this).apply {
+            setText(R.string.watch_readiness)
+            setTextAppearance(R.style.TextAppearance_OpenDistress_Section)
+            setTextColor(onSurface)
+            setPadding(dp(4), dp(28), dp(4), dp(10))
+        }, matchWidth())
+        content.addView(statusCard, matchWidth())
         save = MaterialButton(this).apply {
             setText(R.string.save_and_send)
             minHeight = dp(56)
@@ -195,19 +221,19 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             backgroundTintList = ColorStateList.valueOf(surface)
             setTextColor(primary)
         }, matchWidth(topMargin = dp(10)))
-        content.addView(TextView(this).apply {
+        content.addView(MaterialTextView(this).apply {
             setText(R.string.readiness_explanation)
-            textSize = 13f
-            setTextColor(color(com.google.android.material.R.attr.colorOnSurfaceVariant, Color.DKGRAY))
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+            setTextColor(onSurfaceVariant)
             setLineSpacing(0f, 1.12f)
-            setPadding(dp(4), dp(16), dp(4), dp(32))
+            setPadding(dp(4), dp(16), dp(4), 0)
         })
 
-        setContentView(ScrollView(this).apply {
-            setBackgroundColor(surface)
+        page.addView(ScrollView(this).apply {
             isFillViewport = true
-            clipToPadding = true
             addView(content)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        setContentView(page.apply {
             setOnApplyWindowInsetsListener { view, insets ->
                 val bars = insets.getInsets(WindowInsets.Type.systemBars())
                 view.setPadding(0, bars.top, 0, bars.bottom)
@@ -216,19 +242,64 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         })
     }
 
+    private fun heroCard(): MaterialCardView {
+        val onContainer = color(
+            com.google.android.material.R.attr.colorOnPrimaryContainer,
+            Color.rgb(59, 7, 16),
+        )
+        val copy = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(MaterialTextView(this@MainActivity).apply {
+                setText(R.string.setup_eyebrow)
+                setTextAppearance(R.style.TextAppearance_OpenDistress_Eyebrow)
+                setTextColor(onContainer)
+            }, matchWidth())
+            addView(MaterialTextView(this@MainActivity).apply {
+                setText(R.string.setup_title)
+                setTextAppearance(R.style.TextAppearance_OpenDistress_Hero)
+                setTextColor(onContainer)
+            }, matchWidth(topMargin = dp(6)))
+            addView(MaterialTextView(this@MainActivity).apply {
+                setText(R.string.setup_explanation)
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
+                setTextColor(onContainer)
+                setLineSpacing(0f, 1.12f)
+            }, matchWidth(topMargin = dp(8)))
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(22), dp(22), dp(24))
+            addView(ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_splash_mark)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                contentDescription = null
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(dp(64), dp(64)).apply { bottomMargin = dp(16) })
+            addView(copy, matchWidth())
+        }
+        return MaterialCardView(this).apply {
+            radius = dp(28).toFloat()
+            cardElevation = 0f
+            strokeWidth = 0
+            setCardBackgroundColor(
+                color(com.google.android.material.R.attr.colorPrimaryContainer, Color.rgb(255, 218, 217)),
+            )
+            addView(row, matchWidth())
+        }
+    }
+
     private fun addSection(parent: LinearLayout, label: Int, explanation: Int): LinearLayout {
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(20))
-            addView(TextView(this@MainActivity).apply {
+            addView(MaterialTextView(this@MainActivity).apply {
                 setText(label)
-                textSize = 22f
+                setTextAppearance(R.style.TextAppearance_OpenDistress_Section)
                 setTextColor(color(com.google.android.material.R.attr.colorOnSurface, Color.DKGRAY))
-                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
             })
-            addView(TextView(this@MainActivity).apply {
+            addView(MaterialTextView(this@MainActivity).apply {
                 setText(explanation)
-                textSize = 14f
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
                 setLineSpacing(0f, 1.1f)
                 setTextColor(color(com.google.android.material.R.attr.colorOnSurfaceVariant, Color.DKGRAY))
                 setPadding(0, dp(6), 0, dp(6))
@@ -237,8 +308,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         parent.addView(MaterialCardView(this).apply {
             radius = dp(28).toFloat()
             cardElevation = 0f
-            strokeWidth = dp(1)
-            strokeColor = color(com.google.android.material.R.attr.colorOutlineVariant, Color.LTGRAY)
+            strokeWidth = 0
             setCardBackgroundColor(
                 color(com.google.android.material.R.attr.colorSurfaceContainerLow, Color.WHITE),
             )
@@ -262,6 +332,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
                 multiline -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                 else -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             }
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             if (multiline) {
                 minLines = 3
                 maxLines = 6
@@ -305,7 +376,63 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
     private fun String.nullIfBlank(): String? = takeUnless(String::isBlank)
 
     private fun showStatus(message: String) {
-        runOnUiThread { status.text = message }
+        runOnUiThread {
+            val normalized = message.lowercase()
+            val ready = normalized.contains("confirmed on watch") && normalized.contains("route ready")
+            val waiting = normalized.contains("waiting") || normalized.contains("queued")
+            val background: Int
+            val foreground: Int
+            when {
+                ready -> {
+                    statusTitle.setText(R.string.watch_ready)
+                    statusIndicator.text = "✓"
+                    background = color(
+                        com.google.android.material.R.attr.colorTertiaryContainer,
+                        Color.rgb(251, 223, 166),
+                    )
+                    foreground = color(
+                        com.google.android.material.R.attr.colorOnTertiaryContainer,
+                        Color.rgb(37, 26, 0),
+                    )
+                }
+                waiting -> {
+                    statusTitle.setText(R.string.watch_waiting)
+                    statusIndicator.text = "…"
+                    background = color(
+                        com.google.android.material.R.attr.colorSecondaryContainer,
+                        Color.rgb(255, 218, 217),
+                    )
+                    foreground = color(
+                        com.google.android.material.R.attr.colorOnSecondaryContainer,
+                        Color.rgb(46, 21, 22),
+                    )
+                }
+                else -> {
+                    statusTitle.setText(R.string.watch_attention)
+                    statusIndicator.text = "!"
+                    background = color(
+                        com.google.android.material.R.attr.colorErrorContainer,
+                        Color.rgb(255, 218, 214),
+                    )
+                    foreground = color(
+                        com.google.android.material.R.attr.colorOnErrorContainer,
+                        Color.rgb(65, 0, 2),
+                    )
+                }
+            }
+            statusCard.setCardBackgroundColor(background)
+            statusTitle.setTextColor(foreground)
+            status.setTextColor(foreground)
+            statusIndicator.setTextColor(foreground)
+            statusIndicator.background = circle(foreground, background)
+            status.text = message
+        }
+    }
+
+    private fun circle(stroke: Int, fill: Int) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(fill)
+        setStroke(dp(2), stroke)
     }
 
     private fun matchWidth(topMargin: Int = 0) = LinearLayout.LayoutParams(

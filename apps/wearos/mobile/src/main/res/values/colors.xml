@@ -7,8 +7,18 @@
     <color name="opendistress_primary_container">#FFDAD9</color>
     <color name="opendistress_on_primary_container">#3B0710</color>
     <color name="opendistress_secondary">#775657</color>
+    <color name="opendistress_secondary_container">#FFDAD9</color>
+    <color name="opendistress_on_secondary_container">#2E1516</color>
+    <color name="opendistress_tertiary_container">#FBDFA6</color>
+    <color name="opendistress_on_tertiary_container">#251A00</color>
     <color name="opendistress_surface">#FFF8F7</color>
     <color name="opendistress_on_surface">#24191A</color>
+    <color name="opendistress_on_surface_variant">#534344</color>
     <color name="opendistress_surface_variant">#F5DDDE</color>
+    <color name="opendistress_surface_container_low">#FFF0F0</color>
+    <color name="opendistress_surface_container_high">#F2E4E4</color>
     <color name="opendistress_outline">#857374</color>
+    <color name="opendistress_outline_variant">#D8C1C2</color>
+    <color name="opendistress_error_container">#FFDAD6</color>
+    <color name="opendistress_on_error_container">#410002</color>
 </resources>
