@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: MIT -->
 <resources>
-    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#E07800</item>
-        <item name="android:navigationBarColor">#101820</item>
-        <item name="android:statusBarColor">#FAFAFA</item>
+    <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="fontFamily">sans</item>
+        <item name="colorPrimary">@color/opendistress_primary</item>
+        <item name="colorOnPrimary">@color/opendistress_on_primary</item>
+        <item name="colorPrimaryContainer">@color/opendistress_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/opendistress_on_primary_container</item>
+        <item name="colorSecondary">@color/opendistress_secondary</item>
+        <item name="colorSurface">@color/opendistress_surface</item>
+        <item name="colorOnSurface">@color/opendistress_on_surface</item>
+        <item name="colorSurfaceVariant">@color/opendistress_surface_variant</item>
+        <item name="colorOutline">@color/opendistress_outline</item>
+        <item name="android:navigationBarColor">@color/opendistress_surface</item>
+        <item name="android:statusBarColor">@color/opendistress_surface</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>

@@ -42,6 +42,15 @@ both APKs.
 The Tile only opens the app. It never creates or sends an event. Wear OS does
 not let a third-party app globally intercept Pixel Watch crown or power buttons.
 
+The watch surfaces follow Material 3 Expressive principles without coupling the
+critical hold recognizer to a UI framework: OLED-black backgrounds, proportional
+round-screen margins, semantic container colors, tabular countdown numerals,
+48 dp minimum action targets, and edge-hugging progress and action shapes. The
+same layouts are visually checked at the 192 dp and 227 dp Pixel Watch classes.
+The Android setup app uses a Material 3 DayNight theme, dynamic color when the
+phone supports it, grouped provider and emergency-card containers, outlined
+secret inputs, and multiline profile fields.
+
 The foreground control requires one uninterrupted 2.5-second hold. A symmetric
 ring grows from six o'clock, the text changes while pressed, and release,
 movement outside the control, or cancellation aborts. A short tap never sends.

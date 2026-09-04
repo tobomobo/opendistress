@@ -2,11 +2,13 @@
 package dev.opendistress.mobile
 
 import android.app.Activity
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.text.InputFilter
 import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.widget.Button
@@ -17,6 +19,12 @@ import android.widget.TextView
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.Wearable
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.color.DynamicColors
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import dev.opendistress.shared.DirectConfig
 
 class MainActivity : Activity(), DataClient.OnDataChangedListener {
@@ -27,6 +35,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DynamicColors.applyToActivityIfAvailable(this)
         buildInterface()
         coordinator = try {
             ProvisioningCoordinator(this)
@@ -89,58 +98,114 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
     }
 
     private fun buildInterface() {
-        val density = resources.displayMetrics.density
-        val padding = (20 * density).toInt()
+        val padding = dp(20)
+        val surface = color(com.google.android.material.R.attr.colorSurface, Color.WHITE)
+        val onSurface = color(com.google.android.material.R.attr.colorOnSurface, Color.rgb(36, 25, 26))
+        val primary = color(androidx.appcompat.R.attr.colorPrimary, Color.rgb(140, 29, 39))
+        val outline = color(com.google.android.material.R.attr.colorOutline, Color.rgb(133, 115, 116))
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padding, padding, padding, padding)
         }
         content.addView(TextView(this).apply {
+            setText(R.string.setup_eyebrow)
+            textSize = 12f
+            letterSpacing = 0.12f
+            setTextColor(primary)
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        })
+        content.addView(TextView(this).apply {
             setText(R.string.setup_title)
-            textSize = 24f
-            setTextColor(Color.rgb(16, 24, 32))
+            textSize = 32f
+            setTextColor(onSurface)
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+            setPadding(0, dp(6), 0, 0)
         })
         content.addView(TextView(this).apply {
             setText(R.string.setup_explanation)
-            textSize = 15f
-            setPadding(0, (8 * density).toInt(), 0, padding)
+            textSize = 16f
+            setTextColor(color(com.google.android.material.R.attr.colorOnSurfaceVariant, Color.DKGRAY))
+            setLineSpacing(0f, 1.12f)
+            setPadding(0, dp(8), 0, dp(24))
         })
 
-        addField(content, "grafanaWebhookUrl", R.string.grafana_webhook, 512, secret = true)
-        addField(content, "pushoverUserKey", R.string.pushover_user_key, 30, secret = true)
-        addField(content, "pushoverApiToken", R.string.pushover_api_token, 30, secret = true)
-        addSection(content, R.string.emergency_card)
-        addField(content, "protectedPersonName", R.string.protected_person_name, 40)
-        addField(content, "customAlertMessage", R.string.prepared_alert_message, 240, multiline = true)
-        addField(content, "homeAddress", R.string.home_address, 120, multiline = true)
-        addField(content, "childrenInfo", R.string.children_information, 150, multiline = true)
-        addField(content, "personDescription", R.string.person_description, 150, multiline = true)
-        addField(content, "backgroundInfo", R.string.background_information, 180, multiline = true)
-        addField(content, "responseInstructions", R.string.response_instructions, 180, multiline = true)
-        addField(content, "profilePhotoUrl", R.string.profile_photo_url, 512)
+        val delivery = addSection(
+            content,
+            R.string.delivery_title,
+            R.string.delivery_explanation,
+        )
+        addField(delivery, "grafanaWebhookUrl", R.string.grafana_webhook, 512, secret = true)
+        addField(delivery, "pushoverUserKey", R.string.pushover_user_key, 30, secret = true)
+        addField(delivery, "pushoverApiToken", R.string.pushover_api_token, 30, secret = true)
+
+        val emergency = addSection(
+            content,
+            R.string.emergency_card,
+            R.string.emergency_card_explanation,
+        )
+        addField(emergency, "protectedPersonName", R.string.protected_person_name, 40)
+        addField(emergency, "customAlertMessage", R.string.prepared_alert_message, 240, multiline = true)
+        addField(emergency, "homeAddress", R.string.home_address, 120, multiline = true)
+        addField(emergency, "childrenInfo", R.string.children_information, 150, multiline = true)
+        addField(emergency, "personDescription", R.string.person_description, 150, multiline = true)
+        addField(emergency, "backgroundInfo", R.string.background_information, 180, multiline = true)
+        addField(emergency, "responseInstructions", R.string.response_instructions, 180, multiline = true)
+        addField(emergency, "profilePhotoUrl", R.string.profile_photo_url, 512)
 
         status = TextView(this).apply {
             textSize = 15f
-            setPadding(0, padding, 0, padding / 2)
+            setTextColor(onSurface)
+            setLineSpacing(0f, 1.08f)
+            setPadding(dp(18), dp(16), dp(18), dp(16))
             accessibilityLiveRegion = TextView.ACCESSIBILITY_LIVE_REGION_POLITE
         }
-        content.addView(status)
-        save = Button(this).apply {
+        content.addView(MaterialCardView(this).apply {
+            radius = dp(20).toFloat()
+            cardElevation = 0f
+            strokeWidth = dp(1)
+            strokeColor = outline
+            setCardBackgroundColor(
+                color(com.google.android.material.R.attr.colorSurfaceContainerHigh, surface),
+            )
+            addView(status, matchWidth())
+        }, matchWidth(topMargin = dp(20)))
+        save = MaterialButton(this).apply {
             setText(R.string.save_and_send)
-            minHeight = (52 * density).toInt()
+            minHeight = dp(56)
+            cornerRadius = dp(28)
+            textSize = 15f
+            insetTop = 0
+            insetBottom = 0
         }
-        content.addView(save, matchWidth())
-        content.addView(Button(this).apply {
+        content.addView(save, matchWidth(topMargin = dp(16)))
+        content.addView(MaterialButton(
+            this,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle,
+        ).apply {
             id = SYNC_BUTTON_ID
             setText(R.string.retry_sync)
-        }, matchWidth())
+            minHeight = dp(52)
+            cornerRadius = dp(26)
+            textSize = 15f
+            insetTop = 0
+            insetBottom = 0
+            strokeWidth = dp(1)
+            strokeColor = ColorStateList.valueOf(outline)
+            backgroundTintList = ColorStateList.valueOf(surface)
+            setTextColor(primary)
+        }, matchWidth(topMargin = dp(10)))
         content.addView(TextView(this).apply {
             setText(R.string.readiness_explanation)
             textSize = 13f
-            setPadding(0, padding / 2, 0, padding)
+            setTextColor(color(com.google.android.material.R.attr.colorOnSurfaceVariant, Color.DKGRAY))
+            setLineSpacing(0f, 1.12f)
+            setPadding(dp(4), dp(16), dp(4), dp(32))
         })
 
         setContentView(ScrollView(this).apply {
+            setBackgroundColor(surface)
+            isFillViewport = true
             clipToPadding = true
             addView(content)
             setOnApplyWindowInsetsListener { view, insets ->
@@ -151,12 +216,35 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         })
     }
 
-    private fun addSection(parent: LinearLayout, label: Int) {
-        parent.addView(TextView(this).apply {
-            setText(label)
-            textSize = 20f
-            setPadding(0, 28, 0, 6)
-        })
+    private fun addSection(parent: LinearLayout, label: Int, explanation: Int): LinearLayout {
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(20))
+            addView(TextView(this@MainActivity).apply {
+                setText(label)
+                textSize = 22f
+                setTextColor(color(com.google.android.material.R.attr.colorOnSurface, Color.DKGRAY))
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            })
+            addView(TextView(this@MainActivity).apply {
+                setText(explanation)
+                textSize = 14f
+                setLineSpacing(0f, 1.1f)
+                setTextColor(color(com.google.android.material.R.attr.colorOnSurfaceVariant, Color.DKGRAY))
+                setPadding(0, dp(6), 0, dp(6))
+            })
+        }
+        parent.addView(MaterialCardView(this).apply {
+            radius = dp(28).toFloat()
+            cardElevation = 0f
+            strokeWidth = dp(1)
+            strokeColor = color(com.google.android.material.R.attr.colorOutlineVariant, Color.LTGRAY)
+            setCardBackgroundColor(
+                color(com.google.android.material.R.attr.colorSurfaceContainerLow, Color.WHITE),
+            )
+            addView(section, matchWidth())
+        }, matchWidth(topMargin = if (parent.childCount > 3) dp(16) else 0))
+        return section
     }
 
     private fun addField(
@@ -167,13 +255,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         secret: Boolean = false,
         multiline: Boolean = false,
     ) {
-        parent.addView(TextView(this).apply {
-            setText(label)
-            textSize = 14f
-            setPadding(0, 12, 0, 2)
-        })
-        val field = EditText(this).apply {
-            setHint(label)
+        val field = TextInputEditText(this).apply {
             filters = arrayOf(InputFilter.LengthFilter(maxLength))
             inputType = when {
                 secret -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -181,14 +263,27 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
                 else -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             }
             if (multiline) {
-                minLines = 2
+                minLines = 3
+                maxLines = 6
                 gravity = Gravity.TOP or Gravity.START
             }
             importantForAutofill = if (secret) EditText.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS else
                 EditText.IMPORTANT_FOR_AUTOFILL_AUTO
         }
         fields[key] = field
-        parent.addView(field, matchWidth())
+        parent.addView(TextInputLayout(this).apply {
+            hint = getString(label)
+            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
+            boxStrokeColor = color(com.google.android.material.R.attr.colorOutline, Color.GRAY)
+            setBoxCornerRadii(
+                dp(16).toFloat(),
+                dp(16).toFloat(),
+                dp(16).toFloat(),
+                dp(16).toFloat(),
+            )
+            if (secret) endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
+            addView(field, matchWidth())
+        }, matchWidth(topMargin = dp(12)))
     }
 
     private fun populate(config: DirectConfig) {
@@ -213,10 +308,15 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         runOnUiThread { status.text = message }
     }
 
-    private fun matchWidth() = LinearLayout.LayoutParams(
+    private fun matchWidth(topMargin: Int = 0) = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT,
-    )
+    ).apply { this.topMargin = topMargin }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun color(attribute: Int, fallback: Int): Int =
+        MaterialColors.getColor(this, attribute, fallback)
 
     private companion object {
         const val SYNC_BUTTON_ID = 0x0d150001

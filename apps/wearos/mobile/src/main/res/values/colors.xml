@@ -2,4 +2,13 @@
 <!-- SPDX-License-Identifier: MIT -->
 <resources>
     <color name="opendistress_graphite">#101820</color>
+    <color name="opendistress_primary">#8C1D27</color>
+    <color name="opendistress_on_primary">#FFFFFF</color>
+    <color name="opendistress_primary_container">#FFDAD9</color>
+    <color name="opendistress_on_primary_container">#3B0710</color>
+    <color name="opendistress_secondary">#775657</color>
+    <color name="opendistress_surface">#FFF8F7</color>
+    <color name="opendistress_on_surface">#24191A</color>
+    <color name="opendistress_surface_variant">#F5DDDE</color>
+    <color name="opendistress_outline">#857374</color>
 </resources>

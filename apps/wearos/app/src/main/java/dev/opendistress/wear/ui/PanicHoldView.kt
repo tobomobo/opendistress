@@ -74,29 +74,46 @@ class PanicHoldView @JvmOverloads constructor(
 
     private val gesture = HoldGestureState()
     private val progressBounds = RectF()
+    private val modeBounds = RectF()
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(55, 59, 65)
+        color = Color.rgb(67, 62, 68)
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
     private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(255, 73, 84)
+        color = Color.rgb(255, 180, 171)
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
     private val buttonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(93, 15, 24)
+        color = Color.rgb(63, 23, 27)
         style = Paint.Style.FILL
     }
-    private val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+    private val modePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(43, 40, 45)
+        style = Paint.Style.FILL
+    }
+    private val modeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(211, 196, 198)
         textAlign = Paint.Align.CENTER
-        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        letterSpacing = 0.12f
+    }
+    private val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(255, 248, 247)
+        textAlign = Paint.Align.CENTER
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
     }
     private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(194, 197, 204)
+        color = Color.rgb(211, 196, 198)
         textAlign = Paint.Align.CENTER
+    }
+    private val numeralPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(255, 218, 214)
+        textAlign = Paint.Align.CENTER
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        fontFeatureSettings = "tnum"
     }
 
     private var touchActive = false
@@ -188,11 +205,12 @@ class PanicHoldView @JvmOverloads constructor(
         val size = min(width, height).toFloat()
         val centerX = width / 2f
         val centerY = height / 2f
-        val stroke = size * 0.055f
-        val ringRadius = size * 0.43f
-        val buttonRadius = size * 0.30f
+        val stroke = size * 0.036f
+        val ringRadius = size * 0.445f
         val snapshot = gesture.snapshot(SystemClock.elapsedRealtime())
         val displayProgress = if (confirmed) 1f else snapshot.progress
+        val active = confirmed || snapshot.phase != HoldGestureState.Phase.IDLE
+        val buttonRadius = size * if (active) 0.302f else 0.315f
 
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         trackPaint.strokeWidth = stroke
@@ -209,29 +227,68 @@ class PanicHoldView @JvmOverloads constructor(
         canvas.drawArc(progressBounds, 90f, halfSweep, false, progressPaint)
         canvas.drawArc(progressBounds, 90f, -halfSweep, false, progressPaint)
 
-        val active = confirmed || snapshot.phase != HoldGestureState.Phase.IDLE
-        buttonPaint.color = if (active) Color.rgb(127, 17, 29) else Color.rgb(82, 20, 27)
+        buttonPaint.color = when {
+            purpose == Purpose.RESET_TEST && active -> Color.rgb(91, 69, 0)
+            purpose == Purpose.RESET_TEST -> Color.rgb(65, 52, 12)
+            active -> Color.rgb(103, 25, 33)
+            else -> Color.rgb(63, 23, 27)
+        }
+        progressPaint.color = if (purpose == Purpose.RESET_TEST) {
+            Color.rgb(234, 213, 103)
+        } else {
+            Color.rgb(255, 180, 171)
+        }
         canvas.drawCircle(centerX, centerY, buttonRadius, buttonPaint)
 
-        titlePaint.textSize = size * 0.095f
-        hintPaint.textSize = size * 0.052f
-        val title = if (confirmed) confirmedTitle() else when (snapshot.phase) {
-            HoldGestureState.Phase.IDLE -> readyTitle()
-            HoldGestureState.Phase.TOUCH_HOLDING -> "KEEP HOLDING"
-            HoldGestureState.Phase.ACCESSIBILITY_HOLDING -> "WAIT"
-            HoldGestureState.Phase.ACCESSIBILITY_READY -> "CONFIRM"
-        }
-        canvas.drawText(title, centerX, centerY - size * 0.015f, titlePaint)
-        val hint = if (confirmed) confirmedHint() else when (snapshot.phase) {
-            HoldGestureState.Phase.IDLE -> "2.5 SECONDS"
-            HoldGestureState.Phase.TOUCH_HOLDING -> {
-                val remainingTenths = ceil((1f - snapshot.progress) * 25f).toInt().coerceAtLeast(0)
-                "${remainingTenths / 10}.${remainingTenths % 10}s · RELEASE CANCELS"
+        val modeWidth = size * if (purpose == Purpose.TRIGGER_TEST) 0.24f else 0.28f
+        val modeHeight = size * 0.072f
+        modeBounds.set(
+            centerX - modeWidth / 2f,
+            height * 0.115f,
+            centerX + modeWidth / 2f,
+            height * 0.115f + modeHeight,
+        )
+        canvas.drawRoundRect(modeBounds, modeHeight / 2f, modeHeight / 2f, modePaint)
+        modeTextPaint.textSize = size * 0.031f
+        canvas.drawText(
+            if (purpose == Purpose.TRIGGER_TEST) "TEST" else "RESET",
+            centerX,
+            modeBounds.centerY() - (modeTextPaint.ascent() + modeTextPaint.descent()) / 2f,
+            modeTextPaint,
+        )
+
+        when {
+            confirmed -> {
+                val title = confirmedTitle()
+                fitText(titlePaint, title, size * 0.078f, size * 0.058f, size * 0.58f)
+                canvas.drawText(title, centerX, centerY - size * 0.012f, titlePaint)
+                hintPaint.textSize = size * 0.040f
+                canvas.drawText(confirmedHint(), centerX, centerY + size * 0.085f, hintPaint)
             }
-            HoldGestureState.Phase.ACCESSIBILITY_HOLDING -> "ACTIVATE NOW TO CANCEL"
-            HoldGestureState.Phase.ACCESSIBILITY_READY -> "ACTIVATE TO ${actionVerb().uppercase()}"
+            snapshot.phase == HoldGestureState.Phase.IDLE -> {
+                titlePaint.textSize = size * 0.112f
+                canvas.drawText(readyTitle(), centerX, centerY - size * 0.005f, titlePaint)
+                hintPaint.textSize = size * 0.041f
+                canvas.drawText("2.5 SEC TO ${actionVerbShort()}", centerX, centerY + size * 0.095f, hintPaint)
+            }
+            snapshot.phase == HoldGestureState.Phase.ACCESSIBILITY_READY -> {
+                titlePaint.textSize = size * 0.092f
+                canvas.drawText("CONFIRM", centerX, centerY - size * 0.035f, titlePaint)
+                hintPaint.textSize = size * 0.039f
+                canvas.drawText("ACTIVATE TO ${actionVerbShort()}", centerX, centerY + size * 0.075f, hintPaint)
+            }
+            else -> {
+                val title = if (snapshot.phase == HoldGestureState.Phase.TOUCH_HOLDING) "KEEP HOLDING" else "WAIT"
+                fitText(titlePaint, title, size * 0.076f, size * 0.060f, size * 0.68f)
+                canvas.drawText(title, centerX, centerY - size * 0.105f, titlePaint)
+                val remainingTenths = ceil((1f - snapshot.progress) * 25f).toInt().coerceAtLeast(0)
+                val remaining = "${remainingTenths / 10}.${remainingTenths % 10}"
+                numeralPaint.textSize = size * 0.148f
+                canvas.drawText(remaining, centerX, centerY + size * 0.065f, numeralPaint)
+                hintPaint.textSize = size * 0.038f
+                canvas.drawText("RELEASE TO CANCEL", centerX, centerY + size * 0.145f, hintPaint)
+            }
         }
-        canvas.drawText(hint, centerX, centerY + size * 0.075f, hintPaint)
 
         if (gesture.completeTouch(SystemClock.elapsedRealtime())) {
             touchActive = false
@@ -347,13 +404,24 @@ class PanicHoldView @JvmOverloads constructor(
     }
 
     private fun readyTitle(): String = when (purpose) {
-        Purpose.TRIGGER_TEST -> "HOLD TEST"
-        Purpose.RESET_TEST -> "HOLD RESET"
+        Purpose.TRIGGER_TEST -> "HOLD"
+        Purpose.RESET_TEST -> "HOLD"
     }
 
     private fun confirmedTitle(): String = when (purpose) {
         Purpose.TRIGGER_TEST -> "TEST CONFIRMED"
         Purpose.RESET_TEST -> "RESET CONFIRMED"
+    }
+
+    private fun actionVerbShort(): String = when (purpose) {
+        Purpose.TRIGGER_TEST -> "SEND"
+        Purpose.RESET_TEST -> "RESET"
+    }
+
+    private fun fitText(paint: Paint, text: String, preferred: Float, minimum: Float, maxWidth: Float) {
+        paint.textSize = preferred
+        if (paint.measureText(text) <= maxWidth) return
+        paint.textSize = (preferred * maxWidth / paint.measureText(text)).coerceAtLeast(minimum)
     }
 
     companion object {
