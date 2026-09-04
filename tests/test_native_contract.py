@@ -70,6 +70,14 @@ class NativeContractTests(unittest.TestCase):
             "/opendistress.local.properties",
             (WEAR / ".gitignore").read_text().splitlines(),
         )
+        mobile_build = (WEAR / "mobile/build.gradle.kts").read_text()
+        self.assertIn('namespace = "dev.opendistress.mobile"', mobile_build)
+        self.assertIn('applicationId = "dev.opendistress.wear"', mobile_build)
+        watch_version = re.search(r"versionCode = ([0-9_]+)", build)
+        mobile_version = re.search(r"versionCode = ([0-9_]+)", mobile_build)
+        self.assertIsNotNone(watch_version)
+        self.assertIsNotNone(mobile_version)
+        self.assertNotEqual(watch_version.group(1), mobile_version.group(1))
         example = (WEAR / "opendistress.local.properties.example").read_text()
         self.assertNotRegex(example, r"(?i)\b[0-9a-f]{64}\b")
         wear_capabilities = ET.parse(
@@ -151,6 +159,15 @@ class NativeContractTests(unittest.TestCase):
             '-destination "platform=watchOS Simulator,id=${watch_id}"',
             "-enableAddressSanitizer YES",
             "CODE_SIGNING_ALLOWED=NO",
+            "OpenDistress-Android-Setup-debug.apk",
+            "OpenDistress-Pixel-Watch-debug.apk",
+            "opendistress-pixel-watch-install-pair-${{ github.sha }}",
+            "OpenDistress-Android-Setup-release-unsigned.aab",
+            "OpenDistress-Pixel-Watch-release-unsigned.aab",
+            "opendistress-pixel-watch-unsigned-bundles-${{ github.sha }}",
+            "sha256sum *.apk > SHA256SUMS.txt",
+            "sha256sum *.aab > SHA256SUMS.txt",
+            "if-no-files-found: error",
             "archive",
         ):
             self.assertIn(expected, workflow)

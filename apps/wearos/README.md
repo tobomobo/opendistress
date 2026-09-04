@@ -15,6 +15,12 @@ Wi-Fi, or LTE as available.
 
 ## Calm-time setup on Android
 
+This is conceptually similar to Garmin Connect IQ settings, but Wear OS has no
+equivalent vendor-owned settings form for third-party apps. OpenDistress
+therefore ships its own ordinary Android companion, **OpenDistress Setup**. The
+generic Pixel Watch or Wear OS companion app pairs and manages the watch; it
+does not store OpenDistress provider credentials.
+
 The Android app accepts either a Grafana Cloud IRM formatted-webhook URL,
 Pushover credentials, or both. It also stores the optional protected-person
 profile: name, prepared message, home address, children/family information,
@@ -30,6 +36,17 @@ atomically stores it before publishing an ACK containing the exact revision and
 digest. The three user-visible states remain separate: saved on phone, sent to
 the Data Layer queue, and confirmed on watch. A missing DataItem never deletes the committed
 watch configuration; only explicit reset changes incident state.
+
+The intended user flow is:
+
+1. Install OpenDistress on both the Android phone and Pixel Watch.
+2. Keep the paired watch connected, then open **OpenDistress Setup** on the
+   phone.
+3. Enter Grafana, Pushover, or both, plus any optional emergency-card fields.
+4. Choose **Save and send to watch**. This never sends an alert.
+5. Wait for **Confirmed on watch … TEST route ready**. A merely saved or queued
+   state is not ready.
+6. Open OpenDistress on the watch and run a deliberate TEST drill.
 
 The Data Layer setup route works with an Android phone, not an iPhone. No
 provider credential is hardcoded in either APK. When no configuration exists,
@@ -131,6 +148,33 @@ apps/wearos/gradlew --no-daemon -p apps/wearos \
 The watch APK is
 `apps/wearos/app/build/outputs/apk/debug/app-debug.apk`; the phone APK is
 `apps/wearos/mobile/build/outputs/apk/debug/mobile-debug.apk`.
+
+### Install a CI debug pair
+
+Every pull request and `main` build publishes a 14-day GitHub Actions artifact
+named `opendistress-pixel-watch-install-pair-<commit>`. Download and unzip that
+single artifact so the phone and watch packages definitely come from the same
+build and signing key. It contains:
+
+- `OpenDistress-Android-Setup-debug.apk` for the Android phone;
+- `OpenDistress-Pixel-Watch-debug.apk` for the Pixel Watch; and
+- `SHA256SUMS.txt` for integrity checking.
+
+Install the phone APK with Android Studio or `adb install -r`. Enable Developer
+options and Wireless debugging on the Pixel Watch, pair/connect it with `adb`,
+then install the watch APK with `adb -s <watch-address> install -r`. Debug APKs
+from different CI runs must not be mixed: Wear OS Data Layer communication
+requires matching package names and signing certificates on phone and watch.
+
+CI also publishes separately named `unsigned-bundles` containing the two
+release AAB compile outputs. They are evidence that release bundles compile;
+they are deliberately not presented as Play-upload-ready until a protected
+upload-key signing workflow is configured.
+
+For Play Store distribution, both form-factor bundles use
+`dev.opendistress.wear`, distinct version codes, and one Play listing. The user
+installs the phone companion and selects the Pixel Watch as an additional
+device. Google Play then serves the correct bundle to each device.
 
 For Apple Silicon emulator testing, use the signed Wear OS 6 image
 `system-images;android-36;android-wear-signed;arm64-v8a` and the
