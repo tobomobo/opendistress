@@ -215,6 +215,11 @@ class PanicHoldView @JvmOverloads constructor(
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         trackPaint.strokeWidth = stroke
         progressPaint.strokeWidth = stroke
+        progressPaint.color = if (purpose == Purpose.RESET_TEST) {
+            Color.rgb(234, 213, 103)
+        } else {
+            Color.rgb(255, 180, 171)
+        }
         progressBounds.set(
             centerX - ringRadius,
             centerY - ringRadius,
@@ -232,11 +237,6 @@ class PanicHoldView @JvmOverloads constructor(
             purpose == Purpose.RESET_TEST -> Color.rgb(65, 52, 12)
             active -> Color.rgb(103, 25, 33)
             else -> Color.rgb(63, 23, 27)
-        }
-        progressPaint.color = if (purpose == Purpose.RESET_TEST) {
-            Color.rgb(234, 213, 103)
-        } else {
-            Color.rgb(255, 180, 171)
         }
         canvas.drawCircle(centerX, centerY, buttonRadius, buttonPaint)
 
