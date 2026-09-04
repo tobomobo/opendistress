@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: MIT -->
 <resources>
-    <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="BaseAppTheme" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="fontFamily">sans-serif</item>
         <item name="colorPrimary">@color/opendistress_primary</item>
         <item name="colorOnPrimary">@color/opendistress_on_primary</item>
@@ -25,9 +25,12 @@
         <item name="textInputStyle">@style/Widget.OpenDistress.TextInputLayout</item>
         <item name="android:navigationBarColor">@color/opendistress_surface</item>
         <item name="android:statusBarColor">@color/opendistress_surface</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
+    <style name="AppTheme" parent="BaseAppTheme">
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
-        <item name="android:windowActionModeOverlay">true</item>
     </style>
 
     <style name="AppTheme.Starting" parent="AppTheme" />
