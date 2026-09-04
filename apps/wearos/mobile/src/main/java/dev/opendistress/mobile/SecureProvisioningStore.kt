@@ -23,6 +23,14 @@ internal class SecureProvisioningStore private constructor(context: Context) {
     fun snapshot(): ProvisioningState = state
 
     @Synchronized
+    fun recordDrill(evidence: DrillEvidence) {
+        require(state.config?.revision == evidence.revision) { "Setup changed; repeat this drill" }
+        replace(state.copy(drills = state.drills.filterNot {
+            it.watch == evidence.watch && it.provider == evidence.provider
+        } + evidence))
+    }
+
+    @Synchronized
     fun replace(next: ProvisioningState) {
         val plaintext = ProvisioningStateCodec.encode(next)
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {

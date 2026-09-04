@@ -24,6 +24,8 @@ android {
 
 dependencies {
     implementation(project(":shared"))
+    implementation("com.garmin.connectiq:ciq-companion-app-sdk:2.4.0@aar")
+    implementation("com.google.android.gms:play-services-location:21.4.0")
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
     implementation("com.google.android.material:material:1.14.0")
     testImplementation("junit:junit:4.13.2")

@@ -1,10 +1,145 @@
 // SPDX-License-Identifier: MIT
 
 import Toybox.Application.Properties;
+import Toybox.Application.Storage;
 import Toybox.Cryptography;
 import Toybox.Lang;
 import Toybox.Position;
 import Toybox.StringUtil;
+
+module DirectAlertSettings {
+    const STORAGE_KEY = "companion_direct_config_v1";
+    const PROTOCOL = "opendistress.companion.v1";
+    const CONFIG_KEYS = [
+        "protocol", "type", "revision", "grafanaWebhookUrl",
+        "pushoverUserKey", "pushoverApiToken", "protectedPersonName",
+        "customAlertMessage", "homeAddress", "childrenInfo",
+        "personDescription", "backgroundInfo", "responseInstructions",
+        "profilePhotoUrl", "config_digest"
+    ];
+    const VALUE_KEYS = [
+        "grafanaWebhookUrl", "pushoverUserKey", "pushoverApiToken",
+        "protectedPersonName", "customAlertMessage", "homeAddress",
+        "childrenInfo", "personDescription", "backgroundInfo",
+        "responseInstructions", "profilePhotoUrl"
+    ];
+    const VALUE_LIMITS = [512, 30, 30, 40, 240, 120, 150, 150, 180, 180, 512];
+
+    function value(key) {
+        var stored = storedConfig();
+        return stored != null ? stored[key] : Properties.getValue(key);
+    }
+
+    function companionDigest() {
+        var stored = storedConfig();
+        return stored == null ? "" : stored["config_digest"];
+    }
+
+    function storedConfig() {
+        var stored = Storage.getValue(STORAGE_KEY);
+        return validConfig(stored) ? stored : null;
+    }
+
+    function install(message) {
+        if (!validConfig(message)) {
+            return false;
+        }
+        var current = storedConfig();
+        if (current != null) {
+            var currentRevision = current["revision"].toLong();
+            var nextRevision = message["revision"].toLong();
+            if (currentRevision == null || nextRevision == null
+                || nextRevision < currentRevision
+                || (nextRevision == currentRevision
+                    && !OpenDistressProtocol.stringEquals(
+                        current["config_digest"], message["config_digest"]
+                    ))) {
+                return false;
+            }
+        }
+        Storage.setValue(STORAGE_KEY, message);
+        var reloaded = Storage.getValue(STORAGE_KEY);
+        if (!validConfig(reloaded)) {
+            return false;
+        }
+        var reloadedConfig = reloaded as Lang.Dictionary;
+        return OpenDistressProtocol.secureEquals(
+            message["config_digest"], reloadedConfig["config_digest"]
+        );
+    }
+
+    function validConfig(value) {
+        if (!OpenDistressProtocol.hasExactKeys(value, CONFIG_KEYS)
+            || !OpenDistressProtocol.stringEquals(value["protocol"], PROTOCOL)
+            || !OpenDistressProtocol.stringEquals(value["type"], "config")
+            || !validPositiveDecimal(value["revision"])) {
+            return false;
+        }
+        for (var i = 0; i < VALUE_KEYS.size(); i += 1) {
+            var field = value[VALUE_KEYS[i]];
+            if (!(field instanceof Lang.String) || field.length() > VALUE_LIMITS[i]) {
+                return false;
+            }
+        }
+        if (!OpenDistressProtocol.isGrafanaWebhookUrl(value["grafanaWebhookUrl"])
+            && value["grafanaWebhookUrl"].length() > 0) {
+            return false;
+        }
+        var hasPushover = DirectPushoverAdapter.isToken(value["pushoverUserKey"])
+            && DirectPushoverAdapter.isToken(value["pushoverApiToken"]);
+        if ((value["pushoverUserKey"].length() > 0
+                || value["pushoverApiToken"].length() > 0) && !hasPushover) {
+            return false;
+        }
+        if (value["grafanaWebhookUrl"].length() == 0 && !hasPushover) {
+            return false;
+        }
+        return OpenDistressProtocol.isCanonicalDigest(value["config_digest"])
+            && OpenDistressProtocol.secureEquals(
+                value["config_digest"], configDigest(value)
+            );
+    }
+
+    function validPositiveDecimal(value) {
+        if (!(value instanceof Lang.String)
+            || value.length() < 1 || value.length() > 19
+            || (value.find("0") == 0 && value.length() > 1)) {
+            return false;
+        }
+        var chars = value.toCharArray();
+        for (var i = 0; i < chars.size(); i += 1) {
+            if ("0123456789".find(chars[i].toString()) == null) {
+                return false;
+            }
+        }
+        var parsed = value.toLong();
+        return parsed != null && parsed > 0;
+    }
+
+    function configDigest(value) {
+        var canonical = PROTOCOL + "\nrevision=" + value["revision"] + "\n";
+        for (var i = 0; i < VALUE_KEYS.size(); i += 1) {
+            canonical += VALUE_KEYS[i] + "=" + encodedText(value[VALUE_KEYS[i]]) + "\n";
+        }
+        var bytes = StringUtil.convertEncodedString(canonical, {
+            :fromRepresentation => StringUtil.REPRESENTATION_STRING_PLAIN_TEXT,
+            :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY,
+            :encoding => StringUtil.CHAR_ENCODING_UTF8
+        });
+        var hash = new Cryptography.Hash({ :algorithm => Cryptography.HASH_SHA256 });
+        hash.update(bytes);
+        return OpenDistressProtocol.base64Url(hash.digest());
+    }
+
+    function encodedText(value) {
+        var bytes = StringUtil.convertEncodedString(value, {
+            :fromRepresentation => StringUtil.REPRESENTATION_STRING_PLAIN_TEXT,
+            :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY,
+            :encoding => StringUtil.CHAR_ENCODING_UTF8
+        });
+        return OpenDistressProtocol.base64Url(bytes);
+    }
+}
 
 module DirectAlertSafety {
     const GPS_STALE_AFTER_SECONDS = 30;
@@ -91,7 +226,7 @@ module DirectAlertSafety {
 
     function isPossiblyStaleLocation(path, ageSeconds) {
         return !(path instanceof Lang.Number)
-            || path != 1
+            || (path != 1 && path != 3)
             || !(ageSeconds instanceof Lang.Number)
             || ageSeconds < 0
             || ageSeconds > GPS_STALE_AFTER_SECONDS;
@@ -112,7 +247,7 @@ module DirectAlertProfile {
     const PUSHOVER_BACKGROUND_CHARACTERS = 90;
 
     function optionalText(propertyKey, maxLength) {
-        var value = Properties.getValue(propertyKey);
+        var value = DirectAlertSettings.value(propertyKey);
         if (!(value instanceof Lang.String)
             || value.length() < 1
             || value.length() > maxLength) {
@@ -159,7 +294,9 @@ module DirectAlertProfile {
     }
 
     function initialMessage() {
-        return appendSection(TEST_MESSAGE, "VORBEREITETE NACHRICHT", alertMessage());
+        var message = appendSection(TEST_MESSAGE, "REAKTIONSPLAN (NUR UEBUNG)",
+            optionalText("responseInstructions", 180));
+        return appendSection(message, "VORBEREITETE NACHRICHT", alertMessage());
     }
 
     function locationTitle(sequence) {
@@ -168,13 +305,21 @@ module DirectAlertProfile {
     }
 
     function locationSource(path) {
+        if (path == 3) {
+            return "Fused-Standort des Android-Handys";
+        }
         if (path == 2) {
             return "Laufende Garmin-Sportaufzeichnung";
         }
         return path == 1 ? "Live-GPS der Uhr" : "Letzter bekannter Uhrenstandort";
     }
 
-    function locationQuality(quality) {
+    function locationQuality(path, quality) {
+        if (path == 3) {
+            return quality >= 255
+                ? "255 m oder ungenauer (vom Handy gemeldet)"
+                : quality.format("%d") + " m (vom Handy gemeldet)";
+        }
         if (quality == Position.QUALITY_GOOD) {
             return "gut";
         }
@@ -192,7 +337,11 @@ module DirectAlertProfile {
 
     function locationMessage(sequence, path, quality, ageSeconds, mapUrl) {
         var status;
-        if (path != 1) {
+        if (path == 3) {
+            status = DirectAlertSafety.isPossiblyStaleLocation(path, ageSeconds)
+                ? "WARNUNG: Android-Fused-Teststandort ist moeglicherweise veraltet."
+                : "Aktueller Android-Fused-Teststandort.";
+        } else if (path != 1) {
             status = path == 2
                 ? "WARNUNG: Garmin-Sport-GPS hat keinen Fix-Zeitstempel; "
                     + "moeglicherweise veraltet."
@@ -208,7 +357,7 @@ module DirectAlertProfile {
             + "TESTMODUS — KEIN ECHTER NOTFALL\n\n"
             + "GPS-STATUS\n" + status
             + "\nQuelle: " + locationSource(path)
-            + "\nQualitaet: " + locationQuality(quality)
+            + "\nGenauigkeit: " + locationQuality(path, quality)
             + "\n\nGPS-ALTER LAUT UHR\n"
             + (path == 2
                 ? "Nicht verfuegbar; vor " + ageSeconds.format("%d") + " s ausgelesen"
@@ -234,10 +383,10 @@ module DirectAlertProfile {
     function pushoverMessage() {
         var profile = fields();
         var message = TEST_MESSAGE;
+        message = appendClippedSection(message, "REAKTIONSPLAN (NUR UEBUNG)",
+            profile["response_instructions"], PUSHOVER_RESPONSE_CHARACTERS);
         message = appendClippedSection(message, "VORBEREITETE NACHRICHT",
             profile["alert_message"], PUSHOVER_ALERT_MESSAGE_CHARACTERS);
-        message = appendClippedSection(message, "HINWEISE FUER HELFER",
-            profile["response_instructions"], PUSHOVER_RESPONSE_CHARACTERS);
         message = appendClippedSection(message, "PERSON MIT DER UHR",
             profile["person_name"], PUSHOVER_NAME_CHARACTERS);
         message = appendClippedSection(
@@ -248,7 +397,7 @@ module DirectAlertProfile {
         );
         message = appendClippedSection(message, "KINDER / FAMILIE",
             profile["children_info"], PUSHOVER_CHILDREN_CHARACTERS);
-        message = appendClippedSection(message, "HEIMADRESSE",
+        message = appendClippedSection(message, "HEIMADRESSE (NICHT GPS)",
             profile["home_address"], PUSHOVER_ADDRESS_CHARACTERS);
         message = appendClippedSection(message, "HINTERGRUND",
             profile["background_info"], PUSHOVER_BACKGROUND_CHARACTERS);
@@ -264,8 +413,8 @@ module DirectPushoverAdapter {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
     function isConfigured() {
-        return isToken(Properties.getValue("pushoverUserKey"))
-            && isToken(Properties.getValue("pushoverApiToken"));
+        return isToken(DirectAlertSettings.value("pushoverUserKey"))
+            && isToken(DirectAlertSettings.value("pushoverApiToken"));
     }
 
     function isToken(value) {
@@ -283,8 +432,8 @@ module DirectPushoverAdapter {
 
     function configurationFingerprint() as Lang.String {
         return configurationFingerprintFor(
-            Properties.getValue("pushoverUserKey"),
-            Properties.getValue("pushoverApiToken")
+            DirectAlertSettings.value("pushoverUserKey"),
+            DirectAlertSettings.value("pushoverApiToken")
         );
     }
 
@@ -303,8 +452,8 @@ module DirectPushoverAdapter {
 
     function initialParameters(event, now) {
         var parameters = {
-            "token" => Properties.getValue("pushoverApiToken"),
-            "user" => Properties.getValue("pushoverUserKey"),
+            "token" => DirectAlertSettings.value("pushoverApiToken"),
+            "user" => DirectAlertSettings.value("pushoverUserKey"),
             "title" => DirectAlertProfile.personalizedTitle(DirectAlertProfile.TEST_TITLE),
             "message" => DirectAlertProfile.pushoverMessage(),
             "priority" => "2",
@@ -325,8 +474,8 @@ module DirectPushoverAdapter {
             ageSeconds
         );
         return {
-            "token" => Properties.getValue("pushoverApiToken"),
-            "user" => Properties.getValue("pushoverUserKey"),
+            "token" => DirectAlertSettings.value("pushoverApiToken"),
+            "user" => DirectAlertSettings.value("pushoverUserKey"),
             "title" => DirectAlertProfile.personalizedTitle(
                 DirectAlertProfile.locationTitle(sequence)
             ),
@@ -351,12 +500,12 @@ module DirectPushoverAdapter {
 module DirectGrafanaAdapter {
     function isConfigured() {
         return OpenDistressProtocol.isGrafanaWebhookUrl(
-            Properties.getValue("grafanaWebhookUrl")
+            DirectAlertSettings.value("grafanaWebhookUrl")
         );
     }
 
     function endpoint() {
-        return Properties.getValue("grafanaWebhookUrl");
+        return DirectAlertSettings.value("grafanaWebhookUrl");
     }
 
     function configurationFingerprint() as Lang.String {
@@ -421,8 +570,11 @@ module DirectGrafanaAdapter {
         }
         payload["gps_fix_kind"] = path == 2
             ? "active_activity"
-            : (path == 1 ? "live_callback" : "last_known");
-        payload["gps_quality"] = DirectAlertProfile.locationQuality(quality);
+            : (path == 3 ? "phone_fused" : (path == 1 ? "live_callback" : "last_known"));
+        payload["gps_quality"] = DirectAlertProfile.locationQuality(path, quality);
+        if (path == 3) {
+            payload["gps_accuracy_meters"] = quality;
+        }
         payload["gps_may_be_stale"] = DirectAlertSafety.isPossiblyStaleLocation(
             path,
             ageSeconds
@@ -556,7 +708,7 @@ function directProviderSafetyTransitions(logger) {
         + "TESTMODUS — KEIN ECHTER NOTFALL\n\n"
         + "GPS-STATUS\nAktueller Garmin-GPS-Teststandort."
         + "\nQuelle: Live-GPS der Uhr"
-        + "\nQualitaet: gut\n\n"
+        + "\nGenauigkeit: gut\n\n"
         + "GPS-ALTER LAUT UHR\n5 s\n\n"
         + "KARTE\nhttps://maps.google.com/?q=1,2";
     if (!OpenDistressProtocol.stringEquals(
@@ -583,5 +735,63 @@ function directProviderSafetyTransitions(logger) {
         logger.error("Pushover profile clipping boundary failed");
         return false;
     }
+    return true;
+}
+
+(:test)
+function companionConfigAndPhoneLocationVectors(logger) {
+    var config = {
+        "protocol" => "opendistress.companion.v1",
+        "type" => "config",
+        "revision" => "42",
+        "grafanaWebhookUrl" => "https://tenant.grafana.net/oncall/"
+            + "integrations/v1/formatted_webhook/"
+            + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/",
+        "pushoverUserKey" => "",
+        "pushoverApiToken" => "",
+        "protectedPersonName" => "Alex",
+        "customAlertMessage" => "Line one\nLine two",
+        "homeAddress" => "Example 1",
+        "childrenInfo" => "",
+        "personDescription" => "Blue coat",
+        "backgroundInfo" => "",
+        "responseInstructions" => "Call trusted contact",
+        "profilePhotoUrl" => "",
+        "config_digest" => "PtnZRIA3HR75P-8pDXDc6jOBDDG2q9kd_kTMUU6qjAs"
+    };
+    Storage.deleteValue(DirectAlertSettings.STORAGE_KEY);
+    if (!DirectAlertSettings.validConfig(config)
+        || !DirectAlertSettings.install(config)
+        || !OpenDistressProtocol.stringEquals(
+            DirectAlertSettings.value("protectedPersonName"), "Alex"
+        )) {
+        logger.error("Companion configuration vector was not stored canonically");
+        Storage.deleteValue(DirectAlertSettings.STORAGE_KEY);
+        return false;
+    }
+    config["protectedPersonName"] = "Mallory";
+    if (DirectAlertSettings.validConfig(config)) {
+        logger.error("Companion configuration digest did not bind the profile");
+        Storage.deleteValue(DirectAlertSettings.STORAGE_KEY);
+        return false;
+    }
+    var record = OpenDistressProtocol.directPhoneLocationRecord(
+        101, 482081740, 163738190, 4
+    );
+    if (record[15] != 3 || record[14] != 4
+        || record.decodeNumber(Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2, :endianness => Lang.ENDIAN_BIG
+        }) != 101
+        || !OpenDistressProtocol.stringEquals(
+            DirectAlertProfile.locationSource(3),
+            "Fused-Standort des Android-Handys"
+        )
+        || DirectAlertSafety.isPossiblyStaleLocation(3, 30)
+        || !DirectAlertSafety.isPossiblyStaleLocation(3, 31)) {
+        logger.error("Phone location direct-TEST record was not source-bound");
+        Storage.deleteValue(DirectAlertSettings.STORAGE_KEY);
+        return false;
+    }
+    Storage.deleteValue(DirectAlertSettings.STORAGE_KEY);
     return true;
 }

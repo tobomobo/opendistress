@@ -10,7 +10,7 @@ and a bounded relay-free direct-provider TEST path:
 - immediate phone/default-path submission plus one best-effort Wi-Fi check and
   immutable retry when Garmin reports the phone path unavailable.
 - independent direct Grafana Cloud IRM formatted-webhook and Pushover emergency
-  TEST adapters using phone-editable app settings;
+  TEST adapters using Connect IQ settings or the optional Android companion;
 - a bounded, explicitly privacy-relaxed direct-GPS drill after provider
   acceptance.
 
@@ -85,6 +85,16 @@ bounded number of times, and resumed when the app is reopened. MENU or the
 24-hour expiry stops positioning and scrubs local coordinate records while
 retaining the provider-acceptance cover until MENU resets it.
 
+When the owner enables **Garmin phone location assist** in the optional Android
+OpenDistress Setup app, the watch also asks for one high-accuracy fused Android
+candidate after provider acceptance. The candidate must match the active event
+and stored companion-config digest and be real, post-acceptance, unexpired,
+in-range, and within the enforced accuracy bound. It is never averaged with
+watch GPS: it is sent as a separately labelled source with age and rounded
+metre accuracy through the same watch-owned sequence. If another location is
+being delivered, the candidate waits in memory for that slot; phone failure or
+absence never blocks watch GPS.
+
 If neither an activity location nor a last-known snapshot exists at acceptance,
 the cover retries both the synchronous snapshot and the continuous positioning
 request every 10 seconds for the first five minutes, then once per minute. A
@@ -125,6 +135,30 @@ Grafana OSS OnCall is archived and is not the supported receiver path here.
 Leave Grafana's optional **Require a Grafana service account token** switch off
 for this beta: the current watch setting contains the generated webhook URL but
 does not provision a separate `Authorization` bearer token.
+
+### Optional shared Android setup
+
+The Android **OpenDistress Setup** app can store one provider/profile setup
+under Android Keystore and send it to both Wear OS and Garmin. Garmin requires
+the Garmin Connect Android app, a connected supported watch, and this Connect
+IQ app installed from the Store/beta listing. **Save and send to watches** does
+not trigger an alert. The Garmin readiness card becomes ready only after the
+watch validates, stores, and acknowledges the exact configuration revision and
+SHA-256 digest.
+
+Garmin has acknowledged Connect IQ issue `CIQQA-4631` against Garmin Connect
+5.27.3: phone-to-watch messages work, but watch-to-phone app messages may be
+dropped. OpenDistress therefore does not enable the SDK's affected binder mode.
+After sending setup, confirm `READY TEST` on the watch itself; the companion ACK
+and phone-location callback remain best effort until the Garmin regression is
+fixed and physically retested.
+
+This is a TEST convenience path, not encrypted LIVE enrollment. Garmin Connect
+carries the configuration and therefore remains in the same plaintext trust
+boundary as normal Connect IQ settings. The validated companion configuration
+is authoritative while present; without it, the existing Connect IQ Properties
+settings remain the fallback. The companion never creates an alert and the
+watch's provider request does not depend on the phone after setup.
 
 Install the Beta/App-Store artifact, then edit the route credentials, optional
 **Protected person name**, and optional **Prepared alert and response plan**.

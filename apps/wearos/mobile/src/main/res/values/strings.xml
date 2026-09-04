@@ -3,10 +3,10 @@
 <resources>
     <string name="app_name">OpenDistress Setup</string>
     <string name="app_bar_title">OpenDistress</string>
-    <string name="app_bar_subtitle">Pixel Watch setup</string>
+    <string name="app_bar_subtitle">Watch setup</string>
     <string name="storage_authentication_failed">Stored setup could not be authenticated — nothing was changed</string>
     <string name="setup_eyebrow">TEST SETUP</string>
-    <string name="setup_title">Prepare your Pixel Watch</string>
+    <string name="setup_title">Prepare your watches</string>
     <string name="setup_explanation">Configure this once in calm conditions. Saving setup never triggers an alert.</string>
     <string name="delivery_title">Alert delivery</string>
     <string name="delivery_explanation">Configure Grafana, Pushover, or both. The watch uses the first provider that accepts the TEST.</string>
@@ -14,7 +14,7 @@
     <string name="pushover_user_key">Pushover user/group key</string>
     <string name="pushover_api_token">Pushover application API token</string>
     <string name="emergency_card">Emergency profile</string>
-    <string name="emergency_card_explanation">Optional information included with the direct-provider alert. Add only details you want responders to receive.</string>
+    <string name="emergency_card_explanation">Stored encrypted on this phone and copied to your watches when you save. Garmin setup passes through Garmin Connect. During a TEST, selected providers receive these details in readable form. Police are not contacted automatically.</string>
     <string name="protected_person_name">Protected person name</string>
     <string name="prepared_alert_message">Prepared alert message</string>
     <string name="home_address">Home address</string>
@@ -23,11 +23,15 @@
     <string name="background_information">Relevant background</string>
     <string name="response_instructions">Responder instructions</string>
     <string name="profile_photo_url">HTTPS profile photo URL</string>
-    <string name="save_and_send">Save and send to watch</string>
+    <string name="save_and_send">Save and send to watches</string>
     <string name="retry_sync">Retry watch sync</string>
     <string name="watch_readiness">Watch readiness</string>
+    <string name="pixel_watch_label">PIXEL WATCH / WEAR OS</string>
+    <string name="garmin_watch_label">GARMIN</string>
+    <string name="phone_location_assist">Garmin phone location assist</string>
+    <string name="phone_location_explanation">After a confirmed Garmin TEST alert, the phone may return one fresh fused-location candidate when Garmin Connect supports watch-to-phone messages. Watch GPS stays independent.</string>
     <string name="watch_ready">Ready for a TEST</string>
     <string name="watch_waiting">Waiting for your watch</string>
     <string name="watch_attention">Setup needs attention</string>
-    <string name="readiness_explanation">Ready means the watch has confirmed this configuration. Provider acceptance and receiver delivery remain separate facts.</string>
+    <string name="readiness_explanation">Each ready status means that specific watch confirmed this configuration. Provider acceptance and receiver delivery remain separate facts.</string>
 </resources>

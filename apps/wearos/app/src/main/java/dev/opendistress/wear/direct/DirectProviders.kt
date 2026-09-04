@@ -107,15 +107,16 @@ internal object DirectAlertText {
         if (profile.personName.isEmpty()) base else "$base — ${profile.personName}"
 
     fun initialMessage(profile: DirectProfile): String =
-        section(TEST_MESSAGE, "VORBEREITETE NACHRICHT", profile.alertMessage)
+        section(section(TEST_MESSAGE, "REAKTIONSPLAN (NUR UEBUNG)", profile.responseInstructions),
+            "VORBEREITETE NACHRICHT", profile.alertMessage)
 
     fun pushoverMessage(profile: DirectProfile): String {
-        var message = initialMessage(profile)
-        message = section(message, "REAKTIONSPLAN", clipped(profile.responseInstructions, 170))
+        var message = section(TEST_MESSAGE, "REAKTIONSPLAN (NUR UEBUNG)", clipped(profile.responseInstructions, 170))
+        message = section(message, "VORBEREITETE NACHRICHT", clipped(profile.alertMessage, 160))
         message = section(message, "GESCHUETZTE PERSON", clipped(profile.personName, 40))
         message = section(message, "PERSONENBESCHREIBUNG", clipped(profile.personDescription, 100))
         message = section(message, "KINDER / FAMILIE", clipped(profile.childrenInfo, 100))
-        message = section(message, "HEIMADRESSE", clipped(profile.homeAddress, 100))
+        message = section(message, "HEIMADRESSE (NICHT GPS)", clipped(profile.homeAddress, 100))
         message = section(message, "HINTERGRUND", clipped(profile.backgroundInfo, 90))
         return if (message.length <= 1_024) message else TEST_MESSAGE
     }

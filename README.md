@@ -46,7 +46,9 @@ there is no compatibility promise for pre-release builds.
 - Native Kotlin Wear OS and Swift watchOS apps using their platform crypto,
   persistence, HTTPS, location, feedback, and accessibility APIs. Wear OS now
   includes an Android setup app that provisions direct TEST routes and the
-  emergency card without hardcoded credentials.
+  emergency card without hardcoded credentials. The same optional Android app
+  can provision Garmin TEST settings and offer a post-acceptance fused
+  phone-location candidate.
 - Frozen v1/v2 schemas and cross-runtime public vectors in
   [`protocol/`](protocol/).
 
@@ -57,7 +59,8 @@ and hardware testing.
 
 The relay-free Garmin path is deliberately a bounded TEST proof of concept. It
 sends a clearly marked TEST alert directly to a phone-configured Grafana Cloud
-IRM formatted webhook, Pushover, or both. Phone-editable settings can add an
+IRM formatted webhook, Pushover, or both. Garmin settings or the optional
+Android companion can add an
 optional display name, a prepared alert message, and a provider-neutral
 emergency card containing a response plan, home address, children/family
 information, person description, background, and an HTTPS photo URL. Separate
@@ -101,6 +104,28 @@ Simulator or mock coordinates never count as physical GPS evidence. Grafana's in
 is useful receiver evidence but is not yet returned to or displayed by the
 watch.
 
+The optional Android companion stores the provider-neutral setup once under
+Android Keystore and shows separate readiness states for Wear OS and Garmin.
+Wear OS keeps its RSA-wrapped Data Layer provisioning. Garmin uses the official
+Connect IQ Mobile SDK through Garmin Connect, validates an exact versioned
+configuration digest on the watch, stores the complete TEST setup, and returns
+a matching confirmation. This is not the Wear OS end-to-end encrypted
+provisioning channel; it has the same privacy-relaxed Garmin trust boundary as
+Connect IQ settings.
+
+If the owner separately enables precise phone location, an already accepted
+Garmin direct TEST may request one fresh Android fused candidate. The watch
+rejects mock, pre-acceptance, expired, mismatched, out-of-range, or excessively
+inaccurate samples; it keeps ownership of the sequence and provider requests
+and labels an accepted candidate with phone source, age, and metre accuracy.
+Phone absence, permission denial, OS throttling, or transfer failure never
+blocks the alert or watch GPS. This remains plaintext direct-TEST location, not
+encrypted LIVE v2. Garmin has acknowledged a current Garmin Connect 5.27.3
+Android regression that can drop watch-to-phone Connect IQ messages; while it
+persists, setup can still travel phone-to-watch but the automatic ACK and phone
+location request may not return. Confirm `READY TEST` on the watch and keep
+phone-assisted GPS classified as unverified best effort.
+
 The Wear OS / Pixel Watch beta implements the same deliberate 2.5-second TEST
 hold, direct Grafana/Pushover routes, emergency card, provider-accepted analog
 screen, explicit reset, and post-acceptance location drill. Its Android setup
@@ -117,6 +142,10 @@ location access is added and approved. Android provisioning, provider acceptance
 and physical Pixel Watch behavior remain separate evidence gates.
 
 ## Run host checks
+
+The Android companion includes a saved profile preview and guided physical
+drill with revision-bound, owner-reported test records. See
+[`docs/preparation.md`](docs/preparation.md) for the workflow and evidence limits.
 
 Python 3.11+ and Node 22 are the host requirements:
 

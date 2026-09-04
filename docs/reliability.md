@@ -73,6 +73,19 @@ window. A reboot can recover stored network work, but high-rate fused-location
 callbacks resume only after the app is opened under the current permission
 model.
 
+Garmin companion configuration has separate evidence states: encrypted local
+phone storage, Mobile SDK transfer success, and watch ACK of the exact revision
+and digest. Only the last is displayed as ready. Optional phone location is
+requested only after the watch has persisted provider acceptance; failure,
+permission denial, background throttling, or no fix leaves the independent
+watch alert and GPS loop untouched. Simulator tests do not establish physical
+Garmin Connect, BLE, Android background, or real fused-location reliability.
+Garmin's acknowledged `CIQQA-4631` regression on Garmin Connect 5.27.3 can drop
+the watch-returned ACK and location request while phone-to-watch setup still
+succeeds. Until a later Garmin Connect version passes the physical rows, the
+owner must confirm `READY TEST` on the watch and phone-assisted location remains
+unverified best effort.
+
 While an incident is active in the foreground, the client uses the existing
 location cadence to issue a signed, read-only status query. Only a strictly
 verified matching `resolved` or `expired` response stops acquisition;

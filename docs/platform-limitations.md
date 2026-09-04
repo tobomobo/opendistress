@@ -35,6 +35,12 @@
   that URL as an image; Pushover can only expose it as a supplementary link
   unless the sender uploads image bytes. Garmin, each provider, and the image
   host remain in that privacy boundary.
+- The optional Android OpenDistress Setup app can also provision the Garmin
+  TEST configuration through Garmin's official Mobile SDK. Garmin Connect must
+  be installed, the watch connected, and the OpenDistress Connect IQ app
+  installed. The watch verifies and acknowledges the exact revision and digest,
+  but Garmin Connect still carries the plaintext TEST configuration; this is
+  not the RSA-wrapped Wear OS provisioning channel.
 - The public communications API does not let an app select BLE/phone versus
   watch Wi-Fi for a normal web request. The app submits immediately, then on a
   specific unavailable/timeout phone result asks Garmin once whether a saved
@@ -77,6 +83,19 @@
   than 30 seconds receive the same warning. A small reported age still does not
   independently prove spatial freshness. Neither simulator nor mock GPS is
   accepted as physical reliability evidence.
+  With explicit precise-location permission, the Android companion can return
+  one post-acceptance high-accuracy fused candidate. It may incorporate GPS,
+  Wi-Fi, mobile, and other Android signals, but the app cannot demand a specific
+  source or guarantee a fresh indoor fix. Android background throttling,
+  process death, permission state, Garmin Connect, and BLE can prevent the
+  response. The watch treats it as a separately labelled candidate and always
+  continues its independent GPS path.
+  Garmin has acknowledged Android Connect IQ issue
+  [`CIQQA-4631`](https://forums.garmin.com/developer/connect-iq/i/bug-reports/gcm-5-27-3-android-accepts-communications-transmit-messages-from-watch-app-but-never-delivers-them-to-the-companion-app)
+  for Garmin Connect 5.27.3: phone-to-watch sends work, while watch-to-phone messages may
+  be discarded even in the foreground. That current regression can suppress
+  both the configuration ACK and phone-location request, so neither is a
+  release claim without a physical version-specific retest.
   When no initial location exists, the foreground cover retries the snapshot
   and continuous request every 10 seconds for five minutes and then every
   minute. This improves recovery from a late cache or transient API failure but
