@@ -66,7 +66,13 @@ class PreparationActivity : Activity() {
             if (config.pushoverUserKey != null) add("Pushover")
         }
         text("Watch setup confirmation is separate from a successful drill. Records below are your observations, not automatic delivery or acknowledgement evidence. Repeat after changing setup or the receiving phone.")
-        for (watch in listOf("Garmin", "Wear OS")) {
+        val selected = WatchTargetStore(this).selected()
+        val watches = when (selected) {
+            WatchTarget.GARMIN -> listOf("Garmin")
+            WatchTarget.PIXEL -> listOf("Wear OS")
+            null -> emptyList()
+        }
+        for (watch in watches) {
             for (provider in providers) {
                 val evidence = state.drills.find { it.watch == watch && it.provider == provider }
                 val now = System.currentTimeMillis() / 1000

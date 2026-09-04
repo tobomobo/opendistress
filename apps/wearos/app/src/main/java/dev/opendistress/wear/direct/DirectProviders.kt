@@ -101,7 +101,7 @@ internal object DirectProviderFingerprint {
 internal object DirectAlertText {
     const val TEST_TITLE = "TESTNOTRUF — OPENDISTRESS"
     const val TEST_MESSAGE =
-        "KEIN ECHTER NOTFALL. OpenDistress Testausloesung; keine Hilfeleistung erforderlich."
+        "KEIN ECHTER NOTFALL. NUR UEBUNG: keine Polizei verstaendigen. OpenDistress Testausloesung."
 
     fun personalizedTitle(base: String, profile: DirectProfile): String =
         if (profile.personName.isEmpty()) base else "$base — ${profile.personName}"
@@ -111,7 +111,8 @@ internal object DirectAlertText {
             "VORBEREITETE NACHRICHT", profile.alertMessage)
 
     fun pushoverMessage(profile: DirectProfile): String {
-        var message = section(TEST_MESSAGE, "REAKTIONSPLAN (NUR UEBUNG)", clipped(profile.responseInstructions, 170))
+        // The full response plan can contain expected callback words: never cut it off.
+        var message = section(TEST_MESSAGE, "REAKTIONSPLAN (NUR UEBUNG)", profile.responseInstructions)
         message = section(message, "VORBEREITETE NACHRICHT", clipped(profile.alertMessage, 160))
         message = section(message, "GESCHUETZTE PERSON", clipped(profile.personName, 40))
         message = section(message, "PERSONENBESCHREIBUNG", clipped(profile.personDescription, 100))

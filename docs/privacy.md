@@ -1,5 +1,19 @@
 # Privacy
 
+The Android setup wizard keeps incomplete drafts and optional conversation words
+in the Android-Keystore-encrypted local provisioning store. Drafts are not watch
+configurations. After the owner learns the optional pair and explicitly reviews
+and saves the setup, the words are compiled into the responder briefing and sent
+to the selected watch. Initial direct Grafana/Pushover alerts automatically carry
+them so recipients can follow the briefing without prior lookup. Garmin Connect
+and the selected providers can read them; notifications can expose them. These
+are conversation cues, not wallet or v2 content keys. Local drafts persist until
+replaced, removed in setup, or app data is cleared; app backup is disabled.
+Removal does not revoke provider copies or change an offline watch until synced.
+The setup screen prevents ordinary screenshots/recents capture and hides words
+when backgrounded, but an unlocked phone can reveal them. Correct words are not
+proof of safety and cannot resolve an incident. See [preparation](preparation.md).
+
 No client requests location or performs a network request before deliberate
 activation. V1 TEST contains only opaque IDs, kind, sequence, creation, and
 expiry. V2 encrypts its fixed LIVE template or binary location record before

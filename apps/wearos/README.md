@@ -1,5 +1,13 @@
 # OpenDistress for Android and Wear OS
 
+Phone setup is a six-step wizard: delivery, response plan, optional profile,
+optional private conversation words, watch behavior, and review/sync. Incomplete
+drafts stay encrypted on the phone. After learning/review, explicit save compiles
+the expected conversation words into the briefing; the watch automatically sends
+it with the initial direct-provider alert. Providers can read it. See
+[preparation and physical drills](../../docs/preparation.md) for sharing and
+rehearsal boundaries. The vocabulary notice is bundled in the phone's assets.
+
 The Android project ships two APKs under the same application ID:
 
 - `:app` is the Wear OS / Pixel Watch app.
@@ -14,6 +22,23 @@ the phone: the watch uses Wear OS networking over the paired-phone proxy,
 Wi-Fi, or LTE as available.
 
 ## Calm-time setup on Android
+
+Choose **Garmin** or **Pixel Watch / Wear OS** on first launch. The choice is
+remembered; only that platform is provisioned, including background Wear OS
+publishing. **Change watch** lets you switch later and reuse the saved profile;
+it does not erase the previous watch. Unsaved edits are discarded on switching.
+The selected watch's status appears above the provider/profile sections. Garmin
+connection and configuration confirmation are separate: **Connected · Sync
+pending** is not **Connected · Synced**. The latter still requires a matching
+watch acknowledgement. An unavailable Garmin Connect service never appears synced.
+
+The optional emergency profile is expandable. **Watch vibration feedback** is
+saved with the configuration and only takes effect after watch sync. Existing
+configurations default to on; turning it off requires an updated watch app.
+The Garmin ready screen shows the top START button's position and the existing
+2.5-second hold. A short starting cue is not acceptance; two brief pulses after
+provider acceptance are not receiver delivery. Vibration strength and audibility
+depend on hardware; silence is not guaranteed. No iOS changes are included.
 
 Wear OS has no vendor-owned settings form equivalent to Garmin Connect IQ
 settings, so OpenDistress ships one ordinary Android companion,

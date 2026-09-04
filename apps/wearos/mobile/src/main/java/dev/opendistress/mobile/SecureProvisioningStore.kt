@@ -5,6 +5,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import dev.opendistress.shared.DirectConfig
+import dev.opendistress.shared.DirectConfigAck
 import java.io.ByteArrayInputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -21,6 +23,27 @@ internal class SecureProvisioningStore private constructor(context: Context) {
 
     @Synchronized
     fun snapshot(): ProvisioningState = state
+
+    @Synchronized
+    fun saveDraft(draft: SetupDraft) = replace(state.copy(draft = draft))
+
+    @Synchronized
+    fun saveConfiguration(config: DirectConfig) = replace(state.afterSave(config))
+
+    @Synchronized
+    fun recordAck(ack: DirectConfigAck) {
+        val next = state.afterAck(ack)
+        if (next != state) replace(next)
+    }
+
+    @Synchronized
+    fun recordPublish(config: DirectConfig, watchId: String): Boolean {
+        val current = state.config ?: return false
+        if (current.revision != config.revision || !current.digestSha256().contentEquals(config.digestSha256())) return false
+        // Read/modify/write under one lock: background sync must not roll back a newer phone draft.
+        replace(state.afterPublish(watchId))
+        return true
+    }
 
     @Synchronized
     fun recordDrill(evidence: DrillEvidence) {
@@ -101,7 +124,7 @@ internal class SecureProvisioningStore private constructor(context: Context) {
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val FILE_MAGIC = 0x4f445346 // ODSF
         private const val FILE_VERSION = 1
-        private const val MAX_CIPHERTEXT_BYTES = 16_384
+        private const val MAX_CIPHERTEXT_BYTES = 32_784 // bounded plaintext plus GCM tag
         @Volatile private var instance: SecureProvisioningStore? = null
 
         fun get(context: Context): SecureProvisioningStore = instance ?: synchronized(this) {

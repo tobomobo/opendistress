@@ -393,6 +393,7 @@ internal class DirectTestController(private val activity: Activity) {
     private fun shortId(value: String): String = "ID ${value.take(8)}"
 
     private fun vibrate(effect: Int) {
+        if (configStore.snapshot()?.config?.hapticFeedback == false) return
         activity.getSystemService(Vibrator::class.java)?.takeIf(Vibrator::hasVibrator)?.vibrate(
             VibrationEffect.createPredefined(effect),
         )

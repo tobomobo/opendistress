@@ -27,8 +27,8 @@ android {
         applicationId = "dev.opendistress.wear"
         minSdk = 30
         targetSdk = 36
-        versionCode = 36_010_001
-        versionName = "0.2.0-beta"
+        versionCode = 36_010_003
+        versionName = "0.2.1-beta.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(

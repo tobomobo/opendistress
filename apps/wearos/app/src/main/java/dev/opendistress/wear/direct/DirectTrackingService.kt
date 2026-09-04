@@ -550,6 +550,7 @@ internal class DirectTrackingService : Service() {
     }
 
     private fun vibrateAccepted() {
+        if (EncryptedDirectConfigStore.get(this).snapshot()?.config?.hapticFeedback == false) return
         getSystemService(Vibrator::class.java)?.takeIf(Vibrator::hasVibrator)?.vibrate(
             VibrationEffect.createPredefined(VibrationEffect.EFFECT_DOUBLE_CLICK),
         )

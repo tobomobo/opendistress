@@ -8,6 +8,16 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class GarminCompanionProtocolTest {
+    @Test
+    fun hapticsSettingIsBoundToWatchAcknowledgement() {
+        val quiet = config.copy(hapticFeedback = false)
+        val message = GarminCompanionProtocol.configMessage(quiet)
+        assertEquals(16, message.size)
+        assertEquals("false", message["hapticFeedback"])
+        assertEquals("bCo0Z7jWvlwdkWXW0RTtkcwRZlIRW5OWktIWmFUAgbs", message["config_digest"])
+        assertEquals(GarminCompanionProtocol.digest(quiet), message["config_digest"])
+        require(GarminCompanionProtocol.digest(config) != message["config_digest"])
+    }
     private val config = DirectConfig(
         revision = 42,
         grafanaWebhookUrl =

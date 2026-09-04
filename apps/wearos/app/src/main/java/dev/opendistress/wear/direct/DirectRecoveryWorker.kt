@@ -118,6 +118,7 @@ class DirectRecoveryWorker(
     }
 
     private fun vibrateAccepted() {
+        if (EncryptedDirectConfigStore.get(applicationContext).snapshot()?.config?.hapticFeedback == false) return
         applicationContext.getSystemService(Vibrator::class.java)
             ?.takeIf(Vibrator::hasVibrator)
             ?.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_DOUBLE_CLICK))

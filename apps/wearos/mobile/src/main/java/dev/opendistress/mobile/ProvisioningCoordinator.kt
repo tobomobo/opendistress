@@ -28,11 +28,15 @@ internal class ProvisioningCoordinator(context: Context) {
     fun snapshot(): ProvisioningState = store.snapshot()
 
     fun save(config: DirectConfig, callback: (String) -> Unit) {
-        store.replace(store.snapshot().afterSave(config))
+        store.saveConfiguration(config)
         synchronize(callback)
     }
 
     fun synchronize(callback: (String) -> Unit = {}, force: Boolean = false) {
+        if (WatchTargetStore(appContext).selected() != WatchTarget.PIXEL) {
+            callback("Saved securely on phone")
+            return
+        }
         val state = store.snapshot()
         val config = state.config
         if (config == null) {
@@ -129,6 +133,7 @@ internal class ProvisioningCoordinator(context: Context) {
         callback: (String) -> Unit,
     ) {
         val announcement = target.announcement
+        if (WatchTargetStore(appContext).selected() != WatchTarget.PIXEL) return
         val envelope = try {
             ProvisioningCrypto.seal(config, announcement)
         } catch (_: Exception) {
@@ -138,11 +143,7 @@ internal class ProvisioningCoordinator(context: Context) {
         val request = configRequest(config, announcement, envelope.canonicalBytes())
         dataClient.putDataItem(request)
             .addOnSuccessListener {
-                val current = store.snapshot()
-                if (current.config?.revision == config.revision &&
-                    current.config.digestSha256().contentEquals(config.digestSha256())
-                ) {
-                    store.replace(current.afterPublish(announcement.watchId))
+                if (store.recordPublish(config, announcement.watchId)) {
                     callback(statusDescription(store.snapshot()))
                 } else {
                     synchronize(callback)
@@ -181,6 +182,7 @@ internal class ProvisioningCoordinator(context: Context) {
     }
 
     private fun synchronizeBlocking(force: Boolean) {
+        if (WatchTargetStore(appContext).selected() != WatchTarget.PIXEL) return
         val state = store.snapshot()
         val config = state.config ?: return
         runCatching { Tasks.await(dataClient.putDataItem(watchKeyRequest())) }
@@ -210,6 +212,7 @@ internal class ProvisioningCoordinator(context: Context) {
     }
 
     private fun publishBlocking(config: DirectConfig, target: SourcedWatchAnnouncement) {
+        if (WatchTargetStore(appContext).selected() != WatchTarget.PIXEL) return
         val envelope = runCatching { ProvisioningCrypto.seal(config, target.announcement) }.getOrNull() ?: return
         val request = configRequest(config, target.announcement, envelope.canonicalBytes())
         try {
@@ -217,12 +220,7 @@ internal class ProvisioningCoordinator(context: Context) {
         } catch (_: Exception) {
             return
         }
-        val current = store.snapshot()
-        if (current.config?.revision == config.revision &&
-            current.config.digestSha256().contentEquals(config.digestSha256())
-        ) {
-            store.replace(current.afterPublish(target.announcement.watchId))
-        } else {
+        if (!store.recordPublish(config, target.announcement.watchId)) {
             synchronizeBlocking(force = false)
         }
     }
@@ -238,9 +236,7 @@ internal class ProvisioningCoordinator(context: Context) {
             DirectConfigAck.fromCanonicalBytes(payload)
         }.getOrNull() ?: return
         if (ack.watchId != pathWatchId) return
-        val before = store.snapshot()
-        val after = before.afterAck(ack)
-        if (after != before) store.replace(after)
+        store.recordAck(ack)
     }
 
     private fun shortWatchId(value: String?): String =

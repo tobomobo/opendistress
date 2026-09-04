@@ -53,6 +53,7 @@ internal data class ProvisioningState(
     val pending: PendingProvisioning? = null,
     val confirmed: ConfirmedProvisioning? = null,
     val drills: List<DrillEvidence> = emptyList(),
+    val draft: SetupDraft? = null,
 ) {
     fun afterSave(next: DirectConfig): ProvisioningState = copy(
         config = next,
@@ -83,8 +84,8 @@ internal data class ProvisioningState(
 
 internal object ProvisioningStateCodec {
     private const val MAGIC = 0x4f445053 // ODPS
-    private const val VERSION = 2
-    private const val MAX_BYTES = 16_384
+    private const val VERSION = 3
+    private const val MAX_BYTES = 32_768
 
     fun encode(state: ProvisioningState): ByteArray {
         val output = ByteArrayOutputStream()
@@ -107,6 +108,7 @@ internal object ProvisioningStateCodec {
                 data.writeUTF(it.provider)
                 data.writeLong(it.recordedAt)
             }
+            data.writeOptionalBytes(state.draft?.encode())
         }
         return output.toByteArray().also { require(it.size in 1..MAX_BYTES) }
     }
@@ -131,10 +133,12 @@ internal object ProvisioningStateCodec {
                 require(count in 0..4)
                 List(count) { DrillEvidence(data.readLong(), data.readUTF(), data.readUTF(), data.readLong()) }
             } else emptyList()
+            val draft = if (version >= 3) data.readOptionalBytes()?.let(SetupDraft::decode) else null
             require(raw.available() == 0)
             ProvisioningState(
                 config = config,
                 drills = drills,
+                draft = draft,
                 pending = if (pendingRevision == 0L && pendingDigest == null && pendingWatchId == null) {
                     null
                 } else {

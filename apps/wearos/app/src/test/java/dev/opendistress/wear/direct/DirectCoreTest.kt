@@ -27,11 +27,24 @@ class DirectCoreTest {
         val message = decodeForm(DirectPushoverAdapter.trigger(full, INCIDENT_ID, 1000, 1900).body)
             .getValue("message")
         assertTrue(message.length <= 1024)
-        assertTrue(message.contains("R".repeat(167)))
+        assertTrue(message.contains("R".repeat(180)))
         assertTrue(message.contains("HEIMADRESSE (NICHT GPS)"))
         assertTrue(message.contains("H".repeat(97)))
         assertTrue(message.indexOf("REAKTIONSPLAN") < message.indexOf("VORBEREITETE NACHRICHT"))
         assertTrue(DirectAlertText.initialMessage(DirectProfile.from(full)).contains(full.responseInstructions))
+    }
+
+    @Test
+    fun callbackWordsAtTheEndOfTheMaximumBriefingSurviveBothProviders() {
+        val words = "Expected: abstract strategy"
+        val briefing = "R".repeat(180 - words.length - 2) + "\n\n" + words
+        val config = config().copy(responseInstructions = briefing)
+        val pushover = decodeForm(DirectPushoverAdapter.trigger(config, INCIDENT_ID, 1000, 1900).body).getValue("message")
+        assertTrue(pushover.contains(briefing))
+        assertTrue(pushover.startsWith(DirectAlertText.TEST_MESSAGE))
+        assertTrue(pushover.contains("keine Polizei verstaendigen"))
+        assertTrue(DirectAlertText.initialMessage(DirectProfile.from(config)).contains(briefing))
+        assertTrue(DirectGrafanaAdapter.trigger(config, INCIDENT_ID, 1000, 1900).body.contains(words))
     }
 
     @Test

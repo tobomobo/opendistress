@@ -35,6 +35,11 @@ module DirectAlertSettings {
         return stored == null ? "" : stored["config_digest"];
     }
 
+    function hapticsEnabled() {
+        var stored = storedConfig();
+        return stored == null || !stored.hasKey("hapticFeedback");
+    }
+
     function storedConfig() {
         var stored = Storage.getValue(STORAGE_KEY);
         return validConfig(stored) ? stored : null;
@@ -69,7 +74,15 @@ module DirectAlertSettings {
     }
 
     function validConfig(value) {
-        if (!OpenDistressProtocol.hasExactKeys(value, CONFIG_KEYS)
+        var keys = CONFIG_KEYS;
+        if (value instanceof Lang.Dictionary && value.hasKey("hapticFeedback")) {
+            if (!OpenDistressProtocol.stringEquals(value["hapticFeedback"], "false")) {
+                return false;
+            }
+            keys = CONFIG_KEYS.slice(0, CONFIG_KEYS.size());
+            keys.add("hapticFeedback");
+        }
+        if (!OpenDistressProtocol.hasExactKeys(value, keys)
             || !OpenDistressProtocol.stringEquals(value["protocol"], PROTOCOL)
             || !OpenDistressProtocol.stringEquals(value["type"], "config")
             || !validPositiveDecimal(value["revision"])) {
@@ -120,6 +133,9 @@ module DirectAlertSettings {
         var canonical = PROTOCOL + "\nrevision=" + value["revision"] + "\n";
         for (var i = 0; i < VALUE_KEYS.size(); i += 1) {
             canonical += VALUE_KEYS[i] + "=" + encodedText(value[VALUE_KEYS[i]]) + "\n";
+        }
+        if (value.hasKey("hapticFeedback")) {
+            canonical += "hapticFeedback=" + encodedText(value["hapticFeedback"]) + "\n";
         }
         var bytes = StringUtil.convertEncodedString(canonical, {
             :fromRepresentation => StringUtil.REPRESENTATION_STRING_PLAIN_TEXT,
@@ -235,11 +251,11 @@ module DirectAlertSafety {
 
 module DirectAlertProfile {
     const TEST_MESSAGE =
-        "KEIN ECHTER NOTFALL. OpenDistress Testausloesung; keine Hilfeleistung erforderlich.";
+        "KEIN ECHTER NOTFALL. NUR UEBUNG: keine Polizei verstaendigen. OpenDistress Testausloesung.";
     const TEST_TITLE = "TESTNOTRUF — OPENDISTRESS";
     const PUSHOVER_MAX_MESSAGE_CHARACTERS = 1024;
     const PUSHOVER_ALERT_MESSAGE_CHARACTERS = 160;
-    const PUSHOVER_RESPONSE_CHARACTERS = 170;
+    const PUSHOVER_RESPONSE_CHARACTERS = 180;
     const PUSHOVER_NAME_CHARACTERS = 40;
     const PUSHOVER_DESCRIPTION_CHARACTERS = 100;
     const PUSHOVER_CHILDREN_CHARACTERS = 100;
@@ -735,6 +751,22 @@ function directProviderSafetyTransitions(logger) {
         logger.error("Pushover profile clipping boundary failed");
         return false;
     }
+    // Even words at the end of a maximum-length briefing must survive intact.
+    var callbackWords = "Expected: abstract strategy";
+    var briefing = "";
+    while (briefing.length() < 180 - callbackWords.length() - 2) {
+        briefing += "R";
+    }
+    briefing += "\n\n" + callbackWords;
+    var rendered = DirectAlertProfile.appendClippedSection(
+        DirectAlertProfile.TEST_MESSAGE, "REAKTIONSPLAN (NUR UEBUNG)",
+        briefing, DirectAlertProfile.PUSHOVER_RESPONSE_CHARACTERS
+    );
+    if (rendered.find(briefing) == null
+        || DirectAlertProfile.TEST_MESSAGE.find("keine Polizei verstaendigen") == null) {
+        logger.error("Callback briefing was shortened or lost its TEST warning");
+        return false;
+    }
     return true;
 }
 
@@ -766,6 +798,20 @@ function companionConfigAndPhoneLocationVectors(logger) {
             DirectAlertSettings.value("protectedPersonName"), "Alex"
         )) {
         logger.error("Companion configuration vector was not stored canonically");
+        Storage.deleteValue(DirectAlertSettings.STORAGE_KEY);
+        return false;
+    }
+    config["hapticFeedback"] = "false";
+    if (DirectAlertSettings.validConfig(config)) {
+        logger.error("Haptic preference was not digest-bound");
+        Storage.deleteValue(DirectAlertSettings.STORAGE_KEY);
+        return false;
+    }
+    config["config_digest"] = "bCo0Z7jWvlwdkWXW0RTtkcwRZlIRW5OWktIWmFUAgbs";
+    // A new setting requires a new revision when installed over existing setup.
+    Storage.deleteValue(DirectAlertSettings.STORAGE_KEY);
+    if (!DirectAlertSettings.install(config) || DirectAlertSettings.hapticsEnabled()) {
+        logger.error("Haptic off vector was not stored and applied");
         Storage.deleteValue(DirectAlertSettings.STORAGE_KEY);
         return false;
     }

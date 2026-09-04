@@ -11,6 +11,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DirectConfigTest {
+    @Test
+    fun hapticsOffRoundTripsAndChangesDigestWithoutChangingLegacyDefaults() {
+        val original = fixture()
+        val quiet = original.copy(hapticFeedback = false)
+        assertTrue(DirectConfig.fromCanonicalBytes(original.canonicalBytes()).hapticFeedback)
+        assertEquals(quiet, DirectConfig.fromCanonicalBytes(quiet.canonicalBytes()))
+        assertFalse(original.digestSha256().contentEquals(quiet.digestSha256()))
+        val invalid = quiet.canonicalBytes().also { it[it.lastIndex] = 1 }
+        assertThrows(IllegalArgumentException::class.java) { DirectConfig.fromCanonicalBytes(invalid) }
+    }
     private val grafana =
         "https://tenant.grafana.net/oncall/integrations/v1/formatted_webhook/" + "A".repeat(32) + "/"
 

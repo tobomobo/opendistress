@@ -25,6 +25,7 @@ data class DirectConfig(
     val backgroundInfo: String,
     val responseInstructions: String,
     val profilePhotoUrl: String,
+    val hapticFeedback: Boolean = true,
 ) {
     init {
         validate()
@@ -57,7 +58,8 @@ data class DirectConfig(
         val output = ByteArrayOutputStream()
         DataOutputStream(output).use { data ->
             data.writeInt(MAGIC)
-            data.writeInt(SCHEMA_VERSION)
+            // Keep legacy bytes/digests stable when using the default.
+            data.writeInt(if (hapticFeedback) SCHEMA_VERSION else 2)
             data.writeLong(revision)
             data.writeNullableString(grafanaWebhookUrl)
             data.writeNullableString(pushoverUserKey)
@@ -70,6 +72,7 @@ data class DirectConfig(
             data.writeString(backgroundInfo)
             data.writeString(responseInstructions)
             data.writeString(profilePhotoUrl)
+            if (!hapticFeedback) data.writeBoolean(false)
         }
         return output.toByteArray().also {
             require(it.size <= MAX_CANONICAL_BYTES) { "configuration is too large" }
@@ -91,7 +94,8 @@ data class DirectConfig(
             val input = ByteArrayInputStream(bytes)
             val config = DataInputStream(input).use { data ->
                 require(data.readInt() == MAGIC) { "invalid configuration magic" }
-                require(data.readInt() == SCHEMA_VERSION) { "unsupported configuration schema" }
+                val schema = data.readInt()
+                require(schema == SCHEMA_VERSION || schema == 2) { "unsupported configuration schema" }
                 DirectConfig(
                     revision = data.readLong(),
                     grafanaWebhookUrl = data.readNullableString(),
@@ -105,6 +109,7 @@ data class DirectConfig(
                     backgroundInfo = data.readString(),
                     responseInstructions = data.readString(),
                     profilePhotoUrl = data.readString(),
+                    hapticFeedback = if (schema == 2) data.readBoolean() else true,
                 ).also {
                     require(input.available() == 0) { "trailing configuration data" }
                 }

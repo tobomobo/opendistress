@@ -176,6 +176,17 @@ verifies its SHA-256 digest, writes the whole configuration, and returns an ACK
 bound to the revision and digest. Provider code reads this validated companion
 configuration first and otherwise retains the Connect IQ Properties fallback.
 
+Android setup now persists an explicit Garmin or Pixel Watch destination and
+gates both foreground and background provisioning to it. Garmin device events
+refresh connection evidence independently of the revision/digest ACK. The
+optional `hapticFeedback: "false"` Garmin setup member is appended to the
+canonical value grammar and is included in that ACK's digest; absent means on.
+Unknown values/keys and tampered preferences are rejected. Legacy default-on
+messages remain byte-for-byte compatible. Android's canonical DirectConfig
+uses schema 1 for default-on and schema 2 with a final false Boolean for off;
+both are strictly decoded and re-encoded. Old watch builds must be updated to
+accept off, rather than silently ignoring it. Event protocols v1/v2 are unchanged.
+
 The Garmin provisioning channel is TEST-only and is not claimed as end-to-end
 encrypted: Android Keystore protects the phone copy at rest, but Garmin Connect
 and the paired-device transport remain in the configuration trust boundary. A
@@ -192,7 +203,21 @@ candidate in memory; the watch remains the single sequence and provider-send
 authority. This can improve indoor results but is best effort under Android
 background limits and never gates the alert or watch GPS.
 
-## Blind mailbox boundary
+## Phone preparation drafts
+
+The Android setup wizard's `SetupDraft` is a phone-only model, not part of
+`DirectConfig` or either watch protocol. It retains unfinished fields, wizard
+position, and an optional conversation agreement in the existing encrypted
+provisioning store (codec v3 reads v1/v2). Draft persistence preserves the saved
+config, pending/confirmed provisioning evidence, and drill records. Only explicit
+review/save creates a new configuration revision. The response plan uses the
+existing bounded `responseInstructions` field, compiled with the expected words
+after learning/review confirmation. That saved briefing is deliberately shared
+with the selected watch and direct providers. No new event or watch schema is
+introduced. The nested draft codec v2 reads v1 words but resets its old
+out-of-band-agreement flag instead of interpreting it as new sharing approval.
+
+## Blind mailbox transport
 
 The optional mailbox path wraps the entire v2 event in another fixed-size,
 encrypt-then-MAC capsule. This is separate from the frozen v2 wire endpoint:

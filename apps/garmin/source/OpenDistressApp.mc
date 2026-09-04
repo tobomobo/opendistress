@@ -522,7 +522,7 @@ class OpenDistressView extends WatchUi.View {
             _detail = "Hold top button 2.5 seconds";
         } else {
             _state = "SETUP REQUIRED";
-            _detail = "Connect IQ Store: add webhook or keys";
+            _detail = "Phone setup or\nConnect IQ settings";
         }
     }
 
@@ -984,13 +984,18 @@ class OpenDistressView extends WatchUi.View {
             drawAcceptedStatus(dc);
             return;
         }
+        if (OpenDistressProtocol.stringEquals(_state, "READY — TEST")
+            && OpenDistressProtocol.stringEquals(_mode, "DIRECT_TEST")) {
+            drawReadyScreen(dc);
+            return;
+        }
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
         var width = dc.getWidth();
         var height = dc.getHeight();
         var isRound = width == height;
         var compactRound = isRound && width < 220;
         var safeWidth = (width * (compactRound ? 62 : (isRound ? 76 : 88))) / 100;
-        var safeLeft = compactRound ? (width * 6) / 100 : (width - safeWidth) / 2;
+        var safeLeft = (width - safeWidth) / 2;
         var title = new WatchUi.TextArea({
             :text => _state,
             :color => Graphics.COLOR_WHITE,
@@ -1047,6 +1052,41 @@ class OpenDistressView extends WatchUi.View {
         }
         return "ID " + id.substring(0, 4) + "..."
             + id.substring(id.length() - 4, id.length());
+    }
+
+    // One action, generous round-screen margins. The accepted dial stays text-free.
+    function drawReadyScreen(dc) {
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var safeWidth = (width * 70) / 100;
+        var left = (width - safeWidth) / 2;
+        var labels = ["TEST MODE", _armingAlert ? "Keep holding" : "Ready",
+            _armingAlert ? "Release to cancel" : "Hold START\n2.5 seconds"];
+        var tops = [22, 37, 58];
+        var heights = [12, 18, 25];
+        for (var i = 0; i < labels.size(); i += 1) {
+            var text = new WatchUi.TextArea({
+                :text => labels[i],
+                :color => i == 1 ? Graphics.COLOR_WHITE : Graphics.COLOR_LT_GRAY,
+                :backgroundColor => Graphics.COLOR_BLACK,
+                :font => i == 1
+                    ? [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL, Graphics.FONT_TINY]
+                    : [Graphics.FONT_SMALL, Graphics.FONT_TINY, Graphics.FONT_XTINY],
+                :justification => Graphics.TEXT_JUSTIFY_CENTER,
+                :locX => left, :locY => (height * tops[i]) / 100,
+                :width => safeWidth, :height => (height * heights[i]) / 100
+            });
+            text.draw(dc);
+        }
+        if (_armingAlert) {
+            drawAlertArmProgress(dc);
+        } else if (width == height) {
+            dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_BLACK);
+            dc.setPenWidth(4);
+            dc.drawArc(width / 2, height / 2, (width * 46) / 100,
+                Graphics.ARC_CLOCKWISE, 48, 28);
+            dc.setPenWidth(1);
+        }
     }
 
     function alertArmElapsedMs() {
@@ -1159,6 +1199,13 @@ class OpenDistressView extends WatchUi.View {
         }
         _armingAlert = true;
         _armStartedAtMs = System.getTimer();
+        try {
+            if (DirectAlertSettings.hapticsEnabled() && Attention has :vibrate) {
+                Attention.vibrate([new Attention.VibeProfile(15, 60)]);
+            }
+        } catch (error) {
+            // A cue never gates a deliberate hold.
+        }
         try {
             _retryTimer.stop();
         } catch (error) {
@@ -1417,6 +1464,7 @@ class OpenDistressView extends WatchUi.View {
 
     function confirmDurableTrigger() {
         try {
+            if (!DirectAlertSettings.hapticsEnabled()) { return; }
             if (Attention has :vibrate) {
                 Attention.vibrate([new Attention.VibeProfile(25, 120)]);
             }
@@ -2994,11 +3042,12 @@ class OpenDistressView extends WatchUi.View {
 
     function confirmProviderAcceptance() {
         try {
+            if (!DirectAlertSettings.hapticsEnabled()) { return; }
             if (Attention has :vibrate) {
                 Attention.vibrate([
-                    new Attention.VibeProfile(25, 120),
+                    new Attention.VibeProfile(15, 100),
                     new Attention.VibeProfile(0, 80),
-                    new Attention.VibeProfile(25, 120)
+                    new Attention.VibeProfile(15, 100)
                 ]);
             }
         } catch (error) {

@@ -145,7 +145,9 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("compactRound ? 14 : 18", update)
         self.assertIn("compactRound ? 50 : 47", update)
         self.assertIn("compactRound ? 86 : 80", update)
-        self.assertEqual(update.count("new WatchUi.TextArea"), 3)
+        self.assertEqual(update.count("new WatchUi.TextArea"), 4)
+        self.assertIn("drawReadyScreen(dc)", update)
+        self.assertIn('"Release to cancel"', update)
         self.assertIn("Graphics.FONT_LARGE, Graphics.FONT_MEDIUM", update)
         self.assertIn("Graphics.FONT_SMALL, Graphics.FONT_TINY", update)
         self.assertIn("compactDisplayId(_displayEventId)", update)
@@ -601,7 +603,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("function clippedText(value, maxLength)", profile)
         for constant, value in {
             "PUSHOVER_ALERT_MESSAGE_CHARACTERS": 160,
-            "PUSHOVER_RESPONSE_CHARACTERS": 170,
+            "PUSHOVER_RESPONSE_CHARACTERS": 180,
             "PUSHOVER_NAME_CHARACTERS": 40,
             "PUSHOVER_DESCRIPTION_CHARACTERS": 100,
             "PUSHOVER_CHILDREN_CHARACTERS": 100,
@@ -616,7 +618,7 @@ class GarminContractTests(unittest.TestCase):
             profile.index('appendClippedSection(message, "HINTERGRUND"'),
         )
         maximum_profile_message = (
-            len("KEIN ECHTER NOTFALL. OpenDistress Testausloesung; keine Hilfeleistung erforderlich.")
+            len("KEIN ECHTER NOTFALL. NUR UEBUNG: keine Polizei verstaendigen. OpenDistress Testausloesung.")
             + sum(
                 len(label)
                 for label in (
@@ -629,7 +631,7 @@ class GarminContractTests(unittest.TestCase):
                     "\n\nREAKTIONSPLAN (NUR UEBUNG)\n",
                 )
             )
-            + sum((160, 170, 40, 100, 100, 100, 90))
+            + sum((160, 180, 40, 100, 100, 100, 90))
         )
         self.assertLessEqual(maximum_profile_message, 1024)
 

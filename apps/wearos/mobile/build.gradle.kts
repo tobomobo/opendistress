@@ -12,8 +12,9 @@ android {
         applicationId = "dev.opendistress.wear"
         minSdk = 30
         targetSdk = 36
-        versionCode = 36_010_002
-        versionName = "0.2.0-beta"
+        versionCode = 36_010_004
+        versionName = "0.2.1-beta.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -29,4 +30,6 @@ dependencies {
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
     implementation("com.google.android.material:material:1.14.0")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }

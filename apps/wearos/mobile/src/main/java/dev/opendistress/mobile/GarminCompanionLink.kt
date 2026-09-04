@@ -29,6 +29,9 @@ internal class GarminCompanionLink private constructor(context: Context) {
     private val locationClient = LocationServices.getFusedLocationProviderClient(appContext)
     private var initialized = false
     private var ready = false
+    var connectedWatchName: String? = null
+        private set
+    private var observedDeviceId: Long? = null
     private var currentStatus: GarminLinkStatus =
         GarminLinkStatus.Unavailable("Starting Garmin connection…")
     private var pendingConfig: DirectConfig? = null
@@ -53,6 +56,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
 
     @Synchronized
     fun initialize() {
+        if (WatchTargetStore(appContext).selected() != WatchTarget.GARMIN) return
         if (initialized) return
         initialized = true
         connectIQ.initialize(appContext, false, object : ConnectIQ.ConnectIQListener {
@@ -85,6 +89,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
             override fun onSdkShutDown() {
                 ready = false
                 initialized = false
+                observedDeviceId = null
                 pendingTransfer = null
                 confirmedTransfer = null
                 update(GarminLinkStatus.Unavailable("Garmin connection stopped"))
@@ -102,6 +107,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
     }
 
     fun refresh() {
+        if (WatchTargetStore(appContext).selected() != WatchTarget.GARMIN) return
         if (!ready) return
         val devices = connectedDevices()
         when (devices.size) {
@@ -125,6 +131,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
     }
 
     fun sync(config: DirectConfig) {
+        if (WatchTargetStore(appContext).selected() != WatchTarget.GARMIN) return
         // Re-send on each explicit sync/resume: the same physical watch may
         // have had its app reinstalled since its last acknowledgement.
         confirmedTransfer = null
@@ -152,12 +159,19 @@ internal class GarminCompanionLink private constructor(context: Context) {
 
     private fun connectedDevices(): List<IQDevice> = runCatching {
         connectIQ.knownDevices.filter { connectIQ.getDeviceStatus(it) == IQDevice.IQDeviceStatus.CONNECTED }
+            .also { connectedWatchName = it.singleOrNull()?.friendlyName }
     }.getOrElse {
         update(GarminLinkStatus.Unavailable("Garmin device list is unavailable"))
         emptyList()
     }
 
     private fun checkApplication(device: IQDevice, config: DirectConfig?) {
+        if (observedDeviceId != device.deviceIdentifier) {
+            observedDeviceId = device.deviceIdentifier
+            runCatching {
+                connectIQ.registerForDeviceEvents(device) { _, _ -> refresh() }
+            }.onFailure { observedDeviceId = null }
+        }
         findInstalledApplication(device, 0, config)
     }
 
@@ -199,6 +213,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
     }
 
     private fun sendConfiguration(device: IQDevice, installed: IQApp, config: DirectConfig) {
+        if (WatchTargetStore(appContext).selected() != WatchTarget.GARMIN) return
         val payload = GarminCompanionProtocol.configMessage(config)
         val transfer = GarminSetupBinding(device.deviceIdentifier, installed.applicationId,
             config.revision, GarminCompanionProtocol.digest(config), System.currentTimeMillis() / 1_000)
@@ -323,6 +338,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
         if (Build.VERSION.SDK_INT >= 31) location.isMock else location.isFromMockProvider
 
     private fun update(status: GarminLinkStatus) {
+        if (status is GarminLinkStatus.Unavailable) connectedWatchName = null
         currentStatus = status
         listeners.forEach { it(status) }
     }

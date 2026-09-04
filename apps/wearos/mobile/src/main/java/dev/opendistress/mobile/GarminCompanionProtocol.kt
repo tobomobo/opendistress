@@ -38,7 +38,7 @@ internal object GarminCompanionProtocol {
 
     fun configMessage(config: DirectConfig): Map<String, Any> {
         config.validate()
-        val values = configFields.mapValues { (_, getter) -> getter(config) }
+        val values = values(config)
         return linkedMapOf<String, Any>(
             "protocol" to PROTOCOL,
             "type" to TYPE_CONFIG,
@@ -50,9 +50,14 @@ internal object GarminCompanionProtocol {
     }
 
     fun digest(config: DirectConfig): String {
-        val values = configFields.mapValues { (_, getter) -> getter(config) }
+        val values = values(config)
         return digest(config.revision, values)
     }
+
+    private fun values(config: DirectConfig): Map<String, String> =
+        configFields.mapValues { (_, getter) -> getter(config) }.toMutableMap().apply {
+            if (!config.hapticFeedback) put("hapticFeedback", "false")
+        }
 
     fun parseAck(value: Any?): GarminConfigAck? {
         val map = value.asStringMap() ?: return null

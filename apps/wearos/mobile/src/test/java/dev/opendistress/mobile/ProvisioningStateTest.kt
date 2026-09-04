@@ -28,9 +28,9 @@ class ProvisioningStateTest {
     @Test
     fun oldStateMigratesWithoutClaimingADrill() {
         val state = ProvisioningState(config = fixture(10))
-        val versionTwo = ProvisioningStateCodec.encode(state)
+        val versionThree = ProvisioningStateCodec.encode(state)
         // Version 1 ends before the new drill count; preserve its original layout.
-        val old = versionTwo.copyOf(versionTwo.size - 4)
+        val old = versionThree.copyOf(versionThree.size - 8)
         java.nio.ByteBuffer.wrap(old).putInt(4, 1)
         assertEquals(state, ProvisioningStateCodec.decode(old))
     }
