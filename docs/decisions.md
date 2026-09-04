@@ -368,3 +368,23 @@ and Apple identifiers, internal app/target names, schema IDs, release assets,
 and repository URLs. Existing beta builds are intentionally incompatible and
 their local settings are not migrated. This avoids carrying the discarded
 brand into the first public identity.
+
+## 2026-09-04 — Share calm-time Android setup, not alert authority
+
+One optional Android OpenDistress Setup app now owns the provider-neutral TEST
+configuration for both Wear OS and Garmin. Platform delivery remains native:
+Wear OS uses its RSA-wrapped Data Layer envelope, while Garmin uses the official
+Connect IQ Mobile SDK, a canonical SHA-256 digest, monotonic revision, atomic
+watch storage, and a matching ACK. Garmin Connect remains inside the plaintext
+TEST trust boundary; this adapter is not reused for LIVE keys or described as
+end-to-end encrypted.
+
+The Garmin alert continues to work without the companion after setup. Only
+after direct-provider acceptance may the watch request one high-accuracy fused
+Android location candidate, and only when the owner enabled precise location.
+The candidate is not averaged with watch GPS. It is independently labelled,
+validated, sequenced, and sent by the watch, while missing permission, phone,
+process, fix, or transport is a no-op for the existing watch-owned alert and GPS
+path. An always-on Android location service and background-location permission
+are deferred until physical evidence justifies their battery and Play-policy
+cost.

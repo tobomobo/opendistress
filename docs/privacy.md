@@ -25,6 +25,9 @@ self-hosted instance when that boundary is unacceptable.
 The personal relay-free Garmin beta has one explicit, non-production exception:
 its optional protected-person display name, prepared alert message, and
 emergency-card fields synchronize through Garmin and are stored on the watch.
+They may arrive through Connect IQ settings or the optional Android setup app;
+the latter protects its local copy with Android Keystore but still uses Garmin
+Connect for transfer and is not an end-to-end encrypted enrollment channel.
 The display name appears in TEST titles sent to each selected provider. The
 prepared message is intentionally included in Grafana's mobile message; home
 address, children/family information, person description, background, response
@@ -47,6 +50,14 @@ last-known fix may predate provider acceptance, and a running Garmin activity
 may supply its current fix without being modified; the latter has no Garmin fix
 timestamp and is explicitly marked with unknown age. Age is diagnostic metadata, not proof that a
 coordinate is current.
+When the owner enables Garmin phone location assist, the Android companion may
+also request one fresh fused fix after provider acceptance. Android and Google
+Play services can process that request; Garmin Connect transfers the candidate
+to the watch. The watch rejects mock, pre-acceptance, expired,
+configuration-mismatched, out-of-range, and excessively inaccurate values, then
+labels any provider update with phone source, age, and rounded metre accuracy.
+The candidate is not averaged with watch GPS and is never requested before
+acceptance.
 This is outside TEST v1 and v2, and therefore outside the encrypted location
 guarantee above. Grafana, Pushover, Garmin's settings/network path, and Google
 can observe or retain data within their respective roles and policies. The

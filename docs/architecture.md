@@ -165,6 +165,33 @@ encrypted LIVE-v2 client and cannot clear LIVE state.
 See [`threat-model.md`](threat-model.md), [`privacy.md`](privacy.md), and the
 normative [`../protocol/README.md`](../protocol/README.md).
 
+## Shared Android setup and Garmin adapter
+
+The Android **OpenDistress Setup** application owns one encrypted-at-rest
+`DirectConfig` model. Two native device-link adapters consume it: the Wearable
+Data Layer adapter seals it to a Pixel Watch key, while the Garmin adapter sends
+an exact string-only dictionary through Garmin Connect using the official
+Connect IQ Mobile SDK. The Garmin watch reconstructs a canonical UTF-8 grammar,
+verifies its SHA-256 digest, writes the whole configuration, and returns an ACK
+bound to the revision and digest. Provider code reads this validated companion
+configuration first and otherwise retains the Connect IQ Properties fallback.
+
+The Garmin provisioning channel is TEST-only and is not claimed as end-to-end
+encrypted: Android Keystore protects the phone copy at rest, but Garmin Connect
+and the paired-device transport remain in the configuration trust boundary. A
+changed companion setup changes the existing route fingerprint, so an accepted
+incident pauses rather than silently retargeting location work.
+
+After the watch has persisted direct-provider acceptance, and only when a
+validated companion configuration exists, it may notify the Android adapter.
+With owner-enabled precise-location permission, Android requests one zero-cache
+high-accuracy fused fix and echoes the incident ID and configuration digest.
+The watch validates source, age, bounds, accuracy, expiry, and binding before
+placing it into the existing direct-location send slot. A busy slot defers the
+candidate in memory; the watch remains the single sequence and provider-send
+authority. This can improve indoor results but is best effort under Android
+background limits and never gates the alert or watch GPS.
+
 ## Blind mailbox boundary
 
 The optional mailbox path wraps the entire v2 event in another fixed-size,

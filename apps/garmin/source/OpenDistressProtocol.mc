@@ -667,6 +667,39 @@ module OpenDistressProtocol {
         record[14] = accuracy;
         return record;
     }
+
+    // Direct TEST only: phone coordinates are already scaled integers and the
+    // quality byte carries rounded accuracy metres (255 means 255 m or worse).
+    function directPhoneLocationRecord(captureAt, latitudeE7, longitudeE7, accuracyMeters) {
+        var record = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]b;
+        record[0] = 1;
+        record[1] = 2;
+        record[15] = 3;
+        if (!(captureAt instanceof Lang.Number)
+            || !(latitudeE7 instanceof Lang.Number)
+            || !(longitudeE7 instanceof Lang.Number)
+            || !(accuracyMeters instanceof Lang.Number)
+            || captureAt <= 0 || captureAt > MAX_TIME
+            || latitudeE7 < -900000000 || latitudeE7 > 900000000
+            || longitudeE7 < -1800000000 || longitudeE7 > 1800000000
+            || accuracyMeters < 0 || accuracyMeters > 255) {
+            return record;
+        }
+        record.encodeNumber(captureAt, Lang.NUMBER_FORMAT_UINT32, {
+            :offset => 2,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        record.encodeNumber(latitudeE7, Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 6,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        record.encodeNumber(longitudeE7, Lang.NUMBER_FORMAT_SINT32, {
+            :offset => 10,
+            :endianness => Lang.ENDIAN_BIG
+        });
+        record[14] = accuracyMeters;
+        return record;
+    }
 }
 
 (:test)
