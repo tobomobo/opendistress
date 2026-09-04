@@ -59,16 +59,6 @@ internal class GarminCompanionLink private constructor(context: Context) {
         connectIQ.initialize(appContext, false, object : ConnectIQ.ConnectIQListener {
             override fun onSdkReady() {
                 ready = true
-                runCatching {
-                    // CIQQA-4631 reports that Garmin Connect 5.27.3 never binds
-                    // the SDK service and then suppresses application queries.
-                    // Keep the dynamic listener until binder delivery is fixed
-                    // and physically retested.
-                    connectIQ.registerForAppEvents(applicationEvents)
-                }.onFailure {
-                    update(GarminLinkStatus.Attention("Garmin Connect is available, but app linking failed"))
-                    return
-                }
                 val saved = pendingConfig ?: secureStore.snapshot().config
                 if (preferences.getBoolean(KEY_GARMIN_ENABLED, false) && saved != null) {
                     sync(saved)
@@ -175,6 +165,14 @@ internal class GarminCompanionLink private constructor(context: Context) {
                 device,
                 object : ConnectIQ.IQApplicationInfoListener {
                     override fun onApplicationInfoReceived(installed: IQApp) {
+                        // Non-binder mode requires a device/app registration.
+                        // The listener-only overload registers the binder path.
+                        runCatching {
+                            connectIQ.registerForAppEvents(device, installed, applicationEvents)
+                        }.onFailure {
+                            update(GarminLinkStatus.Attention("Garmin app message registration failed"))
+                            return
+                        }
                         if (config == null) {
                             update(readiness(device, installed))
                         } else {
@@ -299,7 +297,8 @@ internal class GarminCompanionLink private constructor(context: Context) {
             connectIQ.sendMessage(device, installedApp, payload) { _, _, status ->
                 update(
                     if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
-                        GarminLinkStatus.Ready("Phone location candidate sent to ${device.friendlyName}")
+                        // Transport completion is not a configuration ACK.
+                        readiness(device, installedApp)
                     } else {
                         GarminLinkStatus.Attention("Phone location could not reach the Garmin watch")
                     },
