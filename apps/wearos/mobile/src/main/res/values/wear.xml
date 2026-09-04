@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<resources>
+    <string-array name="android_wear_capabilities">
+        <item>opendistress_phone_setup</item>
+    </string-array>
+</resources>

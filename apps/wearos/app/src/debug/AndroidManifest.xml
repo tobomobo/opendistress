@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".direct.DirectDebugSetupReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="dev.opendistress.wear.debug.CONFIGURE" />
+                <action android:name="dev.opendistress.wear.debug.ACCEPTED" />
+                <action android:name="dev.opendistress.wear.debug.RESET" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

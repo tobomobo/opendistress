@@ -1,51 +1,139 @@
 # OpenDistress for Wear OS
 
-This is a standalone Wear OS application: it sends encrypted v2 events
-directly over HTTPS and has no phone companion, tile, or complication. The app
-persists each immutable ciphertext envelope before transmission. It requests
-location only after a live trigger, queues a cached snapshot, then requests one
-fresh fix. While the activity remains in the foreground it persists a follow-up
-schedule: material movement or better quality may queue another fix at the
-30-second, two-minute, then five-minute cadence, doubled at low battery. There
-is no background-execution claim. Before each due follow-up, the foreground app
-posts a freshly signed `/v2/status` query. Only an exact, timely, signed
-`resolved` or `expired` result stops acquisition and atomically archives that
-incident's queued retransmissions as unroutable; `acknowledged`, `active`, and
-failures continue it. Those archived entries are never labeled accepted. A signed HTTP 202 response proves only relay
-durable acceptance. Expired pending state is never silently deleted; the button
-becomes `ARCHIVE EXPIRED — RESULT UNKNOWN`, and that explicit action persists a
-minimal archive marker before allowing another incident.
-The exact expiry second is terminal for new location and status work and makes
-the explicit archive action available. Intake retry of an already-sealed event
-at that instant is a separate relay rule. Any plaintext coordinates retained
-only for material-change comparison are atomically scrubbed at local expiry;
-the encrypted queue and result-unknown recovery remain.
+The Android project ships two APKs under the same application ID:
 
-The project pins Android Gradle Plugin 9.3.2 with built-in Kotlin, Gradle 9.5.0
-in CI, compile/target SDK 35, and Play Services Location 21.4.0. There is no
-checked-in wrapper because no local Gradle installation was available to
-generate the official wrapper artifacts.
+- `:app` is the Wear OS / Pixel Watch app.
+- `:mobile` is the Android setup app.
+- `:shared` owns the canonical direct-TEST configuration and encrypted
+  provisioning records.
 
-Copy `opendistress.local.properties.example` to
-`opendistress.local.properties` and replace
-every invalid value. The local file is ignored. Keys are lowercase or uppercase
-hex: the authentication, encryption, and content-MAC keys are three different
-32-byte values; `templateIdHex` is the provisioned 16-byte recipient template
-identifier. The endpoint must be HTTPS and end at `/v2/events`. The production
-loader rejects all three published protocol-vector keys.
+The phone is required for initial direct-TEST setup, so the watch manifest
+honestly declares `com.google.android.wearable.standalone=false`. After the
+watch confirms a configuration revision, alert transmission does not depend on
+the phone: the watch uses Wear OS networking over the paired-phone proxy,
+Wi-Fi, or LTE as available.
 
-The personal prototype build embeds those locally supplied values in Android
-`BuildConfig`; anyone who obtains that APK can extract them. Do not distribute a
-provisioned artifact. Hardware-backed Keystore enrollment and key rotation are
-production gates, not implemented by this build-time provisioning path.
+## Calm-time setup on Android
 
-The launcher uses an OpenDistress adaptive icon with separate graphite
-background, readiness-ring foreground, and API 33 monochrome themed-icon
-layers. The round launcher reference uses the same safe-zone-aware artwork.
+The Android app accepts either a Grafana Cloud IRM formatted-webhook URL,
+Pushover credentials, or both. It also stores the optional protected-person
+profile: name, prepared message, home address, children/family information,
+person description, relevant background, responder instructions, and an HTTPS
+photo URL. The longer profile fields use multiline inputs.
+
+The phone encrypts its local configuration with Android Keystore. For transfer,
+the watch creates an RSA keypair with a non-exportable private key in Android
+Keystore and announces only its public key through the Wearable Data Layer. The phone wraps a random
+AES-256-GCM configuration key with RSA-OAEP-SHA256/MGF1-SHA1 and publishes the
+encrypted envelope as an urgent persistent DataItem. The watch validates and
+atomically stores it before publishing an ACK containing the exact revision and
+digest. The three user-visible states remain separate: saved on phone, sent to
+the Data Layer queue, and confirmed on watch. A missing DataItem never deletes the committed
+watch configuration; only explicit reset changes incident state.
+
+The Data Layer setup route works with an Android phone, not an iPhone. No
+provider credential is hardcoded in either APK. When no configuration exists,
+the watch offers a `PHONE SETUP` action that opens this package's Play listing
+on the paired Android phone; unpublished debug builds still require sideloading
+both APKs.
+
+## Watch interaction
+
+The Tile only opens the app. It never creates or sends an event. Wear OS does
+not let a third-party app globally intercept Pixel Watch crown or power buttons.
+
+The foreground control requires one uninterrupted 2.5-second hold. A symmetric
+ring grows from six o'clock, the text changes while pressed, and release,
+movement outside the control, or cancellation aborts. A short tap never sends.
+TalkBack uses a delayed two-step confirmation, so a single accessibility click
+also cannot send.
+
+The direct TEST request is encrypted at rest and committed before networking;
+the foreground service owns provider retries even after the app screen closes.
+Grafana is attempted first. Pushover is tried as the independent fallback when
+Grafana does not return acceptance. As soon as either route accepts, the other
+pending trigger is skipped so GPS acquisition cannot be blocked by a failing
+fallback.
+The first successful provider response changes the watch to the analog
+`TEST ACCEPTED` screen and produces a distinct haptic pattern. This wording
+does not claim device delivery, human acknowledgement, or incident resolution.
+Details and TEST reset are separate controls. Reset itself requires another
+uninterrupted 2.5-second hold. If Pushover accepted an emergency-priority TEST,
+the watch durably queues and confirms cancellation of its receipt before
+clearing local state; the provider-side repeat deadline is measured from the
+actual acceptance time, not incident creation. Otherwise it retains the TEST
+until the retries expire.
+LIVE-v2 state can never be reset through this direct-TEST path.
+
+## Location after acceptance
+
+Location acquisition starts only after provider acceptance. The foreground
+location service first checks the fused last-known location, clearly marks its
+source, device-reported age, accuracy, quality, and possible staleness, and then
+requests a zero-cache high-accuracy current fix. Wear OS' fused provider may
+select the watch or paired Android phone; the app cannot force or manually
+merge both sources.
+
+While the accepted TEST remains active, the service sends best-effort updates
+for up to 24 hours:
+
+- every 30 seconds for the first 5 minutes;
+- every 2 minutes until 30 minutes;
+- every 5 minutes afterwards;
+- twice those intervals at 20% battery or below.
+
+The foreground notification and Wear OS Ongoing Activity stay visible while
+the service runs when notification permission is granted. The deliberately
+bounded 15-minute provider-send/cancel phase holds a partial wake lock, while
+the 24-hour GPS phase does not. A WorkManager safety net persists already
+committed provider requests across process death and reboot; high-rate GPS after
+a reboot resumes when the user reopens the app because Android restricts
+background creation of location foreground services without all-time location
+permission. Android may still stop work under exceptional system conditions,
+and emulator battery/radio behavior is not physical-watch evidence.
+
+## Existing encrypted LIVE v2
+
+The previous build-configured encrypted v2 relay client remains available when
+no phone-provisioned direct configuration exists. It keeps immutable signed
+ciphertext, durable retry, signed status checks, expiry recovery, and encrypted
+location semantics unchanged. Copy `opendistress.local.properties.example` to
+`opendistress.local.properties` only for that developer-only path. Never
+distribute a locally provisioned legacy APK because BuildConfig values can be
+extracted.
+
+## Build and test
+
+Use JDK 17 or newer and Android SDK 36. The checked-in wrapper pins and verifies
+Gradle 9.5.0:
 
 ```sh
-gradle --no-daemon -p apps/wearos :app:testDebugUnitTest :app:assembleDebug
+apps/wearos/gradlew --no-daemon -p apps/wearos \
+  :shared:testDebugUnitTest \
+  :mobile:testDebugUnitTest \
+  :app:testDebugUnitTest \
+  :shared:lintDebug \
+  :mobile:lintDebug \
+  :app:lintDebug \
+  :mobile:assembleDebug \
+  :app:assembleDebug
 ```
 
-The source and public-vector tests are present, but no Android SDK, JDK, Gradle,
-emulator, or physical watch was available in the development environment.
+The watch APK is
+`apps/wearos/app/build/outputs/apk/debug/app-debug.apk`; the phone APK is
+`apps/wearos/mobile/build/outputs/apk/debug/mobile-debug.apk`.
+
+For Apple Silicon emulator testing, use the signed Wear OS 6 image
+`system-images;android-36;android-wear-signed;arm64-v8a` and the
+`wearos_large_round` and `wearos_small_round` profiles. Run the Keystore and
+hold-interaction device tests on a watch AVD:
+
+```sh
+ANDROID_SERIAL=emulator-5554 apps/wearos/gradlew --no-daemon -p apps/wearos \
+  :app:connectedDebugAndroidTest
+```
+
+The debug APK contains a shell-permission-protected state seeder for automated
+round-screen interaction tests. It is absent from release builds and contains
+only visibly fake TEST data. Compiler, unit, lint, instrumentation, emulator,
+provider, and physical-device evidence remain separate gates.

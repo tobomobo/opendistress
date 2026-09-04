@@ -65,6 +65,14 @@ be abandoned. After signed expiry, the user may explicitly archive it as
 failure or success. Changing authentication keys while an immutable queue or
 active incident exists is unsupported.
 
+Wear OS direct-TEST provider requests additionally have an OS-managed
+WorkManager replay scheduled when they are committed. The foreground fast path
+uses a partial wake lock only until the 15-minute trigger or accepted Pushover
+repeat/cancel deadline; it never keeps the CPU awake for the 24-hour location
+window. A reboot can recover stored network work, but high-rate fused-location
+callbacks resume only after the app is opened under the current permission
+model.
+
 While an incident is active in the foreground, the client uses the existing
 location cadence to issue a signed, read-only status query. Only a strictly
 verified matching `resolved` or `expired` response stops acquisition;
@@ -88,3 +96,13 @@ includes:
 
 Re-run affected rows after Garmin SDK, firmware, radio, provider, or networking
 changes. Host tests and simulators cannot convert a physical row to PASS.
+
+The Wear OS emulator gate uses the signed Wear OS 6 / API 36 ARM64 image and
+both large-round 454-pixel and small-round 384-pixel AVDs. It separately verifies
+shared/phone/watch unit tests, lint, both APK builds, real Android Keystore
+encryption on-device, round-screen hold/reset interaction, accepted-state
+recovery, and the location foreground service. Notification-manager inspection
+records the persistent foreground notification separately; no automated test
+currently asserts the system-rendered Ongoing Activity surface. Emulator
+coordinates and synthetic provider acceptance are labelled
+as such and never satisfy provider or physical GPS rows.

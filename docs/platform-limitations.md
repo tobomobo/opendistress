@@ -104,11 +104,26 @@
   coordinates. Neither route has an end-to-end idempotency contract here, so
   ambiguous recovery may duplicate an alert or location.
 
-Wear OS and watchOS support native Kotlin and Swift respectively. Their source
-projects are not build or device evidence: this workspace has no Android SDK,
-Xcode, simulators, or watches, so hosted compilation and physical rows remain
-separate gates. Local configuration is compiled into personal artifacts;
-hardware-backed Keystore/Keychain enrollment is required before distributing
-provisioned binaries.
+Wear OS and watchOS support native Kotlin and Swift respectively. The Wear OS
+project now includes an Android setup app and a Pixel-Watch-sized emulator
+path. Android Keystore protects configuration at rest and the phone sends only
+an encrypted provisioning envelope to the watch. This Data Layer route requires
+an Android phone; it is not an iPhone provisioning path. After setup, direct
+HTTPS can use the paired-phone proxy, watch Wi-Fi, or LTE as Wear OS makes those
+networks available.
+
+Wear OS does not allow a third-party app to globally intercept the crown or
+power button. Its Tile can launch the foreground hold screen but cannot safely
+trigger an alert itself. Fused location may select either watch or paired-phone
+sources, but the app cannot force or manually merge both. The 24-hour location
+loop is a visible foreground service plus Ongoing Activity and best effort: the OS can still stop it
+under exceptional conditions. WorkManager can replay already-stored network
+requests after reboot, but Android 14+ background-start rules prevent silently
+recreating a location foreground service without all-time location permission;
+this beta therefore requires reopening the app after reboot to resume high-rate
+GPS. Notification permission is also required for the visible Ongoing Activity.
+Emulator compiler, UI, Keystore, and lifecycle
+evidence do not replace provider, battery, radio, locked-phone, or physical
+Pixel Watch tests. The physical rows therefore remain release gates.
 
 These are test constraints, not promises that more software can remove them.

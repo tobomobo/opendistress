@@ -3,7 +3,6 @@ package dev.opendistress.wear
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.location.Location
@@ -19,11 +18,16 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.wear.ambient.AmbientLifecycleObserver
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import dev.opendistress.wear.direct.DirectTestController
+import dev.opendistress.wear.direct.EncryptedDirectConfigStore
+import dev.opendistress.wear.ui.DirectStatusView
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -69,7 +73,10 @@ internal fun isMaterialLocation(plan: CapturePlan, point: LocationPoint): Boolea
     return meters >= 50
 }
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
+    private var directController: DirectTestController? = null
+    private lateinit var ambientObserver: AmbientLifecycleObserver
+    private var directStateUnreadable = false
     private lateinit var status: TextView
     private lateinit var trigger: Button
     private var config: RuntimeConfig? = null
@@ -87,12 +94,47 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val retry = Runnable { drainQueue() }
     private val locationTick = Runnable { continueCapture() }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ambientObserver = AmbientLifecycleObserver(
+            this,
+            object : AmbientLifecycleObserver.AmbientLifecycleCallback {
+                override fun onEnterAmbient(ambientDetails: AmbientLifecycleObserver.AmbientDetails) {
+                    directController?.setAmbientMode(
+                        true,
+                        ambientDetails.deviceHasLowBitAmbient,
+                        ambientDetails.burnInProtectionRequired,
+                    )
+                }
+
+                override fun onUpdateAmbient() {
+                    directController?.requestAmbientRedraw()
+                }
+
+                override fun onExitAmbient() {
+                    directController?.setAmbientMode(false)
+                }
+            },
+        ).also(lifecycle::addObserver)
+        val hasPhoneProvisionedDirectConfig = runCatching {
+            EncryptedDirectConfigStore.get(this).snapshot() != null
+        }.getOrDefault(false)
+        val legacyConfig = runCatching { RuntimeConfig.fromBuildConfig() }.getOrNull()
+        if (hasPhoneProvisionedDirectConfig || legacyConfig == null) {
+            directController = runCatching { DirectTestController(this).also { it.onCreate() } }
+                .getOrElse {
+                    directStateUnreadable = true
+                    setContentView(DirectStatusView(this).apply {
+                        title = "STORED TEST UNREADABLE"
+                        lines = listOf("No new alert was sent", "Do not trigger again", "Clear app data to recover")
+                    })
+                    null
+                }
+            return
+        }
         buildInterface()
         try {
-            config = RuntimeConfig.fromBuildConfig()
+            config = legacyConfig
             store = EventStore.get(this)
             requireNotNull(store).scrubExpiredLocation(nowSeconds())
             transport = Transport(requireNotNull(config))
@@ -118,18 +160,33 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
+        directController?.let {
+            it.onStart()
+            return
+        }
+        if (directStateUnreadable) return
         isForeground = true
         drainQueue()
         continueCapture()
     }
 
     override fun onStop() {
+        directController?.let {
+            it.onStop()
+            super.onStop()
+            return
+        }
+        if (directStateUnreadable) {
+            super.onStop()
+            return
+        }
         isForeground = false
         stopLocationCapture()
         super.onStop()
     }
 
     override fun onDestroy() {
+        directController?.onDestroy()
         handler.removeCallbacks(retry)
         stopLocationCapture()
         network.shutdownNow()
@@ -400,10 +457,14 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
-        permissions: Array<out String>,
+        permissions: Array<String>,
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        directController?.let {
+            it.onRequestPermissionsResult(requestCode)
+            return
+        }
         if (requestCode != REQUEST_LOCATION) return
         if (hasLocationPermission()) {
             continueCapture()

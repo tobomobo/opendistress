@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="400"
+    android:viewportHeight="400">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M0,0H400V400H0Z" />
+    <path
+        android:fillColor="#FF52141B"
+        android:pathData="M200,82A118,118 0,1 1,200 318A118,118 0,1 1,200 82" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M200,48A152,152 0,1 1,200 352A152,152 0,1 1,200 48"
+        android:strokeColor="#FF373B41"
+        android:strokeWidth="18" />
+    <path
+        android:fillColor="#FFFF4954"
+        android:pathData="M184,292A16,16 0,1 1,216 292A16,16 0,1 1,184 292" />
+</vector>
