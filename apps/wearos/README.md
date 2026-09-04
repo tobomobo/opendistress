@@ -1,13 +1,13 @@
-# OpenDistress for Wear OS
+# OpenDistress for Android and Wear OS
 
 The Android project ships two APKs under the same application ID:
 
 - `:app` is the Wear OS / Pixel Watch app.
-- `:mobile` is the Android setup app.
+- `:mobile` is the shared Android setup app for Wear OS and Garmin.
 - `:shared` owns the canonical direct-TEST configuration and encrypted
   provisioning records.
 
-The phone is required for initial direct-TEST setup, so the watch manifest
+The phone is required for initial Wear OS direct-TEST setup, so the watch manifest
 honestly declares `com.google.android.wearable.standalone=false`. After the
 watch confirms a configuration revision, alert transmission does not depend on
 the phone: the watch uses Wear OS networking over the paired-phone proxy,
@@ -15,11 +15,11 @@ Wi-Fi, or LTE as available.
 
 ## Calm-time setup on Android
 
-This is conceptually similar to Garmin Connect IQ settings, but Wear OS has no
-equivalent vendor-owned settings form for third-party apps. OpenDistress
-therefore ships its own ordinary Android companion, **OpenDistress Setup**. The
-generic Pixel Watch or Wear OS companion app pairs and manages the watch; it
-does not store OpenDistress provider credentials.
+Wear OS has no vendor-owned settings form equivalent to Garmin Connect IQ
+settings, so OpenDistress ships one ordinary Android companion,
+**OpenDistress Setup**. It now configures either a Pixel Watch, a Garmin watch,
+or both. The generic Pixel Watch and Garmin Connect apps still own pairing;
+they do not author the OpenDistress profile.
 
 The Android app accepts either a Grafana Cloud IRM formatted-webhook URL,
 Pushover credentials, or both. It also stores the optional protected-person
@@ -27,7 +27,7 @@ profile: name, prepared message, home address, children/family information,
 person description, relevant background, responder instructions, and an HTTPS
 photo URL. The longer profile fields use multiline inputs.
 
-The phone encrypts its local configuration with Android Keystore. For transfer,
+The phone encrypts its one local configuration with Android Keystore. For Wear OS transfer,
 the watch creates an RSA keypair with a non-exportable private key in Android
 Keystore and announces only its public key through the Wearable Data Layer. The phone wraps a random
 AES-256-GCM configuration key with RSA-OAEP-SHA256/MGF1-SHA1 and publishes the
@@ -37,18 +37,31 @@ digest. The three user-visible states remain separate: saved on phone, sent to
 the Data Layer queue, and confirmed on watch. A missing DataItem never deletes the committed
 watch configuration; only explicit reset changes incident state.
 
+For Garmin, the same screen uses Garmin's official Connect IQ Mobile SDK and
+requires Garmin Connect plus the OpenDistress Connect IQ app. It sends an exact
+string-only TEST configuration; the watch reconstructs its canonical digest,
+stores it, and returns a revision-and-digest ACK. This Garmin path is not the
+RSA-wrapped Wear OS channel: Garmin Connect remains trusted with the plaintext
+TEST setup, matching the existing Connect IQ settings privacy boundary.
+Garmin's acknowledged Android issue `CIQQA-4631` can currently drop the reverse
+watch-to-phone message on Garmin Connect 5.27.3. The screen therefore tells the
+owner to verify `READY TEST` on the watch after a successful phone-to-watch send;
+ACK-backed readiness and phone-assisted location remain best effort until a
+physical retest proves the Garmin fix.
+
 The intended user flow is:
 
-1. Install OpenDistress on both the Android phone and Pixel Watch.
-2. Keep the paired watch connected, then open **OpenDistress Setup** on the
-   phone.
+1. Install **OpenDistress Setup** on the Android phone and OpenDistress on the
+   intended Pixel Watch and/or Garmin watch.
+2. Pair each watch in its normal vendor app and keep it connected.
 3. Enter Grafana, Pushover, or both, plus any optional emergency-card fields.
-4. Choose **Save and send to watch**. This never sends an alert.
-5. Wait for **Confirmed on watch … TEST route ready**. A merely saved or queued
-   state is not ready.
+4. Choose **Save and send to watches**. This never sends an alert.
+5. Wait for the separate Pixel Watch and/or Garmin card to report
+   **Confirmed … TEST route ready**. A merely saved or sent state is not ready.
 6. Open OpenDistress on the watch and run a deliberate TEST drill.
 
-The Data Layer setup route works with an Android phone, not an iPhone. No
+The Wear OS Data Layer and Garmin Mobile SDK setup routes work with an Android
+phone, not an iPhone. No
 provider credential is hardcoded in either APK. When no configuration exists,
 the watch offers a `PHONE SETUP` action that opens this package's Play listing
 on the paired Android phone; unpublished debug builds still require sideloading
@@ -99,6 +112,15 @@ source, device-reported age, accuracy, quality, and possible staleness, and then
 requests a zero-cache high-accuracy current fix. Wear OS' fused provider may
 select the watch or paired Android phone; the app cannot force or manually
 merge both sources.
+
+For Garmin, the optional **Garmin phone location assist** switch requests
+precise Android location permission. After the watch has already stored direct
+provider acceptance, it can ask for one zero-cache high-accuracy phone fix.
+The watch validates the incident/configuration binding, source, capture time,
+coordinate bounds, reported accuracy, and mock status before sending it through
+its own direct-provider queue. Android background limits or a missing phone can
+prevent the candidate; neither condition delays the alert or the watch's own
+GPS.
 
 While the accepted TEST remains active, the service sends best-effort updates
 for up to 24 hours:

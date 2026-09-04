@@ -19,9 +19,14 @@ import Toybox.WatchUi;
 
 class OpenDistressApp extends Application.AppBase {
     var _view = null;
+    var _phoneMethod = null;
 
     function initialize() {
         AppBase.initialize();
+        _phoneMethod = method(:onPhoneMessage);
+        if (Communications has :registerForPhoneAppMessages) {
+            Communications.registerForPhoneAppMessages(_phoneMethod);
+        }
         try {
             Complications.updateComplication(0, {
                 :value => "OPEN",
@@ -43,9 +48,59 @@ class OpenDistressApp extends Application.AppBase {
         }
     }
 
+    function onPhoneMessage(message as Communications.PhoneAppMessage) as Void {
+        var data = message.data;
+        if (!(data instanceof Lang.Dictionary)) {
+            return;
+        }
+        if (OpenDistressProtocol.stringEquals(data["protocol"], DirectAlertSettings.PROTOCOL)
+            && OpenDistressProtocol.stringEquals(data["type"], "config")) {
+            var installed = false;
+            try {
+                installed = DirectAlertSettings.install(data);
+            } catch (error) {
+                installed = false;
+            }
+            if (installed) {
+                var now = Time.now().value();
+                try {
+                    Communications.transmit({
+                        "protocol" => DirectAlertSettings.PROTOCOL,
+                        "type" => "config_ack",
+                        "revision" => data["revision"],
+                        "config_digest" => data["config_digest"],
+                        "stored_at" => now.format("%d")
+                    }, null, new CompanionConnectionListener());
+                } catch (error) {
+                    // Stored configuration remains valid; a later sync repeats the ACK.
+                }
+                if (_view != null) {
+                    _view.settingsChanged();
+                }
+            }
+            return;
+        }
+        if (_view != null) {
+            _view.onCompanionLocation(data);
+        }
+    }
+
     (:glance)
     function getGlanceView() {
         return [new OpenDistressGlanceView()];
+    }
+}
+
+class CompanionConnectionListener extends Communications.ConnectionListener {
+    function initialize() {
+        Communications.ConnectionListener.initialize();
+    }
+
+    function onComplete() as Void {
+    }
+
+    function onError() as Void {
+        // Optional companion traffic never changes watch-owned alert evidence.
     }
 }
 
@@ -100,6 +155,10 @@ class OpenDistressView extends WatchUi.View {
     const MIDDLE_CADENCE_SECONDS = 120;
     const LATE_CADENCE_SECONDS = 300;
     const EXTENDED_CADENCE_SECONDS = 900;
+    const COMPANION_LOCATION_KEYS = [
+        "protocol", "type", "event_id", "captured_at", "latitude_e7",
+        "longitude_e7", "accuracy_cm", "source", "config_digest"
+    ];
     const LEGACY_STATE_KEYS = ["queue", "active"];
     const STATE_KEYS = ["queue", "active", "direct_result"];
     const LEGACY_DIRECT_RESULT_KEYS = ["event_id", "request", "receipt"];
@@ -163,6 +222,7 @@ class OpenDistressView extends WatchUi.View {
     var _queue = [];
     var _activeIncident = null;
     var _directResult = null;
+    var _deferredCompanionLocation = null;
     var _displayEventId = null;
     var _mode = "TEST";
     var _inFlight = false;
@@ -1683,6 +1743,7 @@ class OpenDistressView extends WatchUi.View {
 
     function expireDirectLocations() {
         stopLocations();
+        _deferredCompanionLocation = null;
         if (_directResult == null || _directResult["capture_stage"] == 3) {
             return;
         }
@@ -1755,11 +1816,12 @@ class OpenDistressView extends WatchUi.View {
         });
         var path = record[15];
         var quality = record[14];
+        var phoneAccuracy = path == 3;
         if (captureAt == 0
             || captureAt > now
-            || (path != 0 && path != 1 && path != 2)
-            || quality < Position.QUALITY_LAST_KNOWN
-            || quality > Position.QUALITY_GOOD) {
+            || (path != 0 && path != 1 && path != 2 && path != 3)
+            || (!phoneAccuracy && (quality < Position.QUALITY_LAST_KNOWN
+                || quality > Position.QUALITY_GOOD))) {
             return false;
         }
         var recordHex = OpenDistressProtocol.bytesHex(record);
@@ -1784,6 +1846,95 @@ class OpenDistressView extends WatchUi.View {
         }
         sendDirectLocation();
         return true;
+    }
+
+    function onCompanionLocation(data) {
+        if (_directResult == null
+            || _directResult["capture_stage"] == 3
+            || !OpenDistressProtocol.hasExactKeys(data, COMPANION_LOCATION_KEYS)
+            || !OpenDistressProtocol.stringEquals(
+                data["protocol"], DirectAlertSettings.PROTOCOL
+            )
+            || !OpenDistressProtocol.stringEquals(data["type"], "location_candidate")
+            || !OpenDistressProtocol.stringEquals(data["source"], "phone_fused")
+            || !OpenDistressProtocol.stringEquals(data["event_id"], _directResult["event_id"])
+            || !OpenDistressProtocol.isCanonicalDigest(data["config_digest"])
+            || !OpenDistressProtocol.isCanonicalDigest(
+                DirectAlertSettings.companionDigest()
+            )
+            || !OpenDistressProtocol.secureEquals(
+                data["config_digest"], DirectAlertSettings.companionDigest()
+            )) {
+            return;
+        }
+        var captureAt = parseCanonicalNumber(data["captured_at"], 1, OpenDistressProtocol.MAX_TIME);
+        var latitude = parseCanonicalNumber(data["latitude_e7"], -900000000, 900000000);
+        var longitude = parseCanonicalNumber(data["longitude_e7"], -1800000000, 1800000000);
+        var accuracyCm = parseCanonicalNumber(data["accuracy_cm"], 0, 1000000);
+        var now = currentTime();
+        if (captureAt == null || latitude == null || longitude == null
+            || accuracyCm == null || now == null
+            || now >= _directResult["tracking_expires_at"]
+            || !DirectAlertSafety.isFreshCapture(_directResult["accepted_at"], captureAt, now)) {
+            return;
+        }
+        var accuracyMeters = ((accuracyCm + 50) / 100).toNumber();
+        if (accuracyMeters > 255) {
+            accuracyMeters = 255;
+        }
+        var record = OpenDistressProtocol.directPhoneLocationRecord(
+            captureAt,
+            latitude,
+            longitude,
+            accuracyMeters
+        );
+        var nextStage = _directResult["capture_stage"] == 0
+            ? 1
+            : _directResult["capture_stage"];
+        if (_directResult["pending_location_hex"].length() > 0) {
+            _deferredCompanionLocation = {
+                "event_id" => _directResult["event_id"],
+                "record" => record,
+                "next_stage" => nextStage
+            };
+            return;
+        }
+        queueDirectLocationRecord(record, nextStage, now);
+    }
+
+    function flushDeferredCompanionLocation() {
+        if (_deferredCompanionLocation == null || _directResult == null
+            || _directResult["pending_location_hex"].length() > 0
+            || !OpenDistressProtocol.stringEquals(
+                _deferredCompanionLocation["event_id"], _directResult["event_id"]
+            )) {
+            return;
+        }
+        var deferred = _deferredCompanionLocation;
+        _deferredCompanionLocation = null;
+        var now = currentTime();
+        if (now != null) {
+            queueDirectLocationRecord(deferred["record"], deferred["next_stage"], now);
+        }
+    }
+
+    function parseCanonicalNumber(value, minimum, maximum) {
+        if (!(value instanceof Lang.String) || value.length() < 1 || value.length() > 11) {
+            return null;
+        }
+        var chars = value.toCharArray();
+        var offset = chars[0].toString().equals("-") ? 1 : 0;
+        if (offset == chars.size()
+            || (chars[offset].toString().equals("0") && chars.size() - offset > 1)) {
+            return null;
+        }
+        for (var i = offset; i < chars.size(); i += 1) {
+            if ("0123456789".find(chars[i].toString()) == null) {
+                return null;
+            }
+        }
+        var parsed = value.toNumber();
+        return parsed != null && parsed >= minimum && parsed <= maximum ? parsed : null;
     }
 
     function shouldQueueDirectCadenceLocation(info, now, path) {
@@ -1828,7 +1979,9 @@ class OpenDistressView extends WatchUi.View {
         if (captureAt == 0 || captureAt < previousCaptureAt) {
             return false;
         }
-        if (record[14] > previous[14]) {
+        if (record[15] != previous[15]
+            || (record[15] == 3 && record[14] < previous[14])
+            || (record[15] != 3 && record[14] > previous[14])) {
             return true;
         }
         var lastQueuedAt = _directResult["last_location_queued_at"];
@@ -2706,6 +2859,7 @@ class OpenDistressView extends WatchUi.View {
         grafanaFingerprint,
         grafanaAlertPending
     ) {
+        _deferredCompanionLocation = null;
         var acceptedAt = currentTime();
         var trackingExpiresAt = 0;
         var captureStage = 3;
@@ -2744,10 +2898,33 @@ class OpenDistressView extends WatchUi.View {
         if (grafanaAlertPending) {
             sendDirectGrafanaAlert();
         }
+        requestCompanionLocation();
         if (captureStage == 0) {
             captureDirectLocations();
         }
         return true;
+    }
+
+    function requestCompanionLocation() {
+        if (_directResult == null || _directResult["accepted_at"] <= 0) {
+            return;
+        }
+        var digest = DirectAlertSettings.companionDigest();
+        if (!OpenDistressProtocol.isCanonicalDigest(digest)) {
+            return;
+        }
+        try {
+            Communications.transmit({
+                "protocol" => DirectAlertSettings.PROTOCOL,
+                "type" => "incident_accepted",
+                "event_id" => _directResult["event_id"],
+                "accepted_at" => _directResult["accepted_at"].format("%d"),
+                "expires_at" => _directResult["tracking_expires_at"].format("%d"),
+                "config_digest" => digest
+            }, null, new CompanionConnectionListener());
+        } catch (error) {
+            // Phone assistance is optional and never blocks watch GPS.
+        }
     }
 
     function onPushoverResponse(
@@ -3086,6 +3263,7 @@ class OpenDistressView extends WatchUi.View {
         }
         _retryCount = 0;
         _directLocationRetryBlocked = false;
+        flushDeferredCompanionLocation();
         scheduleIdleCoverRefresh();
     }
 
@@ -3390,6 +3568,7 @@ class OpenDistressView extends WatchUi.View {
 
     function resetAcceptedTest() {
         stopLocations();
+        _deferredCompanionLocation = null;
         if (persistStateWithDirect([], _activeIncident, null)) {
             _acceptedStatusVisible = false;
             _acceptedActionFeedback = null;

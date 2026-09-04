@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 package dev.opendistress.mobile
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -25,6 +27,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
@@ -32,47 +35,62 @@ import dev.opendistress.shared.DirectConfig
 
 class MainActivity : Activity(), DataClient.OnDataChangedListener {
     private lateinit var coordinator: ProvisioningCoordinator
+    private lateinit var garminLink: GarminCompanionLink
     private lateinit var status: MaterialTextView
     private lateinit var statusTitle: MaterialTextView
     private lateinit var statusIndicator: MaterialTextView
     private lateinit var statusCard: MaterialCardView
+    private lateinit var garminStatus: MaterialTextView
+    private lateinit var garminStatusTitle: MaterialTextView
+    private lateinit var garminStatusIndicator: MaterialTextView
+    private lateinit var garminStatusCard: MaterialCardView
+    private lateinit var locationAssist: MaterialSwitch
     private lateinit var save: MaterialButton
     private val fields = linkedMapOf<String, EditText>()
+    private val garminObserver: (GarminLinkStatus) -> Unit = ::showGarminStatus
+    private var changingLocationSwitch = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DynamicColors.applyToActivityIfAvailable(this)
         buildInterface()
+        garminLink = GarminCompanionLink.get(this)
         coordinator = try {
             ProvisioningCoordinator(this)
         } catch (_: Exception) {
-            showStatus(getString(R.string.storage_authentication_failed))
+            showWearStatus(getString(R.string.storage_authentication_failed))
             save.isEnabled = false
             return
         }
         coordinator.snapshot().config?.let(::populate)
-        showStatus(coordinator.statusDescription())
+        showWearStatus(coordinator.statusDescription())
+        locationAssist.isChecked = garminLink.locationAssistEnabled() && hasFineLocation()
         save.setOnClickListener { saveConfiguration() }
         findViewById<MaterialButton>(SYNC_BUTTON_ID).setOnClickListener {
-            coordinator.synchronize(::showStatus, force = true)
+            coordinator.synchronize(::showWearStatus, force = true)
+            coordinator.snapshot().config?.let(garminLink::sync) ?: garminLink.refresh()
         }
+        locationAssist.setOnCheckedChangeListener { _, enabled -> changeLocationAssist(enabled) }
     }
 
     override fun onStart() {
         super.onStart()
         if (::coordinator.isInitialized) {
             Wearable.getDataClient(this).addListener(this)
-            coordinator.synchronize(::showStatus)
+            coordinator.synchronize(::showWearStatus)
+            garminLink.observe(garminObserver)
+            garminLink.resume()
         }
     }
 
     override fun onStop() {
         if (::coordinator.isInitialized) Wearable.getDataClient(this).removeListener(this)
+        if (::garminLink.isInitialized) garminLink.removeObserver(garminObserver)
         super.onStop()
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
-        coordinator.handleEvents(dataEvents, ::showStatus)
+        coordinator.handleEvents(dataEvents, ::showWearStatus)
     }
 
     private fun saveConfiguration() {
@@ -93,13 +111,14 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
                 profilePhotoUrl = value("profilePhotoUrl"),
             )
         } catch (error: IllegalArgumentException) {
-            showStatus(error.message ?: "Configuration is invalid")
+            showWearStatus(error.message ?: "Configuration is invalid")
             return
         }
         try {
-            coordinator.save(config, ::showStatus)
+            coordinator.save(config, ::showWearStatus)
+            garminLink.sync(config)
         } catch (_: Exception) {
-            showStatus("Configuration could not be stored securely — nothing was sent")
+            showWearStatus("Configuration could not be stored securely — nothing was sent")
         }
     }
 
@@ -194,7 +213,63 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             setTextColor(onSurface)
             setPadding(dp(4), dp(28), dp(4), dp(10))
         }, matchWidth())
+        content.addView(MaterialTextView(this).apply {
+            setText(R.string.pixel_watch_label)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
+            setTextColor(onSurfaceVariant)
+            setPadding(dp(4), 0, dp(4), dp(8))
+        }, matchWidth())
         content.addView(statusCard, matchWidth())
+
+        garminStatusIndicator = statusIndicator(onSurface)
+        garminStatusTitle = statusTitle(onSurface)
+        garminStatus = statusBody(onSurfaceVariant)
+        garminStatusCard = statusCard(garminStatusIndicator, garminStatusTitle, garminStatus)
+        content.addView(MaterialTextView(this).apply {
+            setText(R.string.garmin_watch_label)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
+            setTextColor(onSurfaceVariant)
+            setPadding(dp(4), dp(18), dp(4), dp(8))
+        }, matchWidth())
+        content.addView(garminStatusCard, matchWidth())
+
+        val locationCopy = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(MaterialTextView(this@MainActivity).apply {
+                setText(R.string.phone_location_assist)
+                setTextAppearance(R.style.TextAppearance_OpenDistress_Section)
+                setTextColor(onSurface)
+            }, matchWidth())
+            addView(MaterialTextView(this@MainActivity).apply {
+                setText(R.string.phone_location_explanation)
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                setTextColor(onSurfaceVariant)
+                setLineSpacing(0f, 1.1f)
+            }, matchWidth(topMargin = dp(5)))
+        }
+        locationAssist = MaterialSwitch(this).apply {
+            contentDescription = getString(R.string.phone_location_assist)
+        }
+        val locationRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18), dp(18), dp(12), dp(18))
+            addView(locationCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(locationAssist, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = dp(12) })
+        }
+        content.addView(MaterialCardView(this).apply {
+            radius = dp(24).toFloat()
+            cardElevation = 0f
+            strokeWidth = 0
+            setCardBackgroundColor(color(
+                com.google.android.material.R.attr.colorSurfaceContainerLow,
+                Color.WHITE,
+            ))
+            addView(locationRow, matchWidth())
+        }, matchWidth(topMargin = dp(18)))
         save = MaterialButton(this).apply {
             setText(R.string.save_and_send)
             minHeight = dp(56)
@@ -375,7 +450,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
 
     private fun String.nullIfBlank(): String? = takeUnless(String::isBlank)
 
-    private fun showStatus(message: String) {
+    private fun showWearStatus(message: String) {
         runOnUiThread {
             val normalized = message.lowercase()
             val ready = normalized.contains("confirmed on watch") && normalized.contains("route ready")
@@ -429,6 +504,120 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         }
     }
 
+    private fun showGarminStatus(linkStatus: GarminLinkStatus) {
+        runOnUiThread {
+            val ready = linkStatus is GarminLinkStatus.Ready
+            val waiting = linkStatus is GarminLinkStatus.Waiting
+            val background: Int
+            val foreground: Int
+            when {
+                ready -> {
+                    garminStatusTitle.setText(R.string.watch_ready)
+                    garminStatusIndicator.text = "✓"
+                    background = color(com.google.android.material.R.attr.colorTertiaryContainer, Color.rgb(251, 223, 166))
+                    foreground = color(com.google.android.material.R.attr.colorOnTertiaryContainer, Color.rgb(37, 26, 0))
+                }
+                waiting -> {
+                    garminStatusTitle.setText(R.string.watch_waiting)
+                    garminStatusIndicator.text = "…"
+                    background = color(com.google.android.material.R.attr.colorSecondaryContainer, Color.rgb(255, 218, 217))
+                    foreground = color(com.google.android.material.R.attr.colorOnSecondaryContainer, Color.rgb(46, 21, 22))
+                }
+                else -> {
+                    garminStatusTitle.setText(R.string.watch_attention)
+                    garminStatusIndicator.text = "!"
+                    background = color(com.google.android.material.R.attr.colorErrorContainer, Color.rgb(255, 218, 214))
+                    foreground = color(com.google.android.material.R.attr.colorOnErrorContainer, Color.rgb(65, 0, 2))
+                }
+            }
+            garminStatusCard.setCardBackgroundColor(background)
+            garminStatusTitle.setTextColor(foreground)
+            garminStatus.setTextColor(foreground)
+            garminStatusIndicator.setTextColor(foreground)
+            garminStatusIndicator.background = circle(foreground, background)
+            garminStatus.text = linkStatus.description
+        }
+    }
+
+    private fun statusIndicator(color: Int) = MaterialTextView(this).apply {
+        gravity = Gravity.CENTER
+        setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
+        setTextColor(color)
+    }
+
+    private fun statusTitle(color: Int) = MaterialTextView(this).apply {
+        setTextAppearance(R.style.TextAppearance_OpenDistress_Status)
+        setTextColor(color)
+    }
+
+    private fun statusBody(color: Int) = MaterialTextView(this).apply {
+        setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+        setTextColor(color)
+        setLineSpacing(0f, 1.08f)
+        accessibilityLiveRegion = MaterialTextView.ACCESSIBILITY_LIVE_REGION_POLITE
+    }
+
+    private fun statusCard(
+        indicator: MaterialTextView,
+        title: MaterialTextView,
+        body: MaterialTextView,
+    ): MaterialCardView {
+        val copy = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(title, matchWidth())
+            addView(body, matchWidth(topMargin = dp(4)))
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            addView(indicator, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(14) })
+            addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        return MaterialCardView(this).apply {
+            radius = dp(24).toFloat()
+            cardElevation = 0f
+            strokeWidth = 0
+            addView(row, matchWidth())
+        }
+    }
+
+    private fun changeLocationAssist(enabled: Boolean) {
+        if (changingLocationSwitch || !::garminLink.isInitialized) return
+        if (!enabled) {
+            garminLink.setLocationAssistEnabled(false)
+            return
+        }
+        if (hasFineLocation()) {
+            garminLink.setLocationAssistEnabled(true)
+        } else {
+            changingLocationSwitch = true
+            locationAssist.isChecked = false
+            changingLocationSwitch = false
+            requestPermissions(
+                arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION),
+                LOCATION_PERMISSION_REQUEST,
+            )
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != LOCATION_PERMISSION_REQUEST) return
+        val granted = permissions.indices.any {
+            permissions[it] == Manifest.permission.ACCESS_FINE_LOCATION &&
+                grantResults.getOrNull(it) == PackageManager.PERMISSION_GRANTED
+        }
+        garminLink.setLocationAssistEnabled(granted)
+        changingLocationSwitch = true
+        locationAssist.isChecked = granted
+        changingLocationSwitch = false
+        if (!granted) showGarminStatus(GarminLinkStatus.Attention("Phone location assist is off — location permission was not granted"))
+    }
+
+    private fun hasFineLocation(): Boolean =
+        checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
     private fun circle(stroke: Int, fill: Int) = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         setColor(fill)
@@ -447,5 +636,6 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
 
     private companion object {
         const val SYNC_BUTTON_ID = 0x0d150001
+        const val LOCATION_PERMISSION_REQUEST = 0x0d15
     }
 }
