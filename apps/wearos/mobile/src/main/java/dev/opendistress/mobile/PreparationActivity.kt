@@ -47,7 +47,7 @@ class PreparationActivity : Activity() {
     }
 
     private fun overview() {
-        content.removeAllViews()
+        newPage()
         heading("Practice before you need it")
         text("Preview your saved profile, then rehearse with each recipient. This screen never sends an alert. Start the TEST deliberately on your watch.")
         val state = store.snapshot()
@@ -87,7 +87,7 @@ class PreparationActivity : Activity() {
     }
 
     private fun preview(config: DirectConfig) {
-        content.removeAllViews()
+        newPage()
         heading("Saved emergency profile")
         text("TEST ONLY — no emergency action required. This is a profile preview; provider formatting and notification truncation differ. Verify the actual message during a drill.")
         card("Response instructions", config.responseInstructions)
@@ -103,7 +103,7 @@ class PreparationActivity : Activity() {
     }
 
     private fun drill(config: DirectConfig, watch: String, provider: String) {
-        content.removeAllViews()
+        newPage()
         heading("$watch → $provider drill")
         text("Arrange this with ALL intended recipients first. TEST alerts can be loud and repeat. Use only a test route. Do not call emergency services for this exercise.")
         if (config.grafanaWebhookUrl != null && config.pushoverUserKey != null) {
@@ -137,6 +137,11 @@ class PreparationActivity : Activity() {
             box.setOnCheckedChangeListener { _, _ -> record.isEnabled = boxes.all { it.isChecked } }
         }
         button("Leave without recording success") { overview() }
+    }
+
+    private fun newPage() {
+        content.removeAllViews()
+        content.post { (content.parent as? ScrollView)?.scrollTo(0, 0) }
     }
 
     private fun heading(value: String) = text(value, true)
