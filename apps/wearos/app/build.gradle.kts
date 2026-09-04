@@ -21,12 +21,12 @@ fun quoted(value: String): String =
 
 android {
     namespace = "dev.opendistress.wear"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "dev.opendistress.wear"
         minSdk = 30
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -61,6 +61,13 @@ android {
 }
 
 dependencies {
+    implementation(project(":shared"))
     implementation("com.google.android.gms:play-services-location:21.4.0")
+    implementation("com.google.android.gms:play-services-wearable:20.0.1")
+    implementation("androidx.wear.tiles:tiles:1.6.2")
+    implementation("androidx.wear.protolayout:protolayout:1.4.2")
+    implementation("androidx.wear.protolayout:protolayout-material3:1.4.2")
+    implementation("androidx.wear.protolayout:protolayout-expression:1.4.2")
+    implementation("androidx.concurrent:concurrent-futures:1.3.0")
     testImplementation("junit:junit:4.13.2")
 }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 package dev.opendistress.wear.tile
 
-import android.content.ComponentName
+import androidx.concurrent.futures.CallbackToFutureAdapter
+import androidx.wear.protolayout.ActionBuilders
 import androidx.wear.protolayout.ResourceBuilders.Resources
 import androidx.wear.protolayout.TimelineBuilders.Timeline
 import androidx.wear.protolayout.material3.Typography.BODY_LARGE
@@ -10,19 +11,17 @@ import androidx.wear.protolayout.material3.primaryLayout
 import androidx.wear.protolayout.material3.text
 import androidx.wear.protolayout.material3.textEdgeButton
 import androidx.wear.protolayout.modifiers.clickable
-import androidx.wear.protolayout.modifiers.launchAction
 import androidx.wear.protolayout.types.layoutString
 import androidx.wear.tiles.RequestBuilders
 import androidx.wear.tiles.RequestBuilders.ResourcesRequest
 import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.tiles.TileService
-import com.google.common.util.concurrent.Futures
 import dev.opendistress.wear.MainActivity
 
 /** A safe launcher surface: the Tile never creates, queues, or sends an alert. */
 class OpenDistressTileService : TileService() {
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest) =
-        Futures.immediateFuture(
+        immediateFuture(
             Tile.Builder()
                 .setResourcesVersion(RESOURCES_VERSION)
                 .setTileTimeline(
@@ -40,13 +39,14 @@ class OpenDistressTileService : TileService() {
                                     textEdgeButton(
                                         labelContent = { text("OPEN".layoutString) },
                                         onClick = clickable(
-                                            action = launchAction(
-                                                ComponentName(
-                                                    this@OpenDistressTileService,
-                                                    MainActivity::class.java,
-                                                ),
-                                                emptyMap(),
-                                            ),
+                                            action = ActionBuilders.LaunchAction.Builder()
+                                                .setAndroidActivity(
+                                                    ActionBuilders.AndroidActivity.Builder()
+                                                        .setPackageName(packageName)
+                                                        .setClassName(MainActivity::class.java.name)
+                                                        .build(),
+                                                )
+                                                .build(),
                                         ),
                                     )
                                 },
@@ -58,11 +58,16 @@ class OpenDistressTileService : TileService() {
         )
 
     override fun onTileResourcesRequest(requestParams: ResourcesRequest) =
-        Futures.immediateFuture(
+        immediateFuture(
             Resources.Builder()
                 .setVersion(RESOURCES_VERSION)
                 .build(),
         )
+
+    private fun <T> immediateFuture(value: T) = CallbackToFutureAdapter.getFuture<T> { completer ->
+        completer.set(value)
+        "OpenDistress tile response"
+    }
 
     private companion object {
         const val RESOURCES_VERSION = "1"
