@@ -286,7 +286,9 @@ class PanicHoldView @JvmOverloads constructor(
                 numeralPaint.textSize = size * 0.148f
                 canvas.drawText(remaining, centerX, centerY + size * 0.065f, numeralPaint)
                 hintPaint.textSize = size * 0.038f
-                canvas.drawText("RELEASE TO CANCEL", centerX, centerY + size * 0.145f, hintPaint)
+                val cancellationHint = if (snapshot.phase == HoldGestureState.Phase.TOUCH_HOLDING)
+                    "RELEASE TO CANCEL" else "ACTIVATE TO CANCEL"
+                canvas.drawText(cancellationHint, centerX, centerY + size * 0.145f, hintPaint)
             }
         }
 
