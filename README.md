@@ -25,17 +25,22 @@ Recipients use the selected provider's app, not a separate OpenDistress app.
 
 ## Prepare, signal, verify
 
-1. **Prepare on your phone.** Configure a provider and an optional emergency
-   profile: your name and description, response instructions, home address,
-   dependants, relevant background, and a photo link. Home address is labelled
-   separately from current location. The Android app includes a saved-profile
-   preview and guided physical drills.
-2. **Open the watch app and hold deliberately.** On Garmin, hold the top
-   `START`/`ENTER` button for 2.5 seconds; on Wear OS, hold the on-screen control.
+1. **Prepare on your phone.** Choose Garmin or Pixel Watch in Android Setup.
+   Its wizard guides you through delivery, a response plan, optional personal
+   information, optional conversation words, watch behaviour, and review/sync.
+   Agree the response plan with recipients; personal details are optional and
+   describe the person wearing the watch. Home address is not current location.
+   Drafts stay on the phone until you review and choose **Save and sync to watch**.
+   Garmin's Connect IQ Store settings are also available without the companion,
+   but do not provide this wizard.
+2. **Open the watch app and hold deliberately.** On five-button Garmin models,
+   hold the upper-right `START`/`ENTER` button for 2.5 seconds; on Wear OS, hold
+   the on-screen control.
    The ring fills from the bottom in both directions. Releasing early cancels.
    This is not a global hardware shortcut; Garmin touchscreen taps do not send.
 3. **Watch for provider acceptance.** Once acceptance is stored, the foreground
-   app shows a neutral analog cover and gives haptic feedback. It then attempts
+   app shows a neutral analog cover and, if enabled, gives two short vibration
+   pulses. It then attempts
    location updates, with source and age information when available. The cover
    is an app view, not a replacement system watch face.
 4. **Verify with your recipients.** Check the actual message, locked-phone
@@ -44,7 +49,8 @@ Recipients use the selected provider's app, not a separate OpenDistress app.
    not automatic delivery telemetry.
 
 **Provider accepted ≠ phone received ≠ person acknowledged ≠ help is coming.**
-The analog cover and haptics confirm only provider acceptance. Full-screen,
+The analog cover and acceptance vibration pattern confirm only provider
+acceptance; other vibration cues indicate watch interaction, not delivery. Full-screen,
 silent-mode and Do Not Disturb behaviour depend on the provider, permissions
 and receiving phone. They must be tested, not inferred from the watch.
 
@@ -72,9 +78,10 @@ physically verified device.
 2. Set up Grafana Cloud IRM or Pushover and its receiving app. Configure the
    webhook or keys through the supported phone setup route; the direct beta
    does not require credentials to be hardcoded into the app.
-3. Save and sync. Confirm `READY TEST` on the Garmin watch or the matching setup
-   acknowledgement for Wear OS. Saved on phone, sent to watch and confirmed on
-   watch are different states.
+3. Review the briefing, then save and sync. A connected watch is not necessarily
+   synced: confirm `READY TEST` on Garmin and check the matching configuration
+   confirmation in Android Setup when available. For Wear OS, wait for its
+   matching setup acknowledgement. Saved, sent and confirmed are separate states.
 4. Warn every intended recipient, agree what the test means, and follow the
    [physical drill](docs/preparation.md). With both providers configured, Grafana
    is preferred and Pushover is a fallback; retries can reach both. Test each
@@ -86,6 +93,11 @@ by themselves. Android `.apk` files are installable test builds; `.aab` files
 are developer bundles requiring release signing and Store distribution.
 Check each release's notes and checksums. Beta updates may be incompatible;
 rehearse again after changing a device, configuration or receiving phone.
+Native CI artifacts require a GitHub login and are retained for 14 days.
+The paired APKs use a fresh debug signing key per CI build, so they may not
+install over an earlier build. Uninstalling loses local setup; do not do so
+without a plan to configure, sync and rehearse again. They are test installers,
+not a stable update channel.
 
 ## Location and privacy
 
@@ -105,10 +117,17 @@ physical test cases, not guarantees.
 
 **The direct beta is not end-to-end encrypted to your recipients.** Android
 Setup encrypts its local configuration. Wear OS provisioning is encrypted to
-the watch, but Garmin provisioning passes through Garmin Connect. Selected
-notification providers receive readable profile and location data; opening map
-or photo links also involves their hosts. Include only information you intend
-to share. See [privacy](docs/privacy.md) and the
+the watch, but Garmin provisioning passes through Garmin Connect. After review
+and sync, optional conversation words are automatically sent with the response
+plan in the initial alert. Recipients do not need to look them up elsewhere.
+They are a human callback aid, not wallet seed words, proof of safety or an
+automatic all-clear; OpenDistress does not make the callback or verify the words.
+Garmin Connect can read the synced briefing, and selected notification providers
+receive readable briefing, profile and location data. Receiver lock screens may
+expose that content; opening map or photo links also involves their hosts.
+Include only information you intend to share. See the
+[conversation-word guide](docs/preparation.md#optional-conversation-words),
+[privacy](docs/privacy.md) and the
 [threat model](docs/threat-model.md).
 
 ## For developers

@@ -104,7 +104,8 @@ or emergency readiness in the short description.
 > personal risk. Configure a Grafana Cloud IRM or Pushover TEST route in calm
 > conditions, then deliberately hold the watch's START button for 2.5 seconds
 > to send a clearly marked test signal. After provider acceptance, the watch
-> confirms with haptics, displays a neutral analog cover, and attempts
+> displays a neutral analog cover, gives two short vibration pulses if enabled,
+> and attempts
 > best-available location updates while the app remains open.
 >
 > This beta does not contact emergency services. Provider acceptance does not
