@@ -107,7 +107,7 @@ class PreparationActivity : Activity() {
         heading("$watch → $provider drill")
         text("Arrange this with ALL intended recipients first. TEST alerts can be loud and repeat. Use only a test route. Do not call emergency services for this exercise.")
         if (config.grafanaWebhookUrl != null && config.pushoverUserKey != null) {
-            text("With both routes saved, Grafana is tried first; Pushover is a fallback. Only record the provider that actually received this test. To test the other route, save a setup containing only that provider and sync again.")
+            text("With both routes saved, Grafana is tried first; Pushover is a fallback. A retry can reach both providers, so warn both recipient groups. Only record the provider you actually observed. To isolate a route, save only that provider and sync again.")
         }
         val checks = listOf(
             "I confirmed this saved setup on the intended watch and informed every recipient.",

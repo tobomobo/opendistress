@@ -104,7 +104,7 @@ internal object GarminCompanionProtocol {
 
     private fun digest(revision: Long, values: Map<String, String>): String {
         val canonical = buildString {
-            append("opendistress.companion.config.v1\n")
+            append(PROTOCOL).append('\n')
             append("revision=").append(revision).append('\n')
             for ((key, value) in values) {
                 append(key).append('=').append(encode(value)).append('\n')

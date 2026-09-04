@@ -31,6 +31,8 @@ class GarminCompanionProtocolTest {
         assertEquals("42", message["revision"])
         assertEquals(15, message.size)
         assertEquals(GarminCompanionProtocol.digest(config), message["config_digest"])
+        // Same fixed vector as companionConfigAndPhoneLocationVectors in Monkey C.
+        assertEquals("PtnZRIA3HR75P-8pDXDc6jOBDDG2q9kd_kTMUU6qjAs", message["config_digest"])
         val changed = config.copy(customAlertMessage = "different")
         require(GarminCompanionProtocol.digest(config) != GarminCompanionProtocol.digest(changed))
     }
