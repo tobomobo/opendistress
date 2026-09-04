@@ -3,6 +3,7 @@ package dev.opendistress.mobile
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -148,6 +149,11 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             setPadding(dp(20), dp(12), dp(20), dp(32))
         }
         content.addView(heroCard(), matchWidth())
+        content.addView(MaterialButton(this).apply {
+            text = "Preparation & physical drill"
+            minHeight = dp(56)
+            setOnClickListener { startActivity(Intent(this@MainActivity, PreparationActivity::class.java)) }
+        }, matchWidth(topMargin = dp(12)))
 
         val delivery = addSection(
             content,
@@ -419,6 +425,16 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         fields[key] = field
         parent.addView(TextInputLayout(this).apply {
             hint = getString(label)
+            isCounterEnabled = !secret
+            counterMaxLength = maxLength
+            helperText = when (key) {
+                "homeAddress" -> "Street, number, stairway, floor, door. Your home address is not your current GPS location."
+                "responseInstructions" -> "Agree who acts first, how to verify your safety, and when to call emergency services. Do not assume a call back is safe."
+                "backgroundInfo" -> "Relevant medical needs, languages, access instructions or threat context."
+                "childrenInfo" -> "Who may need help, their relationship to you, and relevant care instructions."
+                "profilePhotoUrl" -> "Optional link only; providers and anyone opening it may see the URL. No photo is uploaded here."
+                else -> null
+            }
             boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
             boxStrokeColor = color(com.google.android.material.R.attr.colorOutline, Color.GRAY)
             setBoxCornerRadii(

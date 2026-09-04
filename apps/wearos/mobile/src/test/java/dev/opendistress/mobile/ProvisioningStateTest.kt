@@ -13,6 +13,29 @@ import org.junit.Test
 
 class ProvisioningStateTest {
     @Test
+    fun drillEvidenceIsBoundToSetupAndExpiresWithoutInventingTelemetry() {
+        val drill = DrillEvidence(10, "Garmin", "Pushover", 1000)
+        assertTrue(drill.isCurrent(10, 1001))
+        assertTrue(!drill.isCurrent(11, 1001))
+        assertTrue(!drill.isCurrent(10, 999))
+        assertTrue(!drill.isCurrent(10, 1000 + 30L * 86400))
+        val state = ProvisioningState(config = fixture(10), drills = listOf(drill))
+        assertEquals(state, ProvisioningStateCodec.decode(ProvisioningStateCodec.encode(state)))
+        assertNull(state.confirmed)
+        assertTrue(!state.afterSave(fixture(11)).drills.single().isCurrent(11, 1001))
+    }
+
+    @Test
+    fun oldStateMigratesWithoutClaimingADrill() {
+        val state = ProvisioningState(config = fixture(10))
+        val versionTwo = ProvisioningStateCodec.encode(state)
+        // Version 1 ends before the new drill count; preserve its original layout.
+        val old = versionTwo.copyOf(versionTwo.size - 4)
+        java.nio.ByteBuffer.wrap(old).putInt(4, 1)
+        assertEquals(state, ProvisioningStateCodec.decode(old))
+    }
+
+    @Test
     fun savePublishAndMatchingAckRemainSeparateFacts() {
         val config = fixture(10)
         val saved = ProvisioningState().afterSave(config)

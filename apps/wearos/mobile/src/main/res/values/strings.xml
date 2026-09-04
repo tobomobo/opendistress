@@ -14,7 +14,7 @@
     <string name="pushover_user_key">Pushover user/group key</string>
     <string name="pushover_api_token">Pushover application API token</string>
     <string name="emergency_card">Emergency profile</string>
-    <string name="emergency_card_explanation">Optional information included with the direct-provider alert. Add only details you want responders to receive.</string>
+    <string name="emergency_card_explanation">Stored encrypted on this phone and copied to your watches when you save. Garmin setup passes through Garmin Connect. During a TEST, selected providers receive these details in readable form. Police are not contacted automatically.</string>
     <string name="protected_person_name">Protected person name</string>
     <string name="prepared_alert_message">Prepared alert message</string>
     <string name="home_address">Home address</string>
