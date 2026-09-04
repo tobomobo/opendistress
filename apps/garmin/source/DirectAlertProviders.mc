@@ -294,7 +294,9 @@ module DirectAlertProfile {
     }
 
     function initialMessage() {
-        return appendSection(TEST_MESSAGE, "VORBEREITETE NACHRICHT", alertMessage());
+        var message = appendSection(TEST_MESSAGE, "REAKTIONSPLAN (NUR UEBUNG)",
+            optionalText("responseInstructions", 180));
+        return appendSection(message, "VORBEREITETE NACHRICHT", alertMessage());
     }
 
     function locationTitle(sequence) {
@@ -381,10 +383,10 @@ module DirectAlertProfile {
     function pushoverMessage() {
         var profile = fields();
         var message = TEST_MESSAGE;
+        message = appendClippedSection(message, "REAKTIONSPLAN (NUR UEBUNG)",
+            profile["response_instructions"], PUSHOVER_RESPONSE_CHARACTERS);
         message = appendClippedSection(message, "VORBEREITETE NACHRICHT",
             profile["alert_message"], PUSHOVER_ALERT_MESSAGE_CHARACTERS);
-        message = appendClippedSection(message, "HINWEISE FUER HELFER",
-            profile["response_instructions"], PUSHOVER_RESPONSE_CHARACTERS);
         message = appendClippedSection(message, "PERSON MIT DER UHR",
             profile["person_name"], PUSHOVER_NAME_CHARACTERS);
         message = appendClippedSection(
@@ -395,7 +397,7 @@ module DirectAlertProfile {
         );
         message = appendClippedSection(message, "KINDER / FAMILIE",
             profile["children_info"], PUSHOVER_CHILDREN_CHARACTERS);
-        message = appendClippedSection(message, "HEIMADRESSE",
+        message = appendClippedSection(message, "HEIMADRESSE (NICHT GPS)",
             profile["home_address"], PUSHOVER_ADDRESS_CHARACTERS);
         message = appendClippedSection(message, "HINTERGRUND",
             profile["background_info"], PUSHOVER_BACKGROUND_CHARACTERS);

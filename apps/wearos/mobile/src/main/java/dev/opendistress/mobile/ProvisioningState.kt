@@ -52,6 +52,7 @@ internal data class ProvisioningState(
     val config: DirectConfig? = null,
     val pending: PendingProvisioning? = null,
     val confirmed: ConfirmedProvisioning? = null,
+    val drills: List<DrillEvidence> = emptyList(),
 ) {
     fun afterSave(next: DirectConfig): ProvisioningState = copy(
         config = next,
@@ -82,7 +83,7 @@ internal data class ProvisioningState(
 
 internal object ProvisioningStateCodec {
     private const val MAGIC = 0x4f445053 // ODPS
-    private const val VERSION = 1
+    private const val VERSION = 2
     private const val MAX_BYTES = 16_384
 
     fun encode(state: ProvisioningState): ByteArray {
@@ -98,6 +99,14 @@ internal object ProvisioningStateCodec {
             data.writeLong(state.confirmed?.revision ?: 0)
             data.writeOptionalBytes(state.confirmed?.configDigestSha256)
             data.writeLong(state.confirmed?.acceptedAtEpochSeconds ?: 0)
+            require(state.drills.size <= 4)
+            data.writeInt(state.drills.size)
+            state.drills.forEach {
+                data.writeLong(it.revision)
+                data.writeUTF(it.watch)
+                data.writeUTF(it.provider)
+                data.writeLong(it.recordedAt)
+            }
         }
         return output.toByteArray().also { require(it.size in 1..MAX_BYTES) }
     }
@@ -107,7 +116,8 @@ internal object ProvisioningStateCodec {
         val raw = ByteArrayInputStream(bytes)
         return DataInputStream(raw).use { data ->
             require(data.readInt() == MAGIC)
-            require(data.readInt() == VERSION)
+            val version = data.readInt()
+            require(version in 1..VERSION)
             val config = data.readOptionalBytes()?.let(DirectConfig::fromCanonicalBytes)
             val pendingWatchId = data.readOptionalString()
             val pendingRevision = data.readLong()
@@ -116,9 +126,15 @@ internal object ProvisioningStateCodec {
             val confirmedRevision = data.readLong()
             val confirmedDigest = data.readOptionalBytes()
             val confirmedAt = data.readLong()
+            val drills = if (version >= 2) {
+                val count = data.readInt()
+                require(count in 0..4)
+                List(count) { DrillEvidence(data.readLong(), data.readUTF(), data.readUTF(), data.readLong()) }
+            } else emptyList()
             require(raw.available() == 0)
             ProvisioningState(
                 config = config,
+                drills = drills,
                 pending = if (pendingRevision == 0L && pendingDigest == null && pendingWatchId == null) {
                     null
                 } else {

@@ -17,6 +17,24 @@ import org.junit.Test
 
 class DirectCoreTest {
     @Test
+    fun fullProfileRetainsResponsePlanAndAddressWithinProviderLimit() {
+        val full = config().copy(
+            protectedPersonName = "N".repeat(40), customAlertMessage = "M".repeat(240),
+            homeAddress = "H".repeat(120), childrenInfo = "C".repeat(150),
+            personDescription = "D".repeat(150), backgroundInfo = "B".repeat(180),
+            responseInstructions = "R".repeat(180),
+        )
+        val message = decodeForm(DirectPushoverAdapter.trigger(full, INCIDENT_ID, 1000, 1900).body)
+            .getValue("message")
+        assertTrue(message.length <= 1024)
+        assertTrue(message.contains("R".repeat(167)))
+        assertTrue(message.contains("HEIMADRESSE (NICHT GPS)"))
+        assertTrue(message.contains("H".repeat(97)))
+        assertTrue(message.indexOf("REAKTIONSPLAN") < message.indexOf("VORBEREITETE NACHRICHT"))
+        assertTrue(DirectAlertText.initialMessage(DirectProfile.from(full)).contains(full.responseInstructions))
+    }
+
+    @Test
     fun providerPayloadsStayClearlyTestOnlyAndBounded() {
         val config = config()
         val grafana = DirectGrafanaAdapter.trigger(config, INCIDENT_ID, 1_000, 1_900)

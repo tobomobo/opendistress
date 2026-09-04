@@ -24,7 +24,6 @@ import java.util.concurrent.CopyOnWriteArraySet
 internal class GarminCompanionLink private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val connectIQ = ConnectIQ.getInstance(appContext, ConnectIQ.IQConnectType.WIRELESS)
-    private val secureStore = SecureProvisioningStore.get(appContext)
     private val preferences = appContext.getSharedPreferences("garmin-link-v1", Context.MODE_PRIVATE)
     private val listeners = CopyOnWriteArraySet<(GarminLinkStatus) -> Unit>()
     private val locationClient = LocationServices.getFusedLocationProviderClient(appContext)
@@ -33,6 +32,8 @@ internal class GarminCompanionLink private constructor(context: Context) {
     private var currentStatus: GarminLinkStatus =
         GarminLinkStatus.Unavailable("Starting Garmin connection…")
     private var pendingConfig: DirectConfig? = null
+    private var pendingTransfer: GarminSetupBinding? = null
+    private var confirmedTransfer: GarminSetupBinding? = null
 
     private val applicationEvents = ConnectIQ.IQApplicationEventListener { device, installedApp, messages, status ->
         if (installedApp.applicationId !in GarminCompanionProtocol.GARMIN_APP_IDS) {
@@ -57,17 +58,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
         connectIQ.initialize(appContext, false, object : ConnectIQ.ConnectIQListener {
             override fun onSdkReady() {
                 ready = true
-                runCatching {
-                    // CIQQA-4631 reports that Garmin Connect 5.27.3 never binds
-                    // the SDK service and then suppresses application queries.
-                    // Keep the dynamic listener until binder delivery is fixed
-                    // and physically retested.
-                    connectIQ.registerForAppEvents(applicationEvents)
-                }.onFailure {
-                    update(GarminLinkStatus.Attention("Garmin Connect is available, but app linking failed"))
-                    return
-                }
-                val saved = pendingConfig ?: secureStore.snapshot().config
+                val saved = pendingConfig ?: savedConfig()
                 if (preferences.getBoolean(KEY_GARMIN_ENABLED, false) && saved != null) {
                     sync(saved)
                 } else {
@@ -77,6 +68,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
 
             override fun onInitializeError(error: ConnectIQ.IQSdkErrorStatus) {
                 ready = false
+                initialized = false
                 update(
                     GarminLinkStatus.Unavailable(
                         when (error) {
@@ -92,6 +84,9 @@ internal class GarminCompanionLink private constructor(context: Context) {
 
             override fun onSdkShutDown() {
                 ready = false
+                initialized = false
+                pendingTransfer = null
+                confirmedTransfer = null
                 update(GarminLinkStatus.Unavailable("Garmin connection stopped"))
             }
         })
@@ -117,7 +112,11 @@ internal class GarminCompanionLink private constructor(context: Context) {
     }
 
     fun resume() {
-        val saved = secureStore.snapshot().config
+        if (!initialized) {
+            initialize()
+            return
+        }
+        val saved = savedConfig()
         if (preferences.getBoolean(KEY_GARMIN_ENABLED, false) && saved != null) {
             sync(saved)
         } else {
@@ -126,10 +125,15 @@ internal class GarminCompanionLink private constructor(context: Context) {
     }
 
     fun sync(config: DirectConfig) {
+        // Re-send on each explicit sync/resume: the same physical watch may
+        // have had its app reinstalled since its last acknowledgement.
+        confirmedTransfer = null
+        pendingTransfer = null
         preferences.edit().putBoolean(KEY_GARMIN_ENABLED, true).apply()
         pendingConfig = config
         if (!ready) {
             update(GarminLinkStatus.Waiting("Saved securely — waiting for Garmin Connect"))
+            initialize()
             return
         }
         val devices = connectedDevices()
@@ -169,11 +173,16 @@ internal class GarminCompanionLink private constructor(context: Context) {
                 device,
                 object : ConnectIQ.IQApplicationInfoListener {
                     override fun onApplicationInfoReceived(installed: IQApp) {
+                        // Non-binder mode requires a device/app registration.
+                        // The listener-only overload registers the binder path.
+                        runCatching {
+                            connectIQ.registerForAppEvents(device, installed, applicationEvents)
+                        }.onFailure {
+                            update(GarminLinkStatus.Attention("Garmin app message registration failed"))
+                            return
+                        }
                         if (config == null) {
                             update(readiness(device, installed))
-                        } else if (isConfirmed(config, installed)) {
-                            pendingConfig = null
-                            update(GarminLinkStatus.Ready("Confirmed on ${device.friendlyName} — TEST route ready"))
                         } else {
                             sendConfiguration(device, installed, config)
                         }
@@ -191,16 +200,15 @@ internal class GarminCompanionLink private constructor(context: Context) {
 
     private fun sendConfiguration(device: IQDevice, installed: IQApp, config: DirectConfig) {
         val payload = GarminCompanionProtocol.configMessage(config)
+        val transfer = GarminSetupBinding(device.deviceIdentifier, installed.applicationId,
+            config.revision, GarminCompanionProtocol.digest(config), System.currentTimeMillis() / 1_000)
+        pendingTransfer = transfer
         update(GarminLinkStatus.Waiting("Sending setup to ${device.friendlyName}…"))
         runCatching {
             connectIQ.sendMessage(device, installed, payload) { _, _, status ->
+                // ACK may arrive before the send callback; do not downgrade it.
+                if (pendingTransfer != transfer) return@sendMessage
                 if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
-                    preferences.edit()
-                        .putLong(KEY_PENDING_REVISION, config.revision)
-                        .putString(KEY_PENDING_DIGEST, GarminCompanionProtocol.digest(config))
-                        .putString(KEY_PENDING_APP_ID, installed.applicationId)
-                        .putString(KEY_DEVICE_NAME, device.friendlyName)
-                        .apply()
                     update(
                         GarminLinkStatus.Waiting(
                             "Sent to ${device.friendlyName} — open OpenDistress there and check READY TEST",
@@ -216,43 +224,33 @@ internal class GarminCompanionLink private constructor(context: Context) {
     }
 
     private fun acceptAck(device: IQDevice, installedApp: IQApp, ack: GarminConfigAck) {
-        val expectedRevision = preferences.getLong(KEY_PENDING_REVISION, 0)
-        val expectedDigest = preferences.getString(KEY_PENDING_DIGEST, null)
-        val expectedAppId = preferences.getString(KEY_PENDING_APP_ID, null)
-        if (ack.revision != expectedRevision || expectedDigest == null ||
-            installedApp.applicationId != expectedAppId ||
-            !MessageDigest.isEqual(ack.configDigest.toByteArray(), expectedDigest.toByteArray())
-        ) return
-        preferences.edit()
-            .remove(KEY_PENDING_REVISION)
-            .remove(KEY_PENDING_DIGEST)
-            .remove(KEY_PENDING_APP_ID)
-            .putLong(KEY_CONFIRMED_REVISION, ack.revision)
-            .putString(KEY_CONFIRMED_DIGEST, ack.configDigest)
-            .putString(KEY_CONFIRMED_APP_ID, installedApp.applicationId)
-            .putString(KEY_DEVICE_NAME, device.friendlyName)
-            .apply()
+        val transfer = pendingTransfer ?: return
+        val saved = savedConfig() ?: return
+        if (!transfer.isFreshAck(ack.storedAtEpochSeconds, System.currentTimeMillis() / 1_000)) return
+        if (!transfer.matches(device.deviceIdentifier, installedApp.applicationId,
+                ack.revision, ack.configDigest) ||
+            !transfer.matches(device.deviceIdentifier, installedApp.applicationId,
+                saved.revision, GarminCompanionProtocol.digest(saved))) return
+        confirmedTransfer = transfer
+        pendingTransfer = null
         pendingConfig = null
         update(GarminLinkStatus.Ready("Confirmed on ${device.friendlyName} — TEST route ready"))
     }
 
     private fun readiness(device: IQDevice, installedApp: IQApp? = null): GarminLinkStatus {
-        val config = secureStore.snapshot().config
+        val config = savedConfig()
             ?: return GarminLinkStatus.Waiting("${device.friendlyName} connected — save setup to provision it")
-        return if (installedApp != null && isConfirmed(config, installedApp)) {
+        return if (installedApp != null && confirmedTransfer?.matches(
+                device.deviceIdentifier, installedApp.applicationId,
+                config.revision, GarminCompanionProtocol.digest(config)) == true) {
             GarminLinkStatus.Ready("Confirmed on ${device.friendlyName} — TEST route ready")
         } else {
             GarminLinkStatus.Waiting("${device.friendlyName} connected — setup is not yet confirmed")
         }
     }
 
-    private fun isConfirmed(config: DirectConfig, installedApp: IQApp): Boolean =
-        preferences.getLong(KEY_CONFIRMED_REVISION, 0) == config.revision &&
-            preferences.getString(KEY_CONFIRMED_DIGEST, null) == GarminCompanionProtocol.digest(config) &&
-            preferences.getString(KEY_CONFIRMED_APP_ID, null) == installedApp.applicationId
-
     private fun requestPhoneLocation(device: IQDevice, installedApp: IQApp, incident: GarminAcceptedIncident) {
-        val config = secureStore.snapshot().config ?: return
+        val config = savedConfig() ?: return
         if (!MessageDigest.isEqual(
                 incident.configDigest.toByteArray(),
                 GarminCompanionProtocol.digest(config).toByteArray(),
@@ -308,7 +306,8 @@ internal class GarminCompanionLink private constructor(context: Context) {
             connectIQ.sendMessage(device, installedApp, payload) { _, _, status ->
                 update(
                     if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
-                        GarminLinkStatus.Ready("Phone location candidate sent to ${device.friendlyName}")
+                        // Transport completion is not a configuration ACK.
+                        readiness(device, installedApp)
                     } else {
                         GarminLinkStatus.Attention("Phone location could not reach the Garmin watch")
                     },
@@ -328,16 +327,18 @@ internal class GarminCompanionLink private constructor(context: Context) {
         listeners.forEach { it(status) }
     }
 
+    private fun savedConfig(): DirectConfig? = try {
+        SecureProvisioningStore.get(appContext).snapshot().config
+    } catch (_: Exception) {
+        // Never let Keystore/state failure kill Application.onCreate before
+        // MainActivity can show its existing storage recovery screen.
+        update(GarminLinkStatus.Unavailable("Stored setup could not be read — open setup to recover"))
+        null
+    }
+
     companion object {
         private const val KEY_LOCATION_ASSIST = "location-assist"
         private const val KEY_GARMIN_ENABLED = "garmin-enabled"
-        private const val KEY_PENDING_REVISION = "pending-revision"
-        private const val KEY_PENDING_DIGEST = "pending-digest"
-        private const val KEY_PENDING_APP_ID = "pending-app-id"
-        private const val KEY_CONFIRMED_REVISION = "confirmed-revision"
-        private const val KEY_CONFIRMED_DIGEST = "confirmed-digest"
-        private const val KEY_CONFIRMED_APP_ID = "confirmed-app-id"
-        private const val KEY_DEVICE_NAME = "device-name"
         @Volatile private var instance: GarminCompanionLink? = null
 
         fun get(context: Context): GarminCompanionLink = instance ?: synchronized(this) {

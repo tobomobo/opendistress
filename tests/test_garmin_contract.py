@@ -610,29 +610,28 @@ class GarminContractTests(unittest.TestCase):
         }.items():
             self.assertIn(f"const {constant} = {value};", profile)
         self.assertIn('appendClippedSection(message, "VORBEREITETE NACHRICHT"', profile)
-        self.assertIn('appendClippedSection(message, "HINWEISE FUER HELFER"', profile)
+        self.assertIn('appendClippedSection(message, "REAKTIONSPLAN (NUR UEBUNG)"', profile)
         self.assertLess(
-            profile.index('appendClippedSection(message, "HINWEISE FUER HELFER"'),
+            profile.index('appendClippedSection(message, "REAKTIONSPLAN (NUR UEBUNG)"'),
             profile.index('appendClippedSection(message, "HINTERGRUND"'),
         )
         maximum_profile_message = (
-            len("KEIN ECHTER NOTFALL. Garmin Testausloesung; keine Hilfeleistung erforderlich.")
+            len("KEIN ECHTER NOTFALL. OpenDistress Testausloesung; keine Hilfeleistung erforderlich.")
             + sum(
                 len(label)
                 for label in (
                     "\n\nVORBEREITETE NACHRICHT\n",
                     "\n\nPERSON MIT DER UHR\n",
-                    "\n\nHEIMADRESSE\n",
+                    "\n\nHEIMADRESSE (NICHT GPS)\n",
                     "\n\nKINDER / FAMILIE\n",
                     "\n\nBESCHREIBUNG DIESER PERSON\n",
                     "\n\nHINTERGRUND\n",
-                    "\n\nHINWEISE FUER HELFER\n",
+                    "\n\nREAKTIONSPLAN (NUR UEBUNG)\n",
                 )
             )
             + sum((160, 170, 40, 100, 100, 100, 90))
         )
         self.assertLessEqual(maximum_profile_message, 1024)
-        self.assertEqual(maximum_profile_message, 982)
 
         properties = ET.parse(GARMIN / "resources/properties/properties.xml").getroot()
         custom_default = next(

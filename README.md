@@ -143,6 +143,10 @@ and physical Pixel Watch behavior remain separate evidence gates.
 
 ## Run host checks
 
+The Android companion includes a saved profile preview and guided physical
+drill with revision-bound, owner-reported test records. See
+[`docs/preparation.md`](docs/preparation.md) for the workflow and evidence limits.
+
 Python 3.11+ and Node 22 are the host requirements:
 
 ```sh
