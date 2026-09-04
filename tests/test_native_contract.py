@@ -14,6 +14,47 @@ WATCH = ROOT / "apps/watchos"
 
 
 class NativeContractTests(unittest.TestCase):
+    def test_mobile_uses_material3_components_and_a_mask_safe_splash(self):
+        android = "{http://schemas.android.com/apk/res/android}"
+        mobile = WEAR / "mobile/src/main"
+        manifest = ET.parse(mobile / "AndroidManifest.xml").getroot()
+        application = manifest.find("application")
+        self.assertEqual(application.attrib[android + "theme"], "@style/AppTheme.Starting")
+
+        splash_styles = ET.parse(mobile / "res/values-v31/styles.xml").getroot()
+        starting = next(
+            style for style in splash_styles.findall("style")
+            if style.attrib["name"] == "AppTheme.Starting"
+        )
+        items = {item.attrib["name"]: item.text for item in starting.findall("item")}
+        self.assertEqual(
+            items["android:windowSplashScreenAnimatedIcon"],
+            "@drawable/ic_splash_mark",
+        )
+        self.assertEqual(
+            items["android:windowSplashScreenBackground"],
+            "@color/opendistress_surface",
+        )
+
+        splash = ET.parse(mobile / "res/drawable/ic_splash_mark.xml").getroot()
+        self.assertEqual(splash.attrib[android + "width"], "288dp")
+        self.assertEqual(splash.attrib[android + "height"], "288dp")
+        self.assertEqual(splash.attrib[android + "viewportWidth"], "108")
+        self.assertEqual(splash.attrib[android + "viewportHeight"], "108")
+        paths = [path.attrib[android + "pathData"] for path in splash.findall("path")]
+        self.assertTrue(any("M54,21" in path and "A33,33" in path for path in paths))
+
+        source = (mobile / "java/dev/opendistress/mobile/MainActivity.kt").read_text()
+        for component in (
+            "MaterialButton",
+            "MaterialCardView",
+            "MaterialTextView",
+            "MaterialToolbar",
+            "TextInputLayout",
+        ):
+            self.assertIn(component, source)
+        self.assertNotIn("android.widget.Button", source)
+
     def test_android_metadata_and_public_defaults_are_safe(self):
         manifest = ET.parse(WEAR / "app/src/main/AndroidManifest.xml").getroot()
         ET.parse(WEAR / "app/src/main/res/values/styles.xml")
@@ -70,6 +111,14 @@ class NativeContractTests(unittest.TestCase):
             "/opendistress.local.properties",
             (WEAR / ".gitignore").read_text().splitlines(),
         )
+        mobile_build = (WEAR / "mobile/build.gradle.kts").read_text()
+        self.assertIn('namespace = "dev.opendistress.mobile"', mobile_build)
+        self.assertIn('applicationId = "dev.opendistress.wear"', mobile_build)
+        watch_version = re.search(r"versionCode = ([0-9_]+)", build)
+        mobile_version = re.search(r"versionCode = ([0-9_]+)", mobile_build)
+        self.assertIsNotNone(watch_version)
+        self.assertIsNotNone(mobile_version)
+        self.assertNotEqual(watch_version.group(1), mobile_version.group(1))
         example = (WEAR / "opendistress.local.properties.example").read_text()
         self.assertNotRegex(example, r"(?i)\b[0-9a-f]{64}\b")
         wear_capabilities = ET.parse(
@@ -151,6 +200,15 @@ class NativeContractTests(unittest.TestCase):
             '-destination "platform=watchOS Simulator,id=${watch_id}"',
             "-enableAddressSanitizer YES",
             "CODE_SIGNING_ALLOWED=NO",
+            "OpenDistress-Android-Setup-debug.apk",
+            "OpenDistress-Pixel-Watch-debug.apk",
+            "opendistress-pixel-watch-install-pair-${{ github.sha }}",
+            "OpenDistress-Android-Setup-release-unsigned.aab",
+            "OpenDistress-Pixel-Watch-release-unsigned.aab",
+            "opendistress-pixel-watch-unsigned-bundles-${{ github.sha }}",
+            "sha256sum *.apk > SHA256SUMS.txt",
+            "sha256sum *.aab > SHA256SUMS.txt",
+            "if-no-files-found: error",
             "archive",
         ):
             self.assertIn(expected, workflow)

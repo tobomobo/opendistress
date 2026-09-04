@@ -1,11 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: MIT -->
 <resources>
-    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#E07800</item>
-        <item name="android:navigationBarColor">#101820</item>
-        <item name="android:statusBarColor">#FAFAFA</item>
+    <style name="BaseAppTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="fontFamily">sans-serif</item>
+        <item name="colorPrimary">@color/opendistress_primary</item>
+        <item name="colorOnPrimary">@color/opendistress_on_primary</item>
+        <item name="colorPrimaryContainer">@color/opendistress_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/opendistress_on_primary_container</item>
+        <item name="colorSecondary">@color/opendistress_secondary</item>
+        <item name="colorSecondaryContainer">@color/opendistress_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/opendistress_on_secondary_container</item>
+        <item name="colorTertiaryContainer">@color/opendistress_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/opendistress_on_tertiary_container</item>
+        <item name="colorSurface">@color/opendistress_surface</item>
+        <item name="colorOnSurface">@color/opendistress_on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/opendistress_on_surface_variant</item>
+        <item name="colorSurfaceVariant">@color/opendistress_surface_variant</item>
+        <item name="colorSurfaceContainerLow">@color/opendistress_surface_container_low</item>
+        <item name="colorSurfaceContainerHigh">@color/opendistress_surface_container_high</item>
+        <item name="colorOutline">@color/opendistress_outline</item>
+        <item name="colorOutlineVariant">@color/opendistress_outline_variant</item>
+        <item name="colorErrorContainer">@color/opendistress_error_container</item>
+        <item name="colorOnErrorContainer">@color/opendistress_on_error_container</item>
+        <item name="textInputStyle">@style/Widget.OpenDistress.TextInputLayout</item>
+        <item name="android:navigationBarColor">@color/opendistress_surface</item>
+        <item name="android:statusBarColor">@color/opendistress_surface</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
+    <style name="AppTheme" parent="BaseAppTheme">
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <style name="AppTheme.Starting" parent="AppTheme" />
+
+    <style name="Widget.OpenDistress.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxCornerRadiusTopStart">16dp</item>
+        <item name="boxCornerRadiusTopEnd">16dp</item>
+        <item name="boxCornerRadiusBottomStart">16dp</item>
+        <item name="boxCornerRadiusBottomEnd">16dp</item>
+    </style>
+
+    <style name="TextAppearance.OpenDistress.Brand" parent="TextAppearance.Material3.TitleLarge">
+        <item name="fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.OpenDistress.Eyebrow" parent="TextAppearance.Material3.LabelMedium">
+        <item name="fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.12</item>
+    </style>
+
+    <style name="TextAppearance.OpenDistress.Hero" parent="TextAppearance.Material3.HeadlineMedium">
+        <item name="fontFamily">sans-serif</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="TextAppearance.OpenDistress.Section" parent="TextAppearance.Material3.TitleLarge">
+        <item name="fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.OpenDistress.Status" parent="TextAppearance.Material3.TitleMedium">
+        <item name="fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 </resources>

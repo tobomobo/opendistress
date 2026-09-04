@@ -50,6 +50,7 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
     private var pressedAction = Action.NONE
     private val detailsBounds = RectF()
     private val resetBounds = RectF()
+    private val modeBounds = RectF()
     private val handler = Handler(Looper.getMainLooper())
     private val repaintClock = object : Runnable {
         override fun run() {
@@ -59,22 +60,30 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
     }
 
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(225, 228, 234)
+        color = Color.rgb(232, 224, 225)
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
     private val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(88, 214, 141)
+        color = Color.rgb(109, 213, 140)
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
+    private val dialPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(29, 27, 30)
+        style = Paint.Style.FILL
+    }
+    private val modePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(43, 40, 45)
+        style = Paint.Style.FILL
+    }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = Color.rgb(255, 248, 247)
         textAlign = Paint.Align.CENTER
-        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
     }
     private val secondaryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(180, 185, 194)
+        color = Color.rgb(211, 196, 198)
         textAlign = Paint.Align.CENTER
     }
     private val actionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -100,7 +109,7 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
         ambient = isAmbient
         this.burnInProtectionRequired = isAmbient && burnInProtectionRequired
         val antiAlias = !isAmbient || !lowBitAmbient
-        listOf(linePaint, accentPaint, textPaint, secondaryPaint, actionPaint).forEach {
+        listOf(linePaint, accentPaint, dialPaint, modePaint, textPaint, secondaryPaint, actionPaint).forEach {
             it.isAntiAlias = antiAlias
         }
         handler.removeCallbacks(repaintClock)
@@ -133,26 +142,56 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
             }
         }
         val centerX = width / 2f
-        val dialCenterY = height * 0.41f
-        val dialRadius = size * 0.225f
+        val dialCenterY = height * 0.405f
+        val dialRadius = size * 0.218f
 
-        textPaint.textSize = size * 0.071f
-        canvas.drawText("TEST ACCEPTED", centerX, height * 0.135f, textPaint)
+        val chipWidth = size * 0.25f
+        val chipHeight = size * 0.072f
+        modeBounds.set(
+            centerX - chipWidth / 2f,
+            height * 0.068f,
+            centerX + chipWidth / 2f,
+            height * 0.068f + chipHeight,
+        )
+        if (!ambient) canvas.drawRoundRect(modeBounds, chipHeight / 2f, chipHeight / 2f, modePaint)
+        secondaryPaint.color = Color.rgb(211, 196, 198)
+        secondaryPaint.typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        secondaryPaint.letterSpacing = 0.11f
+        secondaryPaint.textSize = size * 0.030f
+        canvas.drawText(
+            "TEST ACTIVE",
+            centerX,
+            modeBounds.centerY() - (secondaryPaint.ascent() + secondaryPaint.descent()) / 2f,
+            secondaryPaint,
+        )
+        secondaryPaint.letterSpacing = 0f
 
-        linePaint.strokeWidth = size * 0.009f
+        textPaint.textSize = size * 0.060f
+        canvas.drawText("PROVIDER ACCEPTED", centerX, height * 0.190f, textPaint)
+
+        if (!ambient) canvas.drawCircle(centerX, dialCenterY, dialRadius, dialPaint)
+        linePaint.color = Color.rgb(73, 67, 74)
+        linePaint.strokeWidth = size * 0.008f
         canvas.drawCircle(centerX, dialCenterY, dialRadius, linePaint)
         drawTicks(canvas, centerX, dialCenterY, dialRadius, size)
         drawHands(canvas, centerX, dialCenterY, dialRadius, size)
 
-        secondaryPaint.textSize = maxOf(size * 0.042f, sp(10f))
-        canvas.drawText("Delivery not confirmed", centerX, height * 0.675f, secondaryPaint)
+        secondaryPaint.color = Color.rgb(109, 213, 140)
+        secondaryPaint.typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        secondaryPaint.textSize = maxOf(size * 0.037f, sp(9f))
+        canvas.drawText("ALERT ACTIVE", centerX, height * 0.640f, secondaryPaint)
+        secondaryPaint.color = Color.rgb(211, 196, 198)
+        secondaryPaint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+        secondaryPaint.textSize = maxOf(size * 0.037f, sp(9f))
+        canvas.drawText("Delivery unconfirmed", centerX, height * 0.690f, secondaryPaint)
 
         if (!ambient) drawActions(canvas, size)
         canvas.restoreToCount(contentSave)
     }
 
     private fun drawTicks(canvas: Canvas, centerX: Float, centerY: Float, radius: Float, size: Float) {
-        linePaint.strokeWidth = size * 0.008f
+        linePaint.color = Color.rgb(232, 224, 225)
+        linePaint.strokeWidth = size * 0.007f
         repeat(12) { index ->
             val angle = Math.toRadians(index * 30.0 - 90.0)
             val outerX = centerX + cos(angle).toFloat() * radius * 0.90f
@@ -173,7 +212,9 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
         if (!ambient) {
             drawHand(canvas, centerX, centerY, radius * 0.80f, seconds * 6f - 90f, size * 0.006f, accentPaint)
         }
+        accentPaint.style = Paint.Style.FILL
         canvas.drawCircle(centerX, centerY, size * 0.018f, accentPaint)
+        accentPaint.style = Paint.Style.STROKE
     }
 
     private fun drawHand(
@@ -197,26 +238,49 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
     }
 
     private fun drawActions(canvas: Canvas, size: Float) {
-        val heightPx = maxOf(size * 0.15f, 48f * resources.displayMetrics.density)
-        val top = height - heightPx - size * 0.035f
-        val horizontalMargin = size * 0.12f
+        val heightPx = maxOf(size * 0.145f, 48f * resources.displayMetrics.density)
+        val top = height - heightPx - size * 0.025f
+        val horizontalMargin = size * 0.105f
         val gap = size * 0.025f
         val availableWidth = width - horizontalMargin * 2 - if (showResetAction) gap else 0f
         val actionWidth = if (showResetAction) availableWidth / 2f else availableWidth
         detailsBounds.set(horizontalMargin, top, horizontalMargin + actionWidth, top + heightPx)
         resetBounds.set(detailsBounds.right + gap, top, width - horizontalMargin, top + heightPx)
 
-        actionPaint.color = if (pressedAction == Action.DETAILS) Color.rgb(56, 61, 70) else Color.rgb(35, 39, 45)
-        canvas.drawRoundRect(detailsBounds, heightPx / 2f, heightPx / 2f, actionPaint)
-        secondaryPaint.textSize = maxOf(size * 0.047f, sp(10f))
-        secondaryPaint.color = Color.WHITE
+        actionPaint.color = if (pressedAction == Action.DETAILS) Color.rgb(72, 67, 74) else Color.rgb(43, 40, 45)
+        drawPressedCapsule(canvas, detailsBounds, pressedAction == Action.DETAILS, actionPaint, size)
+        secondaryPaint.textSize = maxOf(size * 0.041f, sp(10f))
+        secondaryPaint.color = Color.rgb(255, 248, 247)
+        secondaryPaint.typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         canvas.drawText("DETAILS", detailsBounds.centerX(), detailsBounds.centerY() - (secondaryPaint.ascent() + secondaryPaint.descent()) / 2f, secondaryPaint)
         if (showResetAction) {
-            actionPaint.color = if (pressedAction == Action.RESET) Color.rgb(76, 43, 47) else Color.rgb(53, 30, 34)
-            canvas.drawRoundRect(resetBounds, heightPx / 2f, heightPx / 2f, actionPaint)
+            actionPaint.color = if (pressedAction == Action.RESET) Color.rgb(91, 56, 60) else Color.rgb(63, 35, 39)
+            drawPressedCapsule(canvas, resetBounds, pressedAction == Action.RESET, actionPaint, size)
             canvas.drawText("RESET", resetBounds.centerX(), resetBounds.centerY() - (secondaryPaint.ascent() + secondaryPaint.descent()) / 2f, secondaryPaint)
         }
-        secondaryPaint.color = Color.rgb(180, 185, 194)
+        secondaryPaint.color = Color.rgb(211, 196, 198)
+        secondaryPaint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+    }
+
+    private fun drawPressedCapsule(
+        canvas: Canvas,
+        bounds: RectF,
+        pressed: Boolean,
+        paint: Paint,
+        size: Float,
+    ) {
+        if (!pressed) {
+            canvas.drawRoundRect(bounds, bounds.height() / 2f, bounds.height() / 2f, paint)
+            return
+        }
+        val inset = size * 0.008f
+        val pressedBounds = RectF(bounds).apply { inset(inset, inset) }
+        canvas.drawRoundRect(
+            pressedBounds,
+            pressedBounds.height() / 2f,
+            pressedBounds.height() / 2f,
+            paint,
+        )
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

@@ -41,6 +41,38 @@ jobs:
           :app:assembleDebug
           :mobile:bundleRelease
           :app:bundleRelease
+      - name: Stage paired Pixel Watch debug installers
+        run: |
+          mkdir -p "$RUNNER_TEMP/opendistress-pixel-watch-install-pair"
+          cp apps/wearos/mobile/build/outputs/apk/debug/mobile-debug.apk \
+            "$RUNNER_TEMP/opendistress-pixel-watch-install-pair/OpenDistress-Android-Setup-debug.apk"
+          cp apps/wearos/app/build/outputs/apk/debug/app-debug.apk \
+            "$RUNNER_TEMP/opendistress-pixel-watch-install-pair/OpenDistress-Pixel-Watch-debug.apk"
+          cd "$RUNNER_TEMP/opendistress-pixel-watch-install-pair"
+          sha256sum *.apk > SHA256SUMS.txt
+      - name: Upload paired Pixel Watch debug installers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opendistress-pixel-watch-install-pair-${{ github.sha }}
+          path: ${{ runner.temp }}/opendistress-pixel-watch-install-pair
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stage unsigned Play Console bundles
+        run: |
+          mkdir -p "$RUNNER_TEMP/opendistress-pixel-watch-unsigned-bundles"
+          cp apps/wearos/mobile/build/outputs/bundle/release/mobile-release.aab \
+            "$RUNNER_TEMP/opendistress-pixel-watch-unsigned-bundles/OpenDistress-Android-Setup-release-unsigned.aab"
+          cp apps/wearos/app/build/outputs/bundle/release/app-release.aab \
+            "$RUNNER_TEMP/opendistress-pixel-watch-unsigned-bundles/OpenDistress-Pixel-Watch-release-unsigned.aab"
+          cd "$RUNNER_TEMP/opendistress-pixel-watch-unsigned-bundles"
+          sha256sum *.aab > SHA256SUMS.txt
+      - name: Upload unsigned Play Console bundles
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opendistress-pixel-watch-unsigned-bundles-${{ github.sha }}
+          path: ${{ runner.temp }}/opendistress-pixel-watch-unsigned-bundles
+          if-no-files-found: error
+          retention-days: 14
 
   watchos:
     runs-on: macos-26
