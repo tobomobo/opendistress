@@ -26,8 +26,13 @@ class NativeContractTests(unittest.TestCase):
             {
                 "android.permission.ACCESS_COARSE_LOCATION",
                 "android.permission.ACCESS_FINE_LOCATION",
+                "android.permission.FOREGROUND_SERVICE",
+                "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+                "android.permission.FOREGROUND_SERVICE_LOCATION",
                 "android.permission.INTERNET",
+                "android.permission.POST_NOTIFICATIONS",
                 "android.permission.VIBRATE",
+                "android.permission.WAKE_LOCK",
             },
         )
         feature = manifest.find("uses-feature")
@@ -49,7 +54,7 @@ class NativeContractTests(unittest.TestCase):
             ET.parse(WEAR / "app/src/main/res" / resource)
         standalone = application.find("meta-data")
         self.assertEqual(standalone.attrib[android + "name"], "com.google.android.wearable.standalone")
-        self.assertEqual(standalone.attrib[android + "value"], "true")
+        self.assertEqual(standalone.attrib[android + "value"], "false")
 
         build = (WEAR / "app/build.gradle.kts").read_text()
         settings = (WEAR / "settings.gradle.kts").read_text()
@@ -59,12 +64,21 @@ class NativeContractTests(unittest.TestCase):
         self.assertIn('"https://invalid.example/v2/events"', build)
         self.assertGreaterEqual(build.count('"INVALID"'), 5)
         self.assertIn('setting("keyVersion", "0")', build)
+        self.assertIn('androidx.work:work-runtime:2.11.2', build)
+        self.assertIn('androidx.wear:wear-remote-interactions:1.2.0', build)
         self.assertIn(
             "/opendistress.local.properties",
             (WEAR / ".gitignore").read_text().splitlines(),
         )
         example = (WEAR / "opendistress.local.properties.example").read_text()
         self.assertNotRegex(example, r"(?i)\b[0-9a-f]{64}\b")
+        wear_capabilities = ET.parse(
+            WEAR / "mobile/src/main/res/values/wear.xml"
+        ).getroot()
+        self.assertEqual(
+            wear_capabilities.find("string-array/item").text,
+            "opendistress_phone_setup",
+        )
 
     def test_watch_metadata_project_and_public_defaults_are_safe(self):
         with (WATCH / "OpenDistressWatch/Info.plist").open("rb") as stream:
@@ -130,7 +144,7 @@ class NativeContractTests(unittest.TestCase):
         for expected in (
             "runs-on: ubuntu-24.04",
             "runs-on: macos-26",
-            "gradle-version: \"9.5.0\"",
+            "apps/wearos/gradlew --no-daemon -p apps/wearos",
             "DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer",
             'runtime.endswith("watchOS-26-5")',
             'device["name"] == "Apple Watch Series 11 (46mm)"',
@@ -141,6 +155,12 @@ class NativeContractTests(unittest.TestCase):
         ):
             self.assertIn(expected, workflow)
         self.assertNotIn("OS=latest", workflow)
+        wrapper = (WEAR / "gradle/wrapper/gradle-wrapper.properties").read_text()
+        self.assertIn("gradle-9.5.0-bin.zip", wrapper)
+        self.assertIn(
+            "distributionSha256Sum=553c78f50dafcd54d65b9a444649057857469edf836431389695608536d6b746",
+            wrapper,
+        )
 
     def test_both_native_test_targets_resolve_shared_fixtures(self):
         android_test = (

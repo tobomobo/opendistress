@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 package dev.opendistress.wear.direct
 
+import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
@@ -17,23 +18,17 @@ import dev.opendistress.shared.ProvisioningPaths
  * It never accepts or publishes LIVE v2 keys and never participates in alerts.
  */
 class DirectConfigSyncService : WearableListenerService() {
-    private val store by lazy { EncryptedDirectConfigStore(applicationContext) }
-
-    override fun onCreate() {
-        super.onCreate()
-        publishIdentity()
-        store.snapshot()?.ack?.let(::publishAck)
-    }
+    private val store by lazy { EncryptedDirectConfigStore.get(applicationContext) }
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
-        if (messageEvent.path == PATH_IDENTITY_REQUEST) publishIdentity()
+        if (messageEvent.path == PATH_IDENTITY_REQUEST) publishIdentityAndAckBlocking()
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
         dataEvents.forEach { event ->
             val path = event.dataItem.uri.path.orEmpty()
             if (event.type == DataEvent.TYPE_CHANGED && path == ProvisioningPaths.KEY_REQUEST) {
-                publishIdentity()
+                publishIdentityAndAckBlocking()
                 return@forEach
             }
             if (
@@ -48,7 +43,10 @@ class DirectConfigSyncService : WearableListenerService() {
                 .getByteArray(ProvisioningDataKeys.PAYLOAD)
                 ?: return@forEach
             try {
-                publishAck(store.install(envelope))
+                publishAckBlocking(store.install(envelope))
+                if (runCatching { DirectTestStore.get(this).snapshot() }.getOrNull() != null) {
+                    DirectRecoveryWork.ensure(this)
+                }
             } catch (_: Exception) {
                 // Deliberately publish no ACK for malformed, unauthentic, or stale input.
             } finally {
@@ -57,21 +55,30 @@ class DirectConfigSyncService : WearableListenerService() {
         }
     }
 
-    private fun publishIdentity() {
-        val announcement = store.watchAnnouncement()
+    /** WearableListenerService invokes message and data callbacks on its background handler thread. */
+    private fun publishIdentityAndAckBlocking() {
+        val currentStore = runCatching { store }.getOrNull() ?: return
+        runCatching { publishIdentityBlocking(currentStore) }
+        currentStore.snapshot()?.ack?.let { ack ->
+            runCatching { publishAckBlocking(ack) }
+        }
+    }
+
+    private fun publishIdentityBlocking(currentStore: EncryptedDirectConfigStore) {
+        val announcement = currentStore.watchAnnouncement()
         val request = PutDataMapRequest.create(ProvisioningPaths.watchKey(announcement.watchId)).apply {
             dataMap.putByteArray(ProvisioningDataKeys.PAYLOAD, announcement.canonicalBytes())
         }.asPutDataRequest().setUrgent()
-        Wearable.getDataClient(this).putDataItem(request)
+        Tasks.await(Wearable.getDataClient(this).putDataItem(request))
     }
 
-    private fun publishAck(ack: DirectConfigAck) {
+    private fun publishAckBlocking(ack: DirectConfigAck) {
         val request = PutDataMapRequest.create(ProvisioningPaths.ack(ack.watchId)).apply {
             dataMap.putByteArray(ProvisioningDataKeys.PAYLOAD, ack.canonicalBytes())
             dataMap.putLong(ProvisioningDataKeys.REVISION, ack.revision)
             dataMap.putByteArray(ProvisioningDataKeys.DIGEST_SHA256, ack.configDigestSha256)
         }.asPutDataRequest().setUrgent()
-        Wearable.getDataClient(this).putDataItem(request)
+        Tasks.await(Wearable.getDataClient(this).putDataItem(request))
     }
 
     companion object {

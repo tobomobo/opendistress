@@ -133,6 +133,35 @@ cover appears or direct GPS begins. Grafana `2xx` proves webhook ingestion;
 Pushover requires its emergency receipt. Neither collapses transport delivery,
 recipient acknowledgement, or incident resolution into one fact.
 
+## Wear OS direct TEST provisioning
+
+The Wear OS application and Android setup application share the package ID and
+signing identity required by the Wearable Data Layer, but ship as separate APKs
+with distinct version codes. The phone stores the user-entered Grafana and/or
+Pushover route plus emergency card under Android Keystore encryption. The watch
+creates a Keystore RSA keypair with a non-exportable private key and publishes
+only its public key; the phone encrypts the
+configuration with a fresh AES-256-GCM key, wraps that key with RSA-OAEP, and
+publishes an urgent persistent DataItem. The watch validates and atomically
+commits the envelope before returning an ACK bound to its revision and digest.
+
+Once provisioned, the watch's direct TEST path is independent of the phone app.
+It persists the complete provider request before direct HTTPS, binds retries to
+the provider-configuration fingerprint, requires a deliberate 2.5-second hold,
+and shows the analog accepted surface only after valid provider acceptance.
+The foreground service also owns pre-acceptance retries, so leaving the watch
+screen does not abandon a committed TEST. A bounded partial wake lock covers
+only the 15-minute trigger/cancel retry window, and OS-managed WorkManager replay
+keeps committed provider requests recoverable after process death or reboot.
+Grafana is the first route and Pushover is a fallback only while Grafana
+acceptance is absent; either acceptance retires the other pending trigger. A reset requires
+a second 2.5-second hold and an accepted Pushover emergency receipt is cancelled
+and confirmed before the state is removed. Its repeat deadline starts at actual
+Pushover acceptance.
+Post-acceptance fused location runs in a visible location foreground service
+with a Wear OS Ongoing Activity for up to 24 hours. This privacy-relaxed TEST path remains separate from the
+encrypted LIVE-v2 client and cannot clear LIVE state.
+
 See [`threat-model.md`](threat-model.md), [`privacy.md`](privacy.md), and the
 normative [`../protocol/README.md`](../protocol/README.md).
 

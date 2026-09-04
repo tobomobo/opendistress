@@ -20,7 +20,11 @@ internal class DirectProviderTransport {
             DirectProvider.GRAFANA ->
                 DirectGrafanaAdapter.isWebhookUrl(request.endpoint) && request.contentType == "application/json"
             DirectProvider.PUSHOVER ->
-                request.endpoint == DirectPushoverAdapter.ENDPOINT &&
+                (
+                    request.endpoint == DirectPushoverAdapter.ENDPOINT ||
+                        request.kind == DirectRequestKind.CANCEL &&
+                        DirectPushoverAdapter.isCancellationEndpoint(request.endpoint)
+                    ) &&
                     request.contentType == "application/x-www-form-urlencoded; charset=utf-8"
         }
         if (!endpointValid) return DirectSendOutcome(retryable = false, reason = "invalid local endpoint")
@@ -46,7 +50,7 @@ internal class DirectProviderTransport {
                 status in 200..299 -> active.inputStream?.use(::readBounded) ?: byteArrayOf()
                 else -> active.errorStream?.use(::readBounded) ?: byteArrayOf()
             }
-            classify(request.provider, status, response)
+            classify(request, status, response)
         } catch (_: Exception) {
             DirectSendOutcome(retryable = true, reason = "network result unknown")
         } finally {
@@ -55,13 +59,19 @@ internal class DirectProviderTransport {
     }
 
     companion object {
-        fun classify(provider: DirectProvider, status: Int, response: ByteArray): DirectSendOutcome {
-            val acceptance = when (provider) {
+        fun classify(request: DirectHttpRequest, status: Int, response: ByteArray): DirectSendOutcome {
+            val acceptance = when (request.provider) {
                 DirectProvider.GRAFANA -> DirectGrafanaAdapter.acceptance(status)
-                DirectProvider.PUSHOVER -> DirectPushoverAdapter.acceptance(status, response)
+                DirectProvider.PUSHOVER -> DirectPushoverAdapter.acceptance(status, response, request.kind)
             }
             if (acceptance != null) {
                 return DirectSendOutcome(acceptance, retryable = false, reason = "provider accepted")
+            }
+            if (
+                request.provider == DirectProvider.PUSHOVER &&
+                DirectPushoverAdapter.isDefiniteRejection(status, response)
+            ) {
+                return DirectSendOutcome(retryable = false, reason = "provider rejected request")
             }
             val retryable = status == 408 || status == 425 || status == 429 || status >= 500 || status in 200..299
             return DirectSendOutcome(

@@ -31,6 +31,11 @@ class PanicHoldView @JvmOverloads constructor(
     defStyleAttr: Int = 0,
 ) : View(context, attrs, defStyleAttr) {
 
+    enum class Purpose {
+        TRIGGER_TEST,
+        RESET_TEST,
+    }
+
     enum class Label {
         READY,
         HOLDING,
@@ -57,6 +62,14 @@ class PanicHoldView @JvmOverloads constructor(
         set(value) {
             field = value
             value?.onLabelChanged(currentLabel)
+        }
+
+    /** RESET_TEST only confirms reset intent; the owner remains responsible for the state transition. */
+    var purpose: Purpose = Purpose.TRIGGER_TEST
+        set(value) {
+            field = value
+            updateContentDescription()
+            invalidate()
         }
 
     private val gesture = HoldGestureState()
@@ -94,7 +107,7 @@ class PanicHoldView @JvmOverloads constructor(
     init {
         isClickable = true
         isFocusable = true
-        contentDescription = "Emergency alert. Hold for two and a half seconds."
+        updateContentDescription()
     }
 
     override fun getAccessibilityClassName(): CharSequence = android.widget.Button::class.java.name
@@ -116,7 +129,9 @@ class PanicHoldView @JvmOverloads constructor(
                 accessibilityReadyAnnounced = false
                 setLabel(Label.ACCESSIBILITY_WAIT)
                 listener?.onHapticCue(HapticCue.HOLD_STARTED)
-                announceForAccessibility("Confirmation delay started. Wait, then activate again to send. Activate now to cancel.")
+                announceForAccessibility(
+                    "${actionLabel()} confirmation delay started. Wait, then activate again. Activate now to cancel.",
+                )
                 postInvalidateOnAnimation()
             }
             HoldGestureState.AccessibilityResult.CANCELLED -> cancelPresentation()
@@ -200,21 +215,21 @@ class PanicHoldView @JvmOverloads constructor(
 
         titlePaint.textSize = size * 0.095f
         hintPaint.textSize = size * 0.052f
-        val title = if (confirmed) "CONFIRMED" else when (snapshot.phase) {
-            HoldGestureState.Phase.IDLE -> "HOLD"
+        val title = if (confirmed) confirmedTitle() else when (snapshot.phase) {
+            HoldGestureState.Phase.IDLE -> readyTitle()
             HoldGestureState.Phase.TOUCH_HOLDING -> "KEEP HOLDING"
             HoldGestureState.Phase.ACCESSIBILITY_HOLDING -> "WAIT"
             HoldGestureState.Phase.ACCESSIBILITY_READY -> "CONFIRM"
         }
         canvas.drawText(title, centerX, centerY - size * 0.015f, titlePaint)
-        val hint = if (confirmed) "SENDING" else when (snapshot.phase) {
+        val hint = if (confirmed) confirmedHint() else when (snapshot.phase) {
             HoldGestureState.Phase.IDLE -> "2.5 SECONDS"
             HoldGestureState.Phase.TOUCH_HOLDING -> {
                 val remainingTenths = ceil((1f - snapshot.progress) * 25f).toInt().coerceAtLeast(0)
                 "${remainingTenths / 10}.${remainingTenths % 10}s · RELEASE CANCELS"
             }
             HoldGestureState.Phase.ACCESSIBILITY_HOLDING -> "ACTIVATE NOW TO CANCEL"
-            HoldGestureState.Phase.ACCESSIBILITY_READY -> "ACTIVATE TO SEND"
+            HoldGestureState.Phase.ACCESSIBILITY_READY -> "ACTIVATE TO ${actionVerb().uppercase()}"
         }
         canvas.drawText(hint, centerX, centerY + size * 0.075f, hintPaint)
 
@@ -227,9 +242,19 @@ class PanicHoldView @JvmOverloads constructor(
             accessibilityReadyAnnounced = true
             setLabel(Label.ACCESSIBILITY_CONFIRM)
             listener?.onHapticCue(HapticCue.READY_TO_CONFIRM)
-            announceForAccessibility("Ready. Activate again to send the emergency alert.")
+            announceForAccessibility("Ready. Activate again to ${actionVerb()}.")
+        }
+        if (snapshot.phase == HoldGestureState.Phase.IDLE && accessibilityReadyAnnounced) {
+            accessibilityReadyAnnounced = false
+            setLabel(Label.READY)
+            announceForAccessibility("${actionLabel()} confirmation expired.")
         }
         if (snapshot.phase != HoldGestureState.Phase.IDLE) postInvalidateOnAnimation()
+    }
+
+    private fun confirmedHint(): String = when (purpose) {
+        Purpose.TRIGGER_TEST -> "SENDING"
+        Purpose.RESET_TEST -> "RESETTING"
     }
 
     private fun isInsideControl(x: Float, y: Float, radiusFactor: Float = 0.47f): Boolean {
@@ -247,7 +272,7 @@ class PanicHoldView @JvmOverloads constructor(
         accessibilityReadyAnnounced = false
         setLabel(Label.READY)
         listener?.onHapticCue(HapticCue.CANCELLED)
-        announceForAccessibility("Alert cancelled.")
+        announceForAccessibility("${actionLabel()} cancelled.")
         invalidate()
     }
 
@@ -259,7 +284,7 @@ class PanicHoldView @JvmOverloads constructor(
         accessibilityReadyAnnounced = false
         setLabel(Label.CONFIRMED)
         listener?.onHapticCue(HapticCue.CONFIRMED)
-        announceForAccessibility("Emergency alert confirmed.")
+        announceForAccessibility("${actionLabel()} confirmed.")
         listener?.onTriggerConfirmed()
         invalidate()
     }
@@ -280,6 +305,55 @@ class PanicHoldView @JvmOverloads constructor(
         if (currentLabel == label) return
         currentLabel = label
         listener?.onLabelChanged(label)
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (!hasWindowFocus) cancelForInterruption()
+    }
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        if (visibility != VISIBLE) cancelForInterruption()
+    }
+
+    override fun onDetachedFromWindow() {
+        cancelForInterruption()
+        super.onDetachedFromWindow()
+    }
+
+    private fun cancelForInterruption() {
+        touchActive = false
+        parent?.requestDisallowInterceptTouchEvent(false)
+        if (!gesture.cancel()) return
+        accessibilityReadyAnnounced = false
+        setLabel(Label.READY)
+        listener?.onHapticCue(HapticCue.CANCELLED)
+        invalidate()
+    }
+
+    private fun updateContentDescription() {
+        contentDescription = "${actionLabel()}. Hold for two and a half seconds."
+    }
+
+    private fun actionLabel(): String = when (purpose) {
+        Purpose.TRIGGER_TEST -> "TEST alert"
+        Purpose.RESET_TEST -> "TEST reset"
+    }
+
+    private fun actionVerb(): String = when (purpose) {
+        Purpose.TRIGGER_TEST -> "send the TEST alert"
+        Purpose.RESET_TEST -> "reset the TEST"
+    }
+
+    private fun readyTitle(): String = when (purpose) {
+        Purpose.TRIGGER_TEST -> "HOLD TEST"
+        Purpose.RESET_TEST -> "HOLD RESET"
+    }
+
+    private fun confirmedTitle(): String = when (purpose) {
+        Purpose.TRIGGER_TEST -> "TEST CONFIRMED"
+        Purpose.RESET_TEST -> "RESET CONFIRMED"
     }
 
     companion object {

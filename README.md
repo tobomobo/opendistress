@@ -43,8 +43,10 @@ there is no compatibility promise for pre-release builds.
   capsules, hashed per-mailbox capabilities, bounded storage, and encrypted
   exact-capsule acknowledgements. The Node reference codec is implemented;
   companion, Android receiver, and Garmin integration remain explicit gates.
-- Standalone Kotlin Wear OS and Swift watchOS apps using their native crypto,
-  persistence, HTTPS, location, feedback, and accessibility APIs.
+- Native Kotlin Wear OS and Swift watchOS apps using their platform crypto,
+  persistence, HTTPS, location, feedback, and accessibility APIs. Wear OS now
+  includes an Android setup app that provisions direct TEST routes and the
+  emergency card without hardcoded credentials.
 - Frozen v1/v2 schemas and cross-runtime public vectors in
   [`protocol/`](protocol/).
 
@@ -98,6 +100,21 @@ plus the map-link provider. Use them only with the owner's explicit consent.
 Simulator or mock coordinates never count as physical GPS evidence. Grafana's in-app ACK
 is useful receiver evidence but is not yet returned to or displayed by the
 watch.
+
+The Wear OS / Pixel Watch beta implements the same deliberate 2.5-second TEST
+hold, direct Grafana/Pushover routes, emergency card, provider-accepted analog
+screen, explicit reset, and post-acceptance location drill. Its Android setup
+app encrypts configuration locally, then transfers an RSA-wrapped AES-GCM
+envelope through the Wearable Data Layer; the watch acknowledges the exact
+stored revision and can subsequently send over its available Wear OS network.
+The Tile is only a launcher, because third-party apps cannot globally intercept
+Pixel Watch hardware buttons. Location runs as a visible foreground service
+for up to 24 hours and uses fused location, which may select watch or paired
+Android-phone data. Persisted WorkManager replay protects committed provider
+requests across process death/reboot; Android's background-start rules mean a
+rebooted high-rate GPS session still needs the app reopened unless all-time
+location access is added and approved. Android provisioning, provider acceptance, phone delivery,
+and physical Pixel Watch behavior remain separate evidence gates.
 
 ## Run host checks
 

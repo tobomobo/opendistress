@@ -61,4 +61,17 @@ class HoldGestureStateTest {
         )
         assertEquals(HoldGestureState.Phase.IDLE, state.snapshot(9_000L).phase)
     }
+
+    @Test
+    fun accessibilityConfirmationExpiresAndOneLateActivationCannotTrigger() {
+        val state = HoldGestureState()
+        state.accessibilityClick(100L)
+
+        assertEquals(HoldGestureState.Phase.ACCESSIBILITY_READY, state.snapshot(2_600L).phase)
+        assertEquals(HoldGestureState.Phase.IDLE, state.snapshot(7_600L).phase)
+        assertEquals(
+            HoldGestureState.AccessibilityResult.STARTED,
+            state.accessibilityClick(7_600L),
+        )
+    }
 }

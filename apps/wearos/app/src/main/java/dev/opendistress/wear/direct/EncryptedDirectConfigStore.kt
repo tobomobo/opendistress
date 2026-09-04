@@ -25,7 +25,9 @@ internal class EncryptedDirectConfigStore(
 
     init {
         require(directory.exists() || directory.mkdirs()) { "Cannot create direct-config store" }
-        installed = readStored()
+        // Fail closed without deleting the envelope: a later authenticated phone
+        // provisioning can overwrite it and restore service.
+        installed = runCatching(::readStored).getOrNull()
     }
 
     @Synchronized
@@ -110,7 +112,14 @@ internal class EncryptedDirectConfigStore(
         }
     }
 
-    private companion object {
-        const val MAX_ENVELOPE_BYTES = 16_384
+    companion object {
+        private const val MAX_ENVELOPE_BYTES = 16_384
+
+        @Volatile
+        private var instance: EncryptedDirectConfigStore? = null
+
+        fun get(context: Context): EncryptedDirectConfigStore = instance ?: synchronized(this) {
+            instance ?: EncryptedDirectConfigStore(context.applicationContext).also { instance = it }
+        }
     }
 }

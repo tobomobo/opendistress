@@ -8,6 +8,7 @@ import android.text.InputFilter
 import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -139,7 +140,15 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             setPadding(0, padding / 2, 0, padding)
         })
 
-        setContentView(ScrollView(this).apply { addView(content) })
+        setContentView(ScrollView(this).apply {
+            clipToPadding = true
+            addView(content)
+            setOnApplyWindowInsetsListener { view, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                view.setPadding(0, bars.top, 0, bars.bottom)
+                insets
+            }
+        })
     }
 
     private fun addSection(parent: LinearLayout, label: Int) {

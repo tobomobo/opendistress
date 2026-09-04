@@ -12,6 +12,9 @@ import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import dev.opendistress.wear.R
 import java.util.Calendar
 import kotlin.math.cos
 import kotlin.math.min
@@ -38,11 +41,12 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
     var showResetAction: Boolean = false
         set(value) {
             field = value
-            isLongClickable = value
+            sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
             invalidate()
         }
 
     private var ambient = false
+    private var burnInProtectionRequired = false
     private var pressedAction = Action.NONE
     private val detailsBounds = RectF()
     private val resetBounds = RectF()
@@ -81,14 +85,24 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
     init {
         isClickable = true
         isFocusable = true
-        contentDescription = "Alert accepted by provider. Delivery is not confirmed."
+        contentDescription = "TEST alert accepted by provider. Delivery is not confirmed."
     }
 
-    fun setAmbientMode(isAmbient: Boolean) {
-        if (ambient == isAmbient) return
+    fun setAmbientMode(
+        isAmbient: Boolean,
+        lowBitAmbient: Boolean = false,
+        burnInProtectionRequired: Boolean = false,
+    ) {
+        if (
+            ambient == isAmbient &&
+            this.burnInProtectionRequired == burnInProtectionRequired
+        ) return
         ambient = isAmbient
-        linePaint.isAntiAlias = !ambient
-        accentPaint.isAntiAlias = !ambient
+        this.burnInProtectionRequired = isAmbient && burnInProtectionRequired
+        val antiAlias = !isAmbient || !lowBitAmbient
+        listOf(linePaint, accentPaint, textPaint, secondaryPaint, actionPaint).forEach {
+            it.isAntiAlias = antiAlias
+        }
         handler.removeCallbacks(repaintClock)
         if (isAttachedToWindow) handler.post(repaintClock)
         invalidate()
@@ -108,12 +122,22 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
         super.onDraw(canvas)
         canvas.drawColor(Color.BLACK)
         val size = min(width, height).toFloat()
+        val contentSave = canvas.save()
+        if (ambient && burnInProtectionRequired) {
+            val offset = size * 0.012f
+            when (Calendar.getInstance().get(Calendar.MINUTE) % 4) {
+                0 -> canvas.translate(-offset, 0f)
+                1 -> canvas.translate(0f, -offset)
+                2 -> canvas.translate(offset, 0f)
+                else -> canvas.translate(0f, offset)
+            }
+        }
         val centerX = width / 2f
         val dialCenterY = height * 0.41f
         val dialRadius = size * 0.225f
 
         textPaint.textSize = size * 0.071f
-        canvas.drawText("ALERT ACCEPTED", centerX, height * 0.135f, textPaint)
+        canvas.drawText("TEST ACCEPTED", centerX, height * 0.135f, textPaint)
 
         linePaint.strokeWidth = size * 0.009f
         canvas.drawCircle(centerX, dialCenterY, dialRadius, linePaint)
@@ -124,6 +148,7 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
         canvas.drawText("Delivery not confirmed", centerX, height * 0.675f, secondaryPaint)
 
         if (!ambient) drawActions(canvas, size)
+        canvas.restoreToCount(contentSave)
     }
 
     private fun drawTicks(canvas: Canvas, centerX: Float, centerY: Float, radius: Float, size: Float) {
@@ -241,12 +266,34 @@ class ProviderAcceptedAnalogView @JvmOverloads constructor(
         return true
     }
 
-    /** Reset is a separately announced long-click action and remains disabled by default. */
-    override fun performLongClick(): Boolean {
-        if (!showResetAction) return false
-        super.performLongClick()
-        listener?.onResetRequested()
-        return true
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
+        info.addAction(
+            AccessibilityNodeInfo.AccessibilityAction(
+                AccessibilityNodeInfo.ACTION_CLICK,
+                "Open TEST details",
+            ),
+        )
+        if (showResetAction) {
+            info.addAction(
+                AccessibilityNodeInfo.AccessibilityAction(
+                    R.id.accessibility_action_reset_test,
+                    "Start TEST reset confirmation",
+                ),
+            )
+        }
+    }
+
+    override fun performAccessibilityAction(action: Int, arguments: android.os.Bundle?): Boolean = when (action) {
+        R.id.accessibility_action_reset_test -> {
+            if (!showResetAction) false else {
+                // The owner must show a deliberate confirmation surface; this view never clears state.
+                listener?.onResetRequested()
+                true
+            }
+        }
+        else -> super.performAccessibilityAction(action, arguments)
     }
 
     private fun actionAt(x: Float, y: Float): Action = when {

@@ -27,8 +27,9 @@ android {
         applicationId = "dev.opendistress.wear"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 36_010_001
+        versionName = "0.2.0-beta"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(
             "String",
@@ -64,10 +65,18 @@ dependencies {
     implementation(project(":shared"))
     implementation("com.google.android.gms:play-services-location:21.4.0")
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
+    implementation("androidx.activity:activity:1.11.0")
+    implementation("androidx.core:core:1.17.0")
+    implementation("androidx.wear:wear:1.4.0")
+    implementation("androidx.wear:wear-ongoing:1.1.0")
+    implementation("androidx.wear:wear-remote-interactions:1.2.0")
     implementation("androidx.wear.tiles:tiles:1.6.2")
     implementation("androidx.wear.protolayout:protolayout:1.4.2")
     implementation("androidx.wear.protolayout:protolayout-material3:1.4.2")
     implementation("androidx.wear.protolayout:protolayout-expression:1.4.2")
+    implementation("androidx.work:work-runtime:2.11.2")
     implementation("androidx.concurrent:concurrent-futures:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
     testImplementation("junit:junit:4.13.2")
 }

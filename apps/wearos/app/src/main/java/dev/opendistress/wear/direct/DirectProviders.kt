@@ -10,7 +10,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 internal enum class DirectProvider { GRAFANA, PUSHOVER }
-internal enum class DirectRequestKind { TRIGGER, LOCATION }
+internal enum class DirectRequestKind { TRIGGER, LOCATION, CANCEL }
 
 internal data class DirectHttpRequest(
     val requestId: String,
@@ -253,6 +253,7 @@ internal object DirectGrafanaAdapter {
 
 internal object DirectPushoverAdapter {
     const val ENDPOINT = "https://api.pushover.net/1/messages.json"
+    private const val RECEIPT_ENDPOINT_PREFIX = "https://api.pushover.net/1/receipts/"
     private val TOKEN = Regex("^[A-Za-z0-9]{30}$")
 
     fun isToken(value: String?): Boolean = value != null && TOKEN.matches(value)
@@ -301,19 +302,67 @@ internal object DirectPushoverAdapter {
         return request(user, token, incidentId, now, expiresAt, update.sequence, DirectRequestKind.LOCATION, values)
     }
 
-    fun acceptance(statusCode: Int, body: ByteArray): DirectProviderAcceptance? {
+    fun cancel(
+        config: DirectConfig,
+        incidentId: String,
+        receipt: String,
+        now: Long,
+        expiresAt: Long,
+    ): DirectHttpRequest {
+        val user = requireNotNull(config.pushoverUserKey)
+        val token = requireNotNull(config.pushoverApiToken)
+        require(isToken(user) && isToken(token) && isToken(receipt) && now < expiresAt)
+        return request(
+            user,
+            token,
+            incidentId,
+            now,
+            expiresAt,
+            0,
+            DirectRequestKind.CANCEL,
+            mapOf("token" to token),
+            cancellationEndpoint(receipt),
+        )
+    }
+
+    fun isCancellationEndpoint(value: String): Boolean {
+        if (!value.startsWith(RECEIPT_ENDPOINT_PREFIX) || !value.endsWith("/cancel.json")) return false
+        val receipt = value.removePrefix(RECEIPT_ENDPOINT_PREFIX).removeSuffix("/cancel.json")
+        return isToken(receipt)
+    }
+
+    fun acceptance(
+        statusCode: Int,
+        body: ByteArray,
+        kind: DirectRequestKind,
+    ): DirectProviderAcceptance? {
         if (statusCode != 200 || body.size !in 1..4_096) return null
         val fields = try {
             FlatProviderJsonParser(body).parse()
         } catch (_: Exception) {
             return null
         }
-        if (fields.keys != setOf("status", "request", "receipt")) return null
+        val expectedFields = if (kind == DirectRequestKind.TRIGGER) {
+            setOf("status", "request", "receipt")
+        } else {
+            setOf("status", "request")
+        }
+        if (fields.keys != expectedFields) return null
         if (fields["status"] != ProviderJsonValue("1", false)) return null
         val request = fields["request"]?.takeIf { it.quoted }?.text ?: return null
-        val receipt = fields["receipt"]?.takeIf { it.quoted }?.text ?: return null
-        if (!isToken(request) || !isToken(receipt)) return null
+        if (!isRequestReference(request)) return null
+        val receipt = fields["receipt"]?.takeIf { it.quoted }?.text
+        if (kind == DirectRequestKind.TRIGGER && !isToken(receipt)) return null
         return DirectProviderAcceptance(DirectProvider.PUSHOVER, request, receipt)
+    }
+
+    fun isRequestReference(value: String?): Boolean =
+        value != null && value.length in 1..128 && value.all { it.code in 0x21..0x7e }
+
+    fun isDefiniteRejection(statusCode: Int, body: ByteArray): Boolean {
+        if (statusCode != 200 || body.size !in 1..4_096) return false
+        val fields = runCatching { FlatProviderJsonParser(body).parse() }.getOrNull() ?: return false
+        return fields["status"] == ProviderJsonValue("0", false)
     }
 
     private fun request(
@@ -325,12 +374,13 @@ internal object DirectPushoverAdapter {
         sequence: Long,
         kind: DirectRequestKind,
         values: Map<String, String>,
+        endpoint: String = ENDPOINT,
     ) = DirectHttpRequest(
         requestId = randomDirectId(),
         incidentId = incidentId,
         provider = DirectProvider.PUSHOVER,
         configurationFingerprint = DirectProviderFingerprint.pushover(user, token),
-        endpoint = ENDPOINT,
+        endpoint = endpoint,
         contentType = "application/x-www-form-urlencoded; charset=utf-8",
         body = values.entries.joinToString("&") { (key, value) -> "${form(key)}=${form(value)}" },
         kind = kind,
@@ -338,6 +388,9 @@ internal object DirectPushoverAdapter {
         createdAt = now,
         expiresAt = expiresAt,
     )
+
+    private fun cancellationEndpoint(receipt: String): String =
+        "$RECEIPT_ENDPOINT_PREFIX$receipt/cancel.json"
 }
 
 private fun randomDirectId(): String {
@@ -391,8 +444,7 @@ private class FlatProviderJsonParser(private val bytes: ByteArray) {
                 whitespace()
                 expect(':')
                 whitespace()
-                val value = if (peek('"')) ProviderJsonValue(string(), true)
-                    else ProviderJsonValue(integer(), false)
+                val value = value()
                 result[key] = value
                 whitespace()
                 when {
@@ -405,6 +457,75 @@ private class FlatProviderJsonParser(private val bytes: ByteArray) {
         whitespace()
         require(index == bytes.size)
         return result
+    }
+
+    private fun value(depth: Int = 0): ProviderJsonValue {
+        require(depth <= 16)
+        return when {
+            peek('"') -> ProviderJsonValue(string(), true)
+            peek('{') -> {
+                skipObject(depth + 1)
+                ProviderJsonValue("object", false)
+            }
+            peek('[') -> {
+                skipArray(depth + 1)
+                ProviderJsonValue("array", false)
+            }
+            peek('t') -> { literal("true"); ProviderJsonValue("true", false) }
+            peek('f') -> { literal("false"); ProviderJsonValue("false", false) }
+            peek('n') -> { literal("null"); ProviderJsonValue("null", false) }
+            else -> ProviderJsonValue(integer(), false)
+        }
+    }
+
+    private fun skipObject(depth: Int) {
+        require(depth <= 16)
+        expect('{')
+        whitespace()
+        if (peek('}')) {
+            index++
+            return
+        }
+        while (true) {
+            string()
+            whitespace()
+            expect(':')
+            whitespace()
+            value(depth)
+            whitespace()
+            when {
+                peek(',') -> { index++; whitespace() }
+                peek('}') -> { index++; return }
+                else -> throw IllegalArgumentException("Malformed JSON object")
+            }
+        }
+    }
+
+    private fun skipArray(depth: Int) {
+        require(depth <= 16)
+        expect('[')
+        whitespace()
+        if (peek(']')) {
+            index++
+            return
+        }
+        while (true) {
+            value(depth)
+            whitespace()
+            when {
+                peek(',') -> { index++; whitespace() }
+                peek(']') -> { index++; return }
+                else -> throw IllegalArgumentException("Malformed JSON array")
+            }
+        }
+    }
+
+    private fun literal(expected: String) {
+        require(index + expected.length <= bytes.size)
+        val actual = bytes.copyOfRange(index, index + expected.length)
+            .toString(StandardCharsets.US_ASCII)
+        require(actual == expected)
+        index += expected.length
     }
 
     private fun string(): String {

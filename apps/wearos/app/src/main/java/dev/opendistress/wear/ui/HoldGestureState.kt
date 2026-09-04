@@ -4,9 +4,11 @@ package dev.opendistress.wear.ui
 /** Pure monotonic-time state for [PanicHoldView]. */
 internal class HoldGestureState(
     val durationMillis: Long = DEFAULT_DURATION_MILLIS,
+    val accessibilityConfirmationWindowMillis: Long = DEFAULT_ACCESSIBILITY_CONFIRMATION_WINDOW_MILLIS,
 ) {
     init {
         require(durationMillis > 0)
+        require(accessibilityConfirmationWindowMillis > 0)
     }
 
     enum class Phase {
@@ -88,11 +90,18 @@ internal class HoldGestureState(
         if (phase == Phase.ACCESSIBILITY_HOLDING && elapsed(nowMillis) >= durationMillis) {
             phase = Phase.ACCESSIBILITY_READY
         }
+        if (
+            phase == Phase.ACCESSIBILITY_READY &&
+            elapsed(nowMillis) - durationMillis >= accessibilityConfirmationWindowMillis
+        ) {
+            cancel()
+        }
     }
 
     private fun elapsed(nowMillis: Long): Long = (nowMillis - startedAtMillis).coerceAtLeast(0L)
 
     companion object {
         const val DEFAULT_DURATION_MILLIS = 2_500L
+        const val DEFAULT_ACCESSIBILITY_CONFIRMATION_WINDOW_MILLIS = 5_000L
     }
 }

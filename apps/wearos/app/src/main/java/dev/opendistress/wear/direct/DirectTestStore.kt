@@ -19,7 +19,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-internal enum class DirectRouteStatus { PENDING, ACCEPTED, REJECTED }
+internal enum class DirectRouteStatus { PENDING, ACCEPTED, REJECTED, SKIPPED }
 
 internal data class DirectRouteState(
     val provider: DirectProvider,
@@ -27,6 +27,8 @@ internal data class DirectRouteState(
     val status: DirectRouteStatus,
     val acceptanceReference: String = "",
     val emergencyReceipt: String = "",
+    /** Provider-side end of Pushover emergency repeats, measured from actual acceptance. */
+    val emergencyRepeatsUntil: Long = 0,
 )
 
 internal data class DirectTestState(
@@ -40,6 +42,41 @@ internal data class DirectTestState(
     val trackingExpiresAt: Long? = null,
     val nextLocationSequence: Long = 1,
 )
+
+internal fun DirectTestState.isResetPending(): Boolean =
+    queue.any { it.kind == DirectRequestKind.CANCEL }
+
+internal fun DirectTestState.pushoverEmergencyRepeatsUntil(): Long =
+    routes.firstOrNull {
+        it.provider == DirectProvider.PUSHOVER && it.status == DirectRouteStatus.ACCEPTED
+    }?.emergencyRepeatsUntil ?: 0
+
+internal fun DirectTestState.availableLocationProviders(config: DirectConfig): Set<DirectProvider> =
+    routes.asSequence()
+        .filter { route ->
+            route.status == DirectRouteStatus.ACCEPTED &&
+                currentDirectFingerprint(config, route.provider) == route.configurationFingerprint
+        }
+        .filterNot { route ->
+            queue.any { request ->
+                request.kind == DirectRequestKind.LOCATION && request.provider == route.provider
+            }
+        }
+        .map(DirectRouteState::provider)
+        .toSet()
+
+internal fun currentDirectFingerprint(config: DirectConfig, provider: DirectProvider): String? = when (provider) {
+    DirectProvider.GRAFANA -> config.grafanaWebhookUrl
+        ?.takeIf(DirectGrafanaAdapter::isWebhookUrl)
+        ?.let(DirectProviderFingerprint::grafana)
+    DirectProvider.PUSHOVER -> {
+        val user = config.pushoverUserKey
+        val token = config.pushoverApiToken
+        if (DirectPushoverAdapter.isToken(user) && DirectPushoverAdapter.isToken(token)) {
+            DirectProviderFingerprint.pushover(requireNotNull(user), requireNotNull(token))
+        } else null
+    }
+}
 
 internal class DirectTestStore(
     context: Context,
@@ -96,7 +133,8 @@ internal class DirectTestStore(
     @Synchronized
     fun nextRequest(config: DirectConfig, now: Long): DirectHttpRequest? =
         state?.queue?.firstOrNull { request ->
-            now < request.expiresAt && currentFingerprint(config, request.provider) == request.configurationFingerprint
+            now < request.expiresAt &&
+                currentDirectFingerprint(config, request.provider) == request.configurationFingerprint
         }
 
     @Synchronized
@@ -125,16 +163,31 @@ internal class DirectTestStore(
     }
 
     @Synchronized
+    fun recordRetryableAttempt(requestId: String): DirectTestState {
+        return DirectTestTransitions.retryableAttempt(requireNotNull(state), requestId).also(::replace)
+    }
+
+    @Synchronized
+    fun recordCancellationAccepted(requestId: String, acceptance: DirectProviderAcceptance) {
+        val current = requireNotNull(state)
+        val request = current.queue.firstOrNull { it.requestId == requestId }
+            ?: throw IllegalArgumentException("Unknown direct request")
+        require(request.kind == DirectRequestKind.CANCEL)
+        require(request.provider == DirectProvider.PUSHOVER && acceptance.provider == DirectProvider.PUSHOVER)
+        require(DirectPushoverAdapter.isRequestReference(acceptance.reference))
+        clear()
+        state = null
+    }
+
+    @Synchronized
     fun queueLocation(config: DirectConfig, fix: DirectLocationFix, now: Long): DirectTestState {
         val current = requireNotNull(state)
         val trackingExpiry = requireNotNull(current.trackingExpiresAt) { "No provider accepted the TEST" }
         require(now < trackingExpiry) { "Direct TEST tracking expired" }
-        require(current.queue.none { it.kind == DirectRequestKind.LOCATION }) {
-            "A location update is already pending"
-        }
         val update = DirectLocationFormatter.format(current.nextLocationSequence, now, fix)
+        val availableProviders = current.availableLocationProviders(config)
         val newRequests = current.routes.mapNotNull { route ->
-            if (route.status != DirectRouteStatus.ACCEPTED) return@mapNotNull null
+            if (route.provider !in availableProviders) return@mapNotNull null
             when (route.provider) {
                 DirectProvider.GRAFANA -> {
                     val configured = config.grafanaWebhookUrl ?: return@mapNotNull null
@@ -168,8 +221,54 @@ internal class DirectTestStore(
     }
 
     @Synchronized
-    fun resetAcceptedTest() {
-        requireNotNull(state?.acceptedAt) { "A pending or unsent TEST cannot be silently reset" }
+    fun hasAcceptedLocationTarget(config: DirectConfig): Boolean {
+        val current = state ?: return false
+        return current.acceptedAt != null && current.routes.any { route ->
+            route.status == DirectRouteStatus.ACCEPTED &&
+                currentDirectFingerprint(config, route.provider) == route.configurationFingerprint
+        }
+    }
+
+    @Synchronized
+    fun requestAcceptedTestReset(config: DirectConfig, now: Long): Boolean {
+        val current = requireNotNull(state)
+        requireNotNull(current.acceptedAt) { "A pending or unsent TEST cannot be silently reset" }
+        if (current.isResetPending()) return false
+        val pushover = current.routes.firstOrNull {
+            it.provider == DirectProvider.PUSHOVER && it.status == DirectRouteStatus.ACCEPTED
+        }
+        val emergencyRepeatsUntil = current.pushoverEmergencyRepeatsUntil()
+        if (pushover == null || now >= emergencyRepeatsUntil) {
+            clear()
+            state = null
+            return true
+        }
+        require(currentDirectFingerprint(config, DirectProvider.PUSHOVER) == pushover.configurationFingerprint) {
+            "Restore the accepted Pushover configuration before reset"
+        }
+        val cancel = DirectPushoverAdapter.cancel(
+            config,
+            current.incidentId,
+            pushover.emergencyReceipt,
+            now,
+            emergencyRepeatsUntil,
+        )
+        replace(current.copy(queue = listOf(cancel)))
+        return false
+    }
+
+    @Synchronized
+    fun completeResetAfterEmergencyExpiry(now: Long) {
+        val current = requireNotNull(state)
+        require(current.isResetPending() && now >= current.pushoverEmergencyRepeatsUntil())
+        clear()
+        state = null
+    }
+
+    /** Used only by the debug-only emulator receiver, which never creates a real provider event. */
+    @Synchronized
+    fun clearAcceptedTestFixture() {
+        requireNotNull(state?.acceptedAt)
         clear()
         state = null
     }
@@ -247,19 +346,6 @@ internal class DirectTestStore(
         require(!atomic.baseFile.exists()) { "Direct TEST state could not be removed" }
     }
 
-    private fun currentFingerprint(config: DirectConfig, provider: DirectProvider): String? = when (provider) {
-        DirectProvider.GRAFANA -> config.grafanaWebhookUrl
-            ?.takeIf(DirectGrafanaAdapter::isWebhookUrl)
-            ?.let(DirectProviderFingerprint::grafana)
-        DirectProvider.PUSHOVER -> {
-            val user = config.pushoverUserKey
-            val token = config.pushoverApiToken
-            if (DirectPushoverAdapter.isToken(user) && DirectPushoverAdapter.isToken(token)) {
-                DirectProviderFingerprint.pushover(requireNotNull(user), requireNotNull(token))
-            } else null
-        }
-    }
-
     private fun readBounded(input: java.io.InputStream): ByteArray {
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(1_024)
@@ -271,11 +357,18 @@ internal class DirectTestStore(
         }
     }
 
-    private companion object {
-        const val TRIGGER_LIFETIME_SECONDS = 900L
-        const val TRACKING_LIFETIME_SECONDS = 86_400L
-        const val MAX_REQUESTS = 16
-        const val MAX_STATE_FILE_BYTES = 131_072
+    companion object {
+        private const val TRIGGER_LIFETIME_SECONDS = 900L
+        private const val TRACKING_LIFETIME_SECONDS = 86_400L
+        private const val MAX_REQUESTS = 16
+        private const val MAX_STATE_FILE_BYTES = 131_072
+
+        @Volatile
+        private var instance: DirectTestStore? = null
+
+        fun get(context: Context): DirectTestStore = instance ?: synchronized(this) {
+            instance ?: DirectTestStore(context.applicationContext).also { instance = it }
+        }
     }
 }
 
@@ -289,25 +382,37 @@ internal object DirectTestTransitions {
         val request = current.queue.firstOrNull { it.requestId == requestId }
             ?: throw IllegalArgumentException("Unknown direct request")
         require(request.kind == DirectRequestKind.TRIGGER && request.provider == acceptance.provider)
-        require(acceptedAt in request.createdAt..request.expiresAt)
+        require(acceptedAt >= request.createdAt)
         val route = current.routes.first { it.provider == request.provider }
         require(route.status == DirectRouteStatus.PENDING)
         require(route.configurationFingerprint == request.configurationFingerprint)
         if (request.provider == DirectProvider.PUSHOVER) {
-            require(DirectPushoverAdapter.isToken(acceptance.reference))
+            require(DirectPushoverAdapter.isRequestReference(acceptance.reference))
             require(DirectPushoverAdapter.isToken(acceptance.emergencyReceipt))
         }
         val firstAcceptance = current.acceptedAt ?: acceptedAt
         val trackingExpiry = current.trackingExpiresAt ?: Math.addExact(firstAcceptance, 86_400L)
+        val emergencyRepeatsUntil = if (request.provider == DirectProvider.PUSHOVER) {
+            Math.addExact(acceptedAt, request.expiresAt - request.createdAt)
+        } else {
+            0L
+        }
         return current.copy(
             routes = current.routes.map {
-                if (it.provider != request.provider) it else it.copy(
-                    status = DirectRouteStatus.ACCEPTED,
-                    acceptanceReference = acceptance.reference,
-                    emergencyReceipt = acceptance.emergencyReceipt.orEmpty(),
-                )
+                when {
+                    it.provider == request.provider -> it.copy(
+                        status = DirectRouteStatus.ACCEPTED,
+                        acceptanceReference = acceptance.reference,
+                        emergencyReceipt = acceptance.emergencyReceipt.orEmpty(),
+                        emergencyRepeatsUntil = emergencyRepeatsUntil,
+                    )
+                    it.status == DirectRouteStatus.PENDING -> it.copy(status = DirectRouteStatus.SKIPPED)
+                    else -> it
+                }
             },
-            queue = current.queue.filterNot { it.requestId == requestId },
+            queue = current.queue.filterNot {
+                it.kind == DirectRequestKind.TRIGGER
+            },
             acceptedAt = firstAcceptance,
             trackingExpiresAt = trackingExpiry,
         ).also(DirectTestStateCodec::validate)
@@ -333,6 +438,14 @@ internal object DirectTestTransitions {
         return current.copy(queue = current.queue.filterNot { it.requestId == requestId })
             .also(DirectTestStateCodec::validate)
     }
+
+    fun retryableAttempt(current: DirectTestState, requestId: String): DirectTestState {
+        val request = current.queue.firstOrNull { it.requestId == requestId }
+            ?: throw IllegalArgumentException("Unknown direct request")
+        return current.copy(
+            queue = current.queue.filterNot { it.requestId == requestId } + request,
+        ).also(DirectTestStateCodec::validate)
+    }
 }
 
 internal interface DirectStateCipher {
@@ -341,12 +454,12 @@ internal interface DirectStateCipher {
 }
 
 internal class AndroidKeystoreDirectStateCipher : DirectStateCipher {
-    private val random = SecureRandom()
-
     override fun encrypt(plaintext: ByteArray): ByteArray {
-        val nonce = ByteArray(12).also(random::nextBytes)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key(), GCMParameterSpec(128, nonce))
+        // AndroidKeyStore generates the nonce when randomized encryption is required.
+        // Supplying our own IV is rejected on real Android/Wear OS Keystore providers.
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        val nonce = requireNotNull(cipher.iv).also { require(it.size == 12) }
         val encrypted = cipher.doFinal(plaintext)
         return ByteArrayOutputStream().use { bytes ->
             DataOutputStream(bytes).use { output ->
@@ -422,6 +535,7 @@ internal object DirectTestStateCodec {
                     output.writeByte(route.status.ordinal)
                     output.writeUTF(route.acceptanceReference)
                     output.writeUTF(route.emergencyReceipt)
+                    output.writeLong(route.emergencyRepeatsUntil)
                 }
                 output.writeInt(state.queue.size)
                 state.queue.forEach { request ->
@@ -446,7 +560,8 @@ internal object DirectTestStateCodec {
         require(bytes.size in 1..120_000)
         DataInputStream(ByteArrayInputStream(bytes)).use { input ->
             require(input.readInt() == STATE_MAGIC)
-            require(input.readInt() == STATE_VERSION)
+            val version = input.readInt()
+            require(version in 1..STATE_VERSION)
             val incidentId = input.readUTF()
             val createdAt = input.readLong()
             val triggerExpiresAt = input.readLong()
@@ -457,12 +572,26 @@ internal object DirectTestStateCodec {
             val routeCount = input.readInt()
             require(routeCount in 1..2)
             val routes = List(routeCount) {
+                val provider = enumAt<DirectProvider>(input.readUnsignedByte())
+                val fingerprint = input.readUTF()
+                val status = enumAt<DirectRouteStatus>(input.readUnsignedByte())
+                val acceptanceReference = input.readUTF()
+                val emergencyReceipt = input.readUTF()
                 DirectRouteState(
-                    provider = enumAt<DirectProvider>(input.readUnsignedByte()),
-                    configurationFingerprint = input.readUTF(),
-                    status = enumAt<DirectRouteStatus>(input.readUnsignedByte()),
-                    acceptanceReference = input.readUTF(),
-                    emergencyReceipt = input.readUTF(),
+                    provider = provider,
+                    configurationFingerprint = fingerprint,
+                    status = status,
+                    acceptanceReference = acceptanceReference,
+                    emergencyReceipt = emergencyReceipt,
+                    emergencyRepeatsUntil = if (version >= 2) {
+                        input.readLong()
+                    } else if (
+                        provider == DirectProvider.PUSHOVER && status == DirectRouteStatus.ACCEPTED
+                    ) {
+                        Math.addExact(requireNotNull(acceptedAt), 900L)
+                    } else {
+                        0L
+                    },
                 )
             }
             val requestCount = input.readInt()
@@ -507,7 +636,7 @@ internal object DirectTestStateCodec {
         require(state.nextLocationSequence >= 1)
         require((state.acceptedAt == null) == (state.trackingExpiresAt == null))
         if (state.acceptedAt != null && state.trackingExpiresAt != null) {
-            require(state.acceptedAt in state.createdAt..state.triggerExpiresAt)
+            require(state.acceptedAt >= state.createdAt)
             require(state.trackingExpiresAt - state.acceptedAt == 86_400L)
             require(state.routes.any { it.status == DirectRouteStatus.ACCEPTED })
         }
@@ -516,8 +645,18 @@ internal object DirectTestStateCodec {
             if (route.status == DirectRouteStatus.ACCEPTED) {
                 require(route.acceptanceReference.isNotEmpty())
                 if (route.provider == DirectProvider.PUSHOVER) require(DirectPushoverAdapter.isToken(route.emergencyReceipt))
+                if (route.provider == DirectProvider.PUSHOVER) {
+                    require(route.emergencyRepeatsUntil > requireNotNull(state.acceptedAt))
+                    require(route.emergencyRepeatsUntil - state.acceptedAt <= 900L)
+                } else {
+                    require(route.emergencyRepeatsUntil == 0L)
+                }
             } else {
-                require(route.acceptanceReference.isEmpty() && route.emergencyReceipt.isEmpty())
+                require(
+                    route.acceptanceReference.isEmpty() &&
+                        route.emergencyReceipt.isEmpty() &&
+                        route.emergencyRepeatsUntil == 0L,
+                )
             }
         }
         state.queue.forEach { request ->
@@ -526,12 +665,21 @@ internal object DirectTestStateCodec {
             require(request.configurationFingerprint == route.configurationFingerprint)
             require(request.body.toByteArray(Charsets.UTF_8).size <= 16_384)
             require(request.createdAt >= state.createdAt && request.createdAt < request.expiresAt)
-            if (request.kind == DirectRequestKind.TRIGGER) {
-                require(request.sequence == 0L && request.expiresAt == state.triggerExpiresAt)
-            } else {
-                require(request.sequence in 1 until state.nextLocationSequence)
-                require(request.expiresAt == state.trackingExpiresAt)
-                require(route.status == DirectRouteStatus.ACCEPTED)
+            when (request.kind) {
+                DirectRequestKind.TRIGGER ->
+                    require(request.sequence == 0L && request.expiresAt == state.triggerExpiresAt)
+                DirectRequestKind.LOCATION -> {
+                    require(request.sequence in 1 until state.nextLocationSequence)
+                    require(request.expiresAt == state.trackingExpiresAt)
+                    require(route.status == DirectRouteStatus.ACCEPTED)
+                }
+                DirectRequestKind.CANCEL -> {
+                    require(request.provider == DirectProvider.PUSHOVER)
+                    require(request.sequence == 0L && request.expiresAt == state.pushoverEmergencyRepeatsUntil())
+                    require(route.status == DirectRouteStatus.ACCEPTED)
+                    require(state.queue.size == 1)
+                    require(DirectPushoverAdapter.isCancellationEndpoint(request.endpoint))
+                }
             }
         }
     }
@@ -542,7 +690,7 @@ internal object DirectTestStateCodec {
     private val DIRECT_ID = Regex("^[A-Za-z0-9_-]{22}$")
     private val DIGEST = Regex("^[A-Za-z0-9_-]{43}$")
     private const val STATE_MAGIC = 0x4f445453
-    private const val STATE_VERSION = 1
+    private const val STATE_VERSION = 2
 }
 
 private fun directId(): String {

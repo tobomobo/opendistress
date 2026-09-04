@@ -3,6 +3,7 @@ package dev.opendistress.mobile
 
 import dev.opendistress.shared.DirectConfig
 import dev.opendistress.shared.DirectConfigAck
+import dev.opendistress.shared.WatchKeyAnnouncement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -75,6 +76,23 @@ class ProvisioningStateTest {
         }
     }
 
+    @Test
+    fun watchSelectionKeepsOnlyAnnouncementsCreatedByConnectedNodes() {
+        val first = sourced("node-a", "watch_1234567890")
+        val second = sourced("node-b", "watch_0987654321")
+        val stale = sourced("node-stale", "watch_1111111111")
+
+        assertEquals(
+            listOf(first),
+            connectedWatchAnnouncements(listOf(stale, second, first), setOf("node-a")),
+        )
+        assertEquals(
+            2,
+            connectedWatchAnnouncements(listOf(stale, second, first), setOf("node-a", "node-b")).size,
+        )
+        assertTrue(connectedWatchAnnouncements(listOf(stale), setOf("node-a")).isEmpty())
+    }
+
     private fun fixture(revision: Long) = DirectConfig(
         revision = revision,
         grafanaWebhookUrl =
@@ -89,5 +107,10 @@ class ProvisioningStateTest {
         backgroundInfo = "",
         responseInstructions = "Call trusted contact",
         profilePhotoUrl = "",
+    )
+
+    private fun sourced(nodeId: String, watchId: String) = SourcedWatchAnnouncement(
+        creatorNodeId = nodeId,
+        announcement = WatchKeyAnnouncement(watchId, 1, ByteArray(256) { 1 }),
     )
 }
