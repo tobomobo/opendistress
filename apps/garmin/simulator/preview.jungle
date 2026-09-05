@@ -1,0 +1,6 @@
+project.manifest = manifest.xml
+base.sourcePath = ../source;.
+base.resourcePath = ../resources/drawables;../resources/strings;../resources/properties;../button-resources/fenix
+venu441mm.resourcePath = ../resources/drawables;../resources/strings;../resources/properties;../button-resources/venu
+venux1.resourcePath = ../resources/drawables;../resources/strings;../resources/properties;../button-resources/venux1
+instinct3solar45mm.resourcePath = ../resources/drawables;../resources/strings;../resources/properties;../button-resources/instinct

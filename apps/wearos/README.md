@@ -40,6 +40,13 @@ The Garmin ready screen shows the top START button's position and the existing
 provider acceptance are not receiver delivery. Vibration strength and audibility
 depend on hardware; silence is not guaranteed. No iOS changes are included.
 
+**Garmin controls & blind practice** offers numbered, model-family diagrams and
+instructions for the independent send-free watch exercise. **Practice & physical
+checks** separates that exercise from an owner-observed delivery/GPS drill and
+provides a manual offline/GPS/reopen/reset checklist. The review page shows the
+matching Garmin setup ACK timestamp separately from provider-specific historical
+drill records; it does not invent live GPS/receiver telemetry or a safety score.
+
 Wear OS has no vendor-owned settings form equivalent to Garmin Connect IQ
 settings, so OpenDistress ships one ordinary Android companion,
 **OpenDistress Setup**. It now configures either a Pixel Watch, a Garmin watch,

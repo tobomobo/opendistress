@@ -38,8 +38,10 @@ Recipients use the selected provider's app, not a separate OpenDistress app.
    the on-screen control.
    The ring fills from the bottom in both directions. Releasing early cancels.
    This is not a global hardware shortcut; Garmin touchscreen taps do not send.
+   Learn the buttons first with idle-only **PRACTICE ONLY** on Garmin: a short
+   press, a full hold, then a hold without looking. This exercise sends nothing.
 3. **Watch for provider acceptance.** Once acceptance is stored, the foreground
-   app shows a neutral analog cover and, if enabled, gives two short vibration
+   app shows a neutral clock cover and, if enabled, gives two short vibration
    pulses. It then attempts
    location updates, with source and age information when available. The cover
    is an app view, not a replacement system watch face.
@@ -49,7 +51,7 @@ Recipients use the selected provider's app, not a separate OpenDistress app.
    not automatic delivery telemetry.
 
 **Provider accepted ≠ phone received ≠ person acknowledged ≠ help is coming.**
-The analog cover and acceptance vibration pattern confirm only provider
+The clock cover and acceptance vibration pattern confirm only provider
 acceptance; other vibration cues indicate watch interaction, not delivery. Full-screen,
 silent-mode and Do Not Disturb behaviour depend on the provider, permissions
 and receiving phone. They must be tested, not inferred from the watch.
@@ -83,8 +85,8 @@ physically verified device.
    confirmation in Android Setup when available. For Wear OS, wait for its
    matching setup acknowledgement. Saved, sent and confirmed are separate states.
 4. Warn every intended recipient, agree what the test means, and follow the
-   [physical drill](docs/preparation.md). With both providers configured, Grafana
-   is preferred and Pushover is a fallback; retries can reach both. Test each
+   [physical drill](docs/preparation.md). Garmin attempts both configured providers;
+   Wear OS prefers Grafana with Pushover as fallback. Retries can reach both. Test each
    route rather than assuming one working provider proves the other works.
 
 For downloads: Garmin `.iq` files are Store-upload packages; device-specific

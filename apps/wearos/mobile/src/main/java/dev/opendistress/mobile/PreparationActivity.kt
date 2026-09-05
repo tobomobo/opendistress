@@ -40,7 +40,7 @@ class PreparationActivity : Activity() {
         })
         try {
             store = SecureProvisioningStore.get(this)
-            overview()
+            if (intent.getBooleanExtra("garmin_controls", false)) controls() else overview()
         } catch (_: Exception) {
             text("Saved preparation could not be opened securely. Return to setup.")
         }
@@ -50,6 +50,10 @@ class PreparationActivity : Activity() {
         newPage()
         heading("Practice before you need it")
         text("Preview your saved profile, then rehearse with each recipient. This screen never sends an alert. Start the TEST deliberately on your watch.")
+        if (WatchTargetStore(this).selected() == WatchTarget.GARMIN) {
+            button("Learn Garmin controls · no sending") { controls() }
+            button("Failure checklist · no sending") { failureChecklist() }
+        }
         val state = store.snapshot()
         val config = state.config
         if (config == null) {
@@ -113,11 +117,11 @@ class PreparationActivity : Activity() {
         heading("$watch → $provider drill")
         text("Arrange this with ALL intended recipients first. TEST alerts can be loud and repeat. Use only a test route. Do not call emergency services for this exercise.")
         if (config.grafanaWebhookUrl != null && config.pushoverUserKey != null) {
-            text("With both routes saved, Grafana is tried first; Pushover is a fallback. A retry can reach both providers, so warn both recipient groups. Only record the provider you actually observed. To isolate a route, save only that provider and sync again.")
+            text("Garmin attempts both saved providers independently. Wear OS tries Grafana first, with Pushover as fallback. Retries can reach both, so warn both recipient groups. Only record the provider you actually observed. To isolate a route, save only that provider and sync again.")
         }
         val checks = listOf(
             "I confirmed this saved setup on the intended watch and informed every recipient.",
-            "I opened OpenDistress on the watch, held the trigger for 2.5 seconds, and saw provider acceptance (double vibration / analog cover).",
+            "I opened OpenDistress on the watch, held the trigger for 2.5 seconds, and saw provider acceptance (double vibration / clock cover).",
             "Every intended recipient saw the TEST in $provider on their locked phone, with the intended sound and Do Not Disturb behavior.",
             "Recipients checked the protected person and response plan, then acknowledged the TEST inside $provider.",
             "Recipients received a real GPS update, checked its age and accuracy, and verified the map against my actual position.",
@@ -148,6 +152,58 @@ class PreparationActivity : Activity() {
     private fun newPage() {
         content.removeAllViews()
         content.post { (content.parent as? ScrollView)?.scrollTo(0, 0) }
+    }
+
+    private fun controls(layout: GarminControlLayout = GarminControlLayout.FENIX) {
+        newPage()
+        heading("Learn your Garmin controls")
+        text("Choose the matching layout and check it against your own watch. This is a schematic, not automatic device detection. Nothing on this phone screen sends an alert or changes watch settings.")
+        content.addView(GarminControlDiagram(this, layout), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(230)))
+        button("Layout: ${layout.title}") {
+            android.app.AlertDialog.Builder(this).setTitle("Watch control layout")
+                .setItems(GarminControlLayout.entries.map { it.title }.toTypedArray()) { _, index ->
+                    controls(GarminControlLayout.entries[index])
+                }.show()
+        }
+        card("1 · START / ENTER", "Upper right. In the real app, hold 2.5 seconds to send. A short press does not send. First learn this in Practice, which never sends anything.")
+        card("2 · BACK", "Lower right. In Practice, exit back to the real app. In reset options, cancel without clearing the event. Ordinary taps on the accepted clock do not reveal alert details.")
+        card(if (layout.hasMenu) "3 · MENU / UP" else "Touch controls",
+            if (layout.hasMenu) "Middle left. Hold from an idle app to enter Practice. After provider acceptance, hold to reveal status; hold again for reset options. Reset then requires a separate 2.5-second START hold."
+            else "Tap the idle app to enter Practice. After provider acceptance, hold the touchscreen to reveal status. Tap Reset options there; a separate 2.5-second hardware START hold is required to reset.")
+        if (layout.hasMenu) card("4 · DOWN", "Lower left. Does not trigger an alert or reveal the covered status. In status, returns to the clock.")
+        button("Next · rehearse without looking") { blindPractice(layout) }
+        button("Back to preparation") { overview() }
+    }
+
+    private fun blindPractice(layout: GarminControlLayout) {
+        newPage(); heading("Practice without sending")
+        card("1 · Enter Practice on the watch", "Open OpenDistress while no TEST or incident is pending. ${if (layout.hasMenu) "Hold middle-left MENU." else "Tap the idle screen."} Verify the PRACTICE screen and its no-sending message before proceeding. Practice never starts automatically and cannot send notifications.")
+        card("2 · Learn the hold", "Follow the watch: release a short press early, then hold START for 2.5 seconds. Repeat the hold looking away, in a safe setting. BACK leaves Practice; the ordinary app can send again after you exit.")
+        card("3 · Learn the cues", "One short pulse means input recognized. Two short pulses simulate provider acceptance in Practice. In the real app, they mean the provider accepted the request—not that a phone received it or someone is helping. If vibration is disabled, no pulse is expected. Change it in Watch behavior, then save and sync.")
+        text("Check that vibration is perceptible but acceptably quiet on your actual wrist. The simulator cannot establish either. Do not restrain yourself for this exercise.")
+        button("Next · access during sport") { accessPractice() }
+        button("Back to controls") { controls(layout) }
+    }
+
+    private fun accessPractice() {
+        newPage(); heading("Reach the app from everyday use")
+        card("From the normal watch face", "Find the installed OpenDistress app. Put its app-list entry or glance somewhere easy to reach. If your firmware offers it as a shortcut target, assign and test that shortcut. The app cannot install a global button listener.")
+        card("On fēnix 8", "From the ordinary watch face, hold middle-left MENU, then Watch Settings → System → Shortcuts. Only choose options the watch actually offers. If OpenDistress is absent, a watch-face shortcut plus a pinned app/glance may shorten the route; it is not a one-button trigger.")
+        card("During a safe practice activity", "With no alert active, rehearse getting to OpenDistress without stopping or discarding the recording. Enter Practice, repeat the hold, then return and verify the activity is still recording. Do not assume the simulator or another watch model proves this route works.")
+        text("Once an alert is active, leaving OpenDistress can stop its foreground GPS acquisition. A system shortcut, screen lock, firmware behavior, or app exit can still interrupt it. Agree on a backup route with your recipients.")
+        button("Next · separate delivery test") { overview() }
+        button("Failure checklist · no sending") { failureChecklist() }
+    }
+
+    private fun failureChecklist() {
+        newPage(); heading("When something fails")
+        text("Use only an isolated TEST route with all recipients warned. These checks do not run automatically and do not record success. Never disable connectivity or GPS during a real incident.")
+        card("No phone / no network", "A locally retained event is not delivery. Observe pending state, restore the connection, and check the actual receiver. Retries can duplicate notifications. Do not reset pending work to make an error disappear.")
+        card("No GPS / old GPS", "The initial TEST must not wait for GPS. Check that no fresh location is claimed without a real fix; if a last-known fix exists, verify its age warning. Move to open sky and check a later real update with the recipient.")
+        card("App closed / reopened", "A pending event must retain its identity. An accepted event must reopen covered, without sending a new trigger. Garmin foreground GPS needs the app open. Reopening or a compile success is not proof that updates reached anyone.")
+        card("Reset", "Open status deliberately, then reset options, then hold START 2.5 seconds. Cancel once to verify the event survives. Reset stops local TEST tracking; check and stop any remaining provider alarm repetitions separately.")
+        button("Back to preparation") { overview() }
     }
 
     private fun heading(value: String) = text(value, true)

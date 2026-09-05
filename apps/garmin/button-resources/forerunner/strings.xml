@@ -1,0 +1,4 @@
+<strings>
+    <!-- Select, Menu, Down, Back: degrees projected from SDK 9.2 simulator keys. -1 means absent. -->
+    <string id="ButtonGeometry">021,180,210,330</string>
+</strings>

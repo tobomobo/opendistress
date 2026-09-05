@@ -52,6 +52,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
     private lateinit var locationAssist: MaterialSwitch
     private lateinit var save: MaterialButton
     private lateinit var haptics: MaterialSwitch
+    private lateinit var preparationEvidence: MaterialTextView
     private lateinit var draftStatus: MaterialTextView
     private val targetStore by lazy { WatchTargetStore(this) }
     private val isGarmin get() = targetStore.selected() == WatchTarget.GARMIN
@@ -126,6 +127,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
 
     override fun onStart() {
         super.onStart()
+        refreshPreparationEvidence()
         if (::coordinator.isInitialized) {
             if (isPixel) {
                 Wearable.getDataClient(this).addListener(this)
@@ -384,6 +386,22 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         }
         watchSection.addView(draftStatus, 1, matchWidth())
         reviewPage.addView(watchSection, matchWidth(topMargin = dp(8)))
+        preparationEvidence = wizardCopy("")
+        reviewPage.addView(MaterialCardView(this).apply {
+            radius = dp(24).toFloat()
+            cardElevation = 0f
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(18), dp(16), dp(18), dp(16))
+                addView(wizardCopy("Evidence, not a safety score", true))
+                addView(preparationEvidence)
+                addView(MaterialButton(this@MainActivity, null,
+                    com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = "Practice & physical checks"
+                    setOnClickListener { startActivity(Intent(this@MainActivity, PreparationActivity::class.java)) }
+                })
+            })
+        }, matchWidth(topMargin = dp(16)))
 
         val locationCopy = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -431,6 +449,15 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             setPadding(dp(18), dp(8), dp(18), dp(8))
         }
         watchPage.addView(haptics, matchWidth(topMargin = dp(16)))
+        if (isGarmin) {
+            watchPage.addView(wizardCopy("Learn the exact buttons before a test. In the Garmin app, open Practice from the idle screen: no messages are sent. Rehearse a short press, a full hold, then the same hold without looking."))
+            watchPage.addView(MaterialButton(this, null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = "Garmin controls & blind practice"
+                setOnClickListener { startActivity(Intent(this@MainActivity, PreparationActivity::class.java)
+                    .putExtra("garmin_controls", true)) }
+            }, matchWidth())
+        }
         watchPage.addView(MaterialTextView(this).apply {
             text = "Brief cues on the watch. Two short pulses mean provider acceptance, not delivery or help on the way. Sound and strength depend on the watch. Save and sync to apply."
             setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
@@ -549,6 +576,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
     }
 
     private fun showWizardStep(step: Int) {
+        refreshPreparationEvidence()
         wizardStep = step.coerceIn(0, 5)
         val titles = listOf("Delivery", "Response plan", "Your information", "Conversation words", "Watch behavior", "Review & sync")
         wizardTitle.text = "${wizardStep + 1} of 6 · ${titles[wizardStep]}"
@@ -829,8 +857,25 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             garminStatus.setTextColor(foreground)
             garminStatusIndicator.setTextColor(foreground)
             garminStatusIndicator.background = circle(foreground, background)
-            garminStatus.text = listOfNotNull(garminLink.connectedWatchName, linkStatus.description).joinToString("\n\n")
+            val confirmation = (linkStatus as? GarminLinkStatus.Ready)?.confirmedAt?.let {
+                "Watch confirmed saved setup: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it * 1000))}"
+            }
+            garminStatus.text = listOfNotNull(garminLink.connectedWatchName, linkStatus.description,
+                confirmation, "Connection and setup confirmation do not prove alert delivery.").joinToString("\n\n")
+            refreshPreparationEvidence()
         }
+    }
+
+    private fun refreshPreparationEvidence() {
+        if (!::preparationEvidence.isInitialized || !storageReady) return
+        val state = coordinator.snapshot()
+        val rows = PreparationEvidence.forSetup(state.config, targetStore.selected(), state.drills,
+            System.currentTimeMillis() / 1000)
+        preparationEvidence.text = if (rows.isEmpty()) "Save setup to prepare a separate delivery and GPS drill."
+            else rows.joinToString("\n\n") { row ->
+                val date = row.recordedAt?.let { "\nRecorded: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it * 1000))}" }.orEmpty()
+                "${row.provider}\n${row.status}$date"
+            } + "\n\nThese are your recorded observations, not live receiver or GPS telemetry. Repeat after changing watch, firmware, receiving phone or settings."
     }
 
     private fun statusIndicator(color: Int) = MaterialTextView(this).apply {

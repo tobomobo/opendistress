@@ -10,6 +10,56 @@ GARMIN = ROOT / "apps/garmin"
 
 
 class GarminContractTests(unittest.TestCase):
+    def test_practice_is_separate_from_submission_and_persistent_mode(self):
+        practice = (GARMIN / "source/WatchPractice.mc").read_text()
+        self.assertIn("class WatchPracticeView extends WatchUi.View", practice)
+        for forbidden in ("extends OpenDistressView", "Communications.", "Storage.",
+                          "newTestEvent(", "activateTest(", "sendPending(", "Position."):
+            self.assertNotIn(forbidden, practice)
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        gate = source[source.index("function openPractice()"):source.index("function acceptedProviderSummary()")]
+        for guard in ("_queue.size() != 0", "_activeIncident != null", "_directResult != null", "_inFlight", "_armingAlert"):
+            self.assertIn(guard, gate)
+        self.assertIn("HOLD_MS = 2500", practice)
+        self.assertIn("ALERT_ARM_HOLD_MS = 2500", source)
+        self.assertIn("WatchFeedback.input()", practice)
+        self.assertIn("WatchFeedback.accepted()", practice)
+        self.assertIn("elapsed >= 15000", source)
+
+    def test_button_geometry_and_preview_are_device_scoped(self):
+        expected = {
+            "fenix": "030,180,210,330",
+            "forerunner": "021,180,210,330",
+            "instinct": "021,180,210,340",
+            "venu": "030,-01,-01,330",
+            "venux1": "025,-01,-01,335",
+        }
+        for family, geometry in expected.items():
+            root = ET.parse(GARMIN / "button-resources" / family / "strings.xml").getroot()
+            self.assertEqual(root.find("./string[@id='ButtonGeometry']").text, geometry)
+            self.assertTrue(all(len(angle) == 3 for angle in geometry.split(",")))
+        for filename in ("beta.jungle", "monkey.jungle"):
+            jungle = (GARMIN / filename).read_text()
+            self.assertIn("base.sourcePath = source", jungle)
+            self.assertNotIn("simulator/", jungle)
+            self.assertIn("venux1.resourcePath = resources;button-resources/venux1", jungle)
+            self.assertIn("fr970.resourcePath = resources;button-resources/forerunner", jungle)
+        ns = {"iq": "http://www.garmin.com/xml/connectiq"}
+        app_id = lambda path: ET.parse(path).getroot().find("iq:application", ns).attrib["id"]
+        preview_id = app_id(GARMIN / "simulator/manifest.xml")
+        self.assertNotEqual(preview_id, app_id(GARMIN / "manifest.xml"))
+        self.assertNotEqual(preview_id, app_id(GARMIN / "manifest-beta.xml"))
+
+    def test_touch_dispatch_reaches_coordinate_specific_actions(self):
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        delegate = source[source.index("class OpenDistressDelegate"):source.index("class HoldDecisionProbe")]
+        select = delegate[delegate.index("function onSelect()"):delegate.index("function onNextPage()")]
+        self.assertIn("return false;", select)
+        self.assertNotIn("selectAction()", select)
+        self.assertIn("function onTap(event) { return _view.tapAction(event); }", delegate)
+        self.assertIn("if (_startWasAccepted)", delegate)
+        self.assertIn("function watchDelegatePreservesTouchAndFreshAcceptance(logger)", source)
+
     def test_jungle_paths_exclude_nested_sdk_sources(self):
         jungle = (GARMIN / "monkey.jungle").read_text().splitlines()
 
@@ -141,9 +191,9 @@ class GarminContractTests(unittest.TestCase):
         self.assertEqual(app_name, "OpenDistress")
         self.assertIn("var isRound = width == height", update)
         self.assertIn("var compactRound = isRound && width < 220", update)
-        self.assertIn("compactRound ? 62 : (isRound ? 76 : 88)", update)
-        self.assertIn("compactRound ? 14 : 18", update)
-        self.assertIn("compactRound ? 50 : 47", update)
+        self.assertIn("compactRound ? 88 : (isRound ? 76 : 88)", update)
+        self.assertIn("compactRound ? 38 : 18", update)
+        self.assertIn("compactRound ? 62 : 47", update)
         self.assertIn("compactRound ? 86 : 80", update)
         self.assertEqual(update.count("new WatchUi.TextArea"), 4)
         self.assertIn("drawReadyScreen(dc)", update)
@@ -157,13 +207,17 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("<polygon", launcher)
         self.assertNotIn("<rect", launcher)
 
-        cover = source[source.index("function drawAnalogCover(") : source.index("function drawHand(")]
-        self.assertIn("var minSize = width < height ? width : height", cover)
-        self.assertIn("var compactRound = width == height && minSize < 220", cover)
-        self.assertIn("(width * 43) / 100", cover)
-        self.assertIn("(height * 57) / 100", cover)
-        self.assertIn("var edgePadding = minSize / 15", cover)
-        self.assertIn("if (minSize >= 220)", cover)
+        cover = (GARMIN / "source/WatchPresentation.mc").read_text()
+        self.assertIn("var size = w < h ? w : h", cover)
+        self.assertIn("var compact = size < 220", cover)
+        self.assertIn("w * 0.43", cover)
+        self.assertIn("h * 0.61", cover)
+        self.assertIn("Gregorian.info(Time.now()", cover)
+        self.assertIn("getDeviceSettings().is24Hour", cover)
+        self.assertIn("function compactLine(dc, value, top, header)", cover)
+        self.assertIn("dc.drawText(dc.getWidth() * (header ? 0.32 : 0.50)", cover)
+        self.assertIn('"Delivery unconfirmed"', source)
+        self.assertIn('"Hold MENU"', source)
 
     def test_failed_test_event_uses_clearable_non_live_language(self):
         source = (GARMIN / "source/OpenDistressApp.mc").read_text()
@@ -373,7 +427,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("sendPending();", changed)
         self.assertIn("_directResult != null", changed)
 
-    def test_analog_cover_is_only_provider_acceptance_feedback(self):
+    def test_clock_cover_is_only_provider_acceptance_feedback(self):
         source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         update = source[source.index("function onUpdate(dc)", source.index("class OpenDistressView")) :]
         cover = source[source.index("function shouldShowCover()") : source.index("function selectStartupMode()")]
@@ -381,8 +435,8 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("return _directResult != null", cover)
         self.assertNotIn("return _personalLive", cover)
         self.assertNotIn("_activeIncident != null", cover)
-        self.assertIn("drawAnalogCover(dc);", update)
-        self.assertIn("System.getClockTime()", cover)
+        self.assertIn("drawClockCover(dc);", update)
+        self.assertIn("WatchPresentation.drawClock(dc)", cover)
         self.assertIn("COVER_REFRESH_MS = 60000", source)
         self.assertIn("LOCATION_ACQUIRE_REFRESH_MS = 10000", source)
         self.assertIn("LOCATION_ACQUIRE_FAST_SECONDS = 300", source)
@@ -420,7 +474,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("&& !_acceptedStatusVisible", cover)
         cover_start = update.index("if (shouldShowCover())")
         cover_branch = update[cover_start : update.index("dc.setColor(", cover_start)]
-        self.assertIn("drawAnalogCover(dc);", cover_branch)
+        self.assertIn("drawClockCover(dc);", cover_branch)
         self.assertNotIn("drawAcceptedCoverHint", cover_branch)
         self.assertNotIn("function drawAcceptedCoverHint", source)
         self.assertIn("if (shouldShowAcceptedStatus())", update)
@@ -447,17 +501,17 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('"GPS searching"', location_summary)
         self.assertIn('return "GPS update pending"', location_summary)
         self.assertIn('return "GPS update sent"', location_summary)
-        self.assertIn("Delivery not confirmed", accepted_ui)
+        self.assertIn("Delivery unconfirmed", accepted_ui)
         self.assertIn("drawAcceptedButtonIndicators(dc);", accepted_ui)
-        self.assertIn("function drawAcceptedButtonIndicator(", accepted_ui)
-        self.assertIn("Graphics.ARC_CLOCKWISE", accepted_ui)
-        self.assertIn("var halfSweep = active ? 18 : 7", accepted_ui)
+        self.assertIn('WatchPresentation.button(dc, "START"', accepted_ui)
+        self.assertIn('WatchPresentation.button(dc, "MENU"', accepted_ui)
+        self.assertIn("acceptedActionPulse()", accepted_ui)
         self.assertIn('"RESET TEST"', accepted_ui)
         self.assertIn('"DIAL"', accepted_ui)
         self.assertNotIn("LOWER-LEFT", accepted_ui)
         self.assertNotIn("MID-LEFT", accepted_ui)
         self.assertNotIn("_displayEventId", accepted_ui)
-        self.assertEqual(select.count("toggleAcceptedStatus();"), 2)
+        self.assertEqual(select.count("toggleAcceptedStatus();"), 1)
         self.assertNotIn("persistStateWithDirect", select)
         self.assertNotIn("activate", select)
         self.assertIn('beginAcceptedActionFeedback("DIAL")', select)
@@ -467,7 +521,9 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn('"Pushover accepted"', select)
         self.assertNotIn("Recipient unknown", source)
         self.assertIn("ACCEPTED_ACTION_FEEDBACK_MS = 180", source)
-        self.assertIn('beginAcceptedActionFeedback("RESET")', menu)
+        self.assertIn('_resetConfirmation = true', menu)
+        self.assertNotIn('beginAcceptedActionFeedback("RESET")', menu)
+        self.assertIn('elapsed >= ALERT_ARM_HOLD_MS', source[source.index("function advanceResetHold()"):source.index("function advanceAlertArm()")])
         self.assertIn("persistStateWithDirect([], _activeIncident, null)", reset)
         self.assertIn("_acceptedStatusVisible = false", reset)
         self.assertIn("_acceptedActionFeedback = null", reset)
