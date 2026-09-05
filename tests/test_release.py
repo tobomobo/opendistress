@@ -63,6 +63,7 @@ class SourceSbomTests(unittest.TestCase):
         )
         self.assertNotIn('sha256sum "dist/', workflow)
         self.assertIn('release_flags+=(--prerelease)', workflow)
+        self.assertIn('--verify-tag --generate-notes --draft', workflow)
 
     def test_garmin_beta_release_is_signed_gated_and_manual(self):
         workflow = (ROOT / ".github/workflows/garmin-beta-release.yml").read_text()
@@ -80,6 +81,7 @@ class SourceSbomTests(unittest.TestCase):
         self.assertIn("git merge-base --is-ancestor HEAD origin/main", workflow)
         self.assertIn('for check in "test (3.11)" "test (3.13)" wearos watchos', workflow)
         self.assertIn('--json isPrerelease --jq .isPrerelease)" = true', workflow)
+        self.assertEqual(workflow.count('--json isDraft --jq .isDraft)" = true'), 3)
         self.assertIn("commit: ${{ steps.release.outputs.commit }}", workflow)
         self.assertIn("tag_object: ${{ steps.release.outputs.tag_object }}", workflow)
         self.assertIn("ref: ${{ needs.validate.outputs.commit }}", workflow)

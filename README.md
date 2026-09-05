@@ -93,6 +93,11 @@ For downloads: Garmin `.iq` files are Store-upload packages; device-specific
 `.prg` files are sideload builds and do not provide the Store settings workflow
 by themselves. Android `.apk` files are installable test builds; `.aab` files
 are developer bundles requiring release signing and Store distribution.
+Maintainers: signed tags stage a **draft** release. Attach the matching Garmin
+package and native CI installers, verify their versions and checksums, and finish
+the release notes **before** publishing. Published releases are immutable; missing
+assets require a new version. The Garmin packaging workflow only accepts drafts.
+
 Check each release's notes and checksums. Beta updates may be incompatible;
 rehearse again after changing a device, configuration or receiving phone.
 Native CI artifacts require a GitHub login and are retained for 14 days.

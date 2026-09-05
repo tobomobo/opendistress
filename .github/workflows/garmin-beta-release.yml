@@ -58,6 +58,7 @@ jobs:
             test "$actual" = "$check"
           done
           test "$(gh release view "$RELEASE_TAG" --json isPrerelease --jq .isPrerelease)" = true
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
           echo "tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
           echo "commit=${commit_sha}" >> "$GITHUB_OUTPUT"
@@ -87,6 +88,7 @@ jobs:
           test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha)" = "$EXPECTED_TAG_OBJECT"
           test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXPECTED_TAG_OBJECT}" --jq .verification.verified)" = true
           test "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXPECTED_TAG_OBJECT}" --jq .object.sha)" = "$EXPECTED_COMMIT"
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
       - name: Build signed Garmin beta package
         env:
           GARMIN_DEVELOPER_KEY_DER_BASE64: ${{ secrets.GARMIN_DEVELOPER_KEY_DER_BASE64 }}
@@ -123,4 +125,5 @@ jobs:
         run: |
           set -euo pipefail
           test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha)" = "$EXPECTED_TAG_OBJECT"
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
           gh release upload "$RELEASE_TAG" dist/garmin/* --clobber
