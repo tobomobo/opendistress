@@ -195,7 +195,12 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("compactRound ? 38 : 18", update)
         self.assertIn("compactRound ? 62 : 47", update)
         self.assertIn("compactRound ? 86 : 80", update)
-        self.assertEqual(update.count("new WatchUi.TextArea"), 4)
+        self.assertEqual(update.count("new WatchUi.TextArea"), 3)
+        ready = update[update.index("function drawReadyScreen(dc)"):]
+        self.assertIn('WatchPresentation.line(dc, "TEST MODE", 23, false)', ready)
+        self.assertIn('"Hold START 2.5s", 61, false', ready)
+        self.assertIn('WatchPresentation.button(dc, "START", "", pulse)', ready)
+        self.assertNotIn('"Practice", 0', ready)
         self.assertIn("drawReadyScreen(dc)", update)
         self.assertIn('"Release to cancel"', update)
         self.assertIn("Graphics.FONT_LARGE, Graphics.FONT_MEDIUM", update)

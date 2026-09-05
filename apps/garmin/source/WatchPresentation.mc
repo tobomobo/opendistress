@@ -8,6 +8,23 @@ import Toybox.WatchUi;
 
 // Presentation only: no provider, storage, trigger, or tracking authority.
 module WatchPresentation {
+    // One native line per slot: TextArea can clip glyphs at a percentage-height
+    // boundary even when it has selected a nominally fitting font.
+    function line(dc, value, centerY, prominent) {
+        var fonts = prominent ? [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM,
+            Graphics.FONT_SMALL, Graphics.FONT_TINY, Graphics.FONT_XTINY]
+            : [Graphics.FONT_TINY, Graphics.FONT_XTINY];
+        var font = fonts[fonts.size() - 1];
+        for (var i = 0; i < fonts.size(); i += 1) {
+            if (dc.getTextWidthInPixels(value, fonts[i]) <= dc.getWidth() * 0.72) {
+                font = fonts[i]; break;
+            }
+        }
+        dc.setColor(prominent ? Graphics.COLOR_WHITE : Graphics.COLOR_LT_GRAY,
+            Graphics.COLOR_BLACK);
+        dc.drawText(dc.getWidth() / 2, dc.getHeight() * centerY / 100,
+            font, value, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+    }
     function isCompact(dc) { return dc.getWidth() == dc.getHeight() && dc.getWidth() < 220; }
 
     // Instinct Solar has a 23px minimum native font on a 176px display. Percent

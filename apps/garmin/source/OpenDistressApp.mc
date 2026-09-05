@@ -17,12 +17,18 @@ import Toybox.Time;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
+// Phone messages may be delivered synchronously when the listener registers.
+// Register in onStart, after application/module initialization has completed.
 class OpenDistressApp extends Application.AppBase {
     var _view = null;
     var _phoneMethod = null;
 
     function initialize() {
         AppBase.initialize();
+    }
+
+    function onStart(state) {
+        DirectAlertSettings.invalidateCache();
         _phoneMethod = method(:onPhoneMessage);
         if (Communications has :registerForPhoneAppMessages) {
             Communications.registerForPhoneAppMessages(_phoneMethod);
@@ -43,6 +49,7 @@ class OpenDistressApp extends Application.AppBase {
     }
 
     function onSettingsChanged() {
+        DirectAlertSettings.invalidateCache();
         if (_view != null) {
             _view.settingsChanged();
         }
@@ -50,7 +57,8 @@ class OpenDistressApp extends Application.AppBase {
 
     function onPhoneMessage(message as Communications.PhoneAppMessage) as Void {
         var data = message.data;
-        if (!(data instanceof Lang.Dictionary)) {
+        if (!(data instanceof Lang.Dictionary)
+            || !data.hasKey("protocol") || !data.hasKey("type")) {
             return;
         }
         if (OpenDistressProtocol.stringEquals(data["protocol"], DirectAlertSettings.PROTOCOL)
@@ -429,25 +437,25 @@ class OpenDistressView extends WatchUi.View {
                 Graphics.FONT_TINY, Graphics.FONT_XTINY],
             :justification => Graphics.TEXT_JUSTIFY_CENTER,
             :locX => safeLeft,
-            :locY => (height * (compactRound ? 12 : 14)) / 100,
+            :locY => (height * (compactRound ? 12 : 17)) / 100,
             :width => safeWidth,
             :height => (height * (compactRound ? 18 : 15)) / 100
         });
         title.draw(dc);
 
         var detail = new WatchUi.TextArea({
-            :text => acceptedProviderSummary()
-                + "\n" + acceptedLocationSummary(),
+            :text => acceptedProviderSummary(),
             :color => Graphics.COLOR_LT_GRAY,
             :backgroundColor => Graphics.COLOR_BLACK,
             :font => [Graphics.FONT_XTINY],
             :justification => Graphics.TEXT_JUSTIFY_CENTER,
             :locX => safeLeft,
-            :locY => (height * (compactRound ? 34 : 38)) / 100,
+            :locY => (height * (compactRound ? 34 : 36)) / 100,
             :width => safeWidth,
-            :height => (height * (compactRound ? 30 : 25)) / 100
+            :height => (height * (compactRound ? 30 : 14)) / 100
         });
         detail.draw(dc);
+        WatchPresentation.line(dc, acceptedLocationSummary(), 52, false);
         var delivery = new WatchUi.TextArea({
             :text => "Delivery unconfirmed",
             :color => Graphics.COLOR_LT_GRAY, :backgroundColor => Graphics.COLOR_BLACK,
@@ -458,6 +466,9 @@ class OpenDistressView extends WatchUi.View {
         delivery.draw(dc);
         drawAcceptedButtonIndicators(dc);
 
+        if (_acceptedActionFeedback == null && WatchPresentation.hasMenuButton()) {
+            WatchPresentation.line(dc, "Hold MENU: reset", 78, false);
+        }
         if (_acceptedActionFeedback != null || !WatchPresentation.hasMenuButton()) {
             if (!WatchPresentation.hasMenuButton()) {
                 dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_BLACK);
@@ -489,9 +500,9 @@ class OpenDistressView extends WatchUi.View {
         var resetActive = OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "RESET");
         var dialActive = OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "DIAL");
         var pulse = acceptedActionPulse();
-        WatchPresentation.button(dc, "START", _acceptedActionFeedback == null ? "Clock" : "",
+        WatchPresentation.button(dc, "START", "",
             dialActive && OpenDistressProtocol.stringEquals(_feedbackButton, "START") ? pulse : 0);
-        WatchPresentation.button(dc, "MENU", _acceptedActionFeedback == null ? "Hold: options" : "",
+        WatchPresentation.button(dc, "MENU", "",
             resetActive ? pulse : 0);
         if (dialActive && OpenDistressProtocol.stringEquals(_feedbackButton, "DOWN")) {
             WatchPresentation.button(dc, "DOWN", "", pulse);
@@ -1077,28 +1088,9 @@ class OpenDistressView extends WatchUi.View {
             }
             return;
         }
-        var width = dc.getWidth();
-        var height = dc.getHeight();
-        var safeWidth = (width * 70) / 100;
-        var left = (width - safeWidth) / 2;
-        var labels = ["TEST MODE", _armingAlert ? "Hold" : "Ready",
-            _armingAlert ? "Release to cancel" : "Hold 2.5 sec"];
-        var tops = [16, 41, 62];
-        var heights = [12, 18, 25];
-        for (var i = 0; i < labels.size(); i += 1) {
-            var text = new WatchUi.TextArea({
-                :text => labels[i],
-                :color => i == 1 ? Graphics.COLOR_WHITE : Graphics.COLOR_LT_GRAY,
-                :backgroundColor => Graphics.COLOR_BLACK,
-                :font => i == 1
-                    ? [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL, Graphics.FONT_TINY]
-                    : [Graphics.FONT_TINY, Graphics.FONT_XTINY],
-                :justification => Graphics.TEXT_JUSTIFY_CENTER,
-                :locX => left, :locY => (height * tops[i]) / 100,
-                :width => safeWidth, :height => (height * heights[i]) / 100
-            });
-            text.draw(dc);
-        }
+        WatchPresentation.line(dc, "TEST MODE", 23, false);
+        WatchPresentation.line(dc, _armingAlert ? "Keep holding" : "Ready", 44, true);
+        WatchPresentation.line(dc, _armingAlert ? "Release to cancel" : "Hold START 2.5s", 61, false);
         if (_armingAlert) {
             drawAlertArmProgress(dc);
         }
@@ -1107,11 +1099,12 @@ class OpenDistressView extends WatchUi.View {
         var pulse = _armingAlert
             ? 0.4 + 0.6 * Math.sin(Math.PI * (alertArmElapsedMs() % 700) / 700.0)
             : 0;
-        WatchPresentation.button(dc, "START", _armingAlert ? "Holding" : "START", pulse);
+        WatchPresentation.button(dc, "START", "", pulse);
         if (!_armingAlert) {
             if (WatchPresentation.hasMenuButton()) {
-                WatchPresentation.button(dc, "MENU", "Practice", 0);
-            } else { WatchPresentation.text(dc, "Tap: practice", 83, 10); }
+                WatchPresentation.line(dc, "Hold MENU: practice", 78, false);
+                WatchPresentation.button(dc, "MENU", "", 0);
+            } else { WatchPresentation.line(dc, "Tap: practice", 78, false); }
         }
         if (_pressedButton != null && !_armingAlert) {
             WatchPresentation.button(dc, _pressedButton, "", 1.0);
@@ -2921,12 +2914,8 @@ class OpenDistressView extends WatchUi.View {
             :context => requestContext
         };
         try {
-            Communications.makeWebRequest(
-                DirectGrafanaAdapter.endpoint(),
-                grafanaAlertPayload(eventId),
-                options,
-                method(:onGrafanaAlertResponse)
-            );
+            submitGrafanaAlert(DirectGrafanaAdapter.endpoint(),
+                grafanaAlertPayload(eventId), options);
         } catch (error) {
             _inFlight = false;
             _requestEventId = null;
@@ -2944,6 +2933,13 @@ class OpenDistressView extends WatchUi.View {
                 handleFailure("retryable_failure", "Grafana request could not be queued");
             }
         }
+    }
+
+    // Narrow transport boundary: simulator replays use the production trigger,
+    // serialization and persistence without contacting an alert recipient.
+    function submitGrafanaAlert(endpoint, payload, options) {
+        Communications.makeWebRequest(endpoint, payload, options,
+            method(:onGrafanaAlertResponse));
     }
 
     function onGrafanaAlertResponse(

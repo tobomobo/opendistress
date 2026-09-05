@@ -1,8 +1,14 @@
 # OpenDistress for Android and Wear OS
 
-Phone setup is a six-step wizard: delivery, response plan, optional profile,
-optional private conversation words, watch behavior, and review/sync. Incomplete
-drafts stay encrypted on the phone. After learning/review, explicit save compiles
+Phone setup is a one-time six-step wizard: delivery, response plan, optional profile,
+conversation words, watch behavior, and review/sync. After saving, the app opens
+a compact Home screen with separate My plan and Settings pages. Settings can
+restart the wizard without clearing existing values. Individual sections can be
+edited directly; My plan shows the last saved configuration, not unfinished edits.
+Conversation words are readable and editable without a reveal or memorization gate.
+Choose call-first or quiet response explicitly to prefill an editable plan; call-first
+also generates a word pair if none exists. No alert is sent during setup.
+Incomplete drafts stay encrypted on the phone. After review, explicit save compiles
 the expected conversation words into the briefing; the watch automatically sends
 it with the initial direct-provider alert. Providers can read it. See
 [preparation and physical drills](../../docs/preparation.md) for sharing and
