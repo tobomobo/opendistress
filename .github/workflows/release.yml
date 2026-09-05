@@ -53,7 +53,7 @@ jobs:
           python3 scripts/source_sbom.py "$version" dist/source-sbom.spdx.json
           cd dist
           sha256sum "opendistress-${version}.tar.gz" source-sbom.spdx.json > SHA256SUMS
-      - name: Publish source release
+      - name: Stage source release as a draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -62,4 +62,4 @@ jobs:
             release_flags+=(--prerelease)
           fi
           gh release create "$GITHUB_REF_NAME" dist/* \
-            --verify-tag --generate-notes "${release_flags[@]}"
+            --verify-tag --generate-notes --draft "${release_flags[@]}"
