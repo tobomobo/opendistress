@@ -128,7 +128,7 @@ The direct Garmin-to-provider TEST path intentionally sits beside, not inside,
 the normative event protocol. It is a low-setup transport proof: no relay is
 required, its optional provider-neutral emergency card is not a v1 TEST field, the TEST
 contains no location or LIVE content, and at least
-one validated provider acceptance is persisted before the analog acceptance
+one validated provider acceptance is persisted before the neutral clock
 cover appears or direct GPS begins. Grafana `2xx` proves webhook ingestion;
 Pushover requires its emergency receipt. Neither collapses transport delivery,
 recipient acknowledgement, or incident resolution into one fact.

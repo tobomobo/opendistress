@@ -66,6 +66,36 @@ nor the local learning checkbox acknowledge, resolve or stop an incident.
 There is no automatic callback, word verification, or recipient enrollment.
 These are a human planning aid, not an alternative to rehearsing the response.
 
+## Learn the controls without sending
+
+The companion's **Garmin controls & blind practice** page shows original,
+numbered button diagrams for fēnix, Forerunner, Instinct, round Venu and Venu X1.
+Choose the physical layout yourself; this is guidance, not automatic model
+detection. START is upper-right, BACK lower-right, and five-button watches put
+MENU middle-left. The watch draws model-specific edge indicators too.
+
+In the idle Garmin OpenDistress app, hold MENU or tap the screen to open
+**PRACTICE ONLY**. Complete a short press, a full 2.5-second hold, then repeat
+without looking. Nothing is sent, no GPS is requested and no readiness evidence
+is recorded. BACK exits; the next launch does not silently remain in practice.
+Active/pending work blocks practice. Optional light input and simulated double
+acceptance cues use the same saved watch-haptic setting as real operation.
+Learn them on the actual watch; software cannot guarantee inaudible vibration.
+
+Also rehearse getting into the app from the normal watch face and during a safe
+activity, with no alert active. On fēnix 8, Garmin documents **Watch Settings →
+System → Shortcuts** ([manual](https://www8.garmin.com/manuals/webhelp/GUID-EECCAC99-90D6-4AB1-9A3A-EC433D3365E2/EN-GB/GUID-0B47BD03-6F5F-47B8-A860-51494DB756D4.html)).
+Use only targets your firmware actually offers; the app cannot install a global
+button listener. Verify your recording continues after returning. Leaving an
+active OpenDistress session can interrupt foreground GPS acquisition.
+
+After provider acceptance the neutral Garmin clock ignores ordinary taps and
+short START/DOWN/BACK presses. Hold MENU or the touchscreen to inspect status;
+it re-covers after 15 seconds without interaction. MENU on status (or **Reset
+options** on Venu) opens a confirmation; a separate 2.5-second START hold resets
+local TEST tracking. BACK cancels. Reset is not recipient acknowledgement or
+resolution, and provider alarm repetitions may need stopping separately.
+
 ## Share and rehearse
 
 Saved delivery/profile setup is encrypted locally using Android Keystore and copied to the selected watch.
@@ -78,7 +108,8 @@ each watch/provider route. Unsaved edits are not part of that preview. Arrange
 the drill with every intended recipient, confirm the saved configuration on the
 watch, trigger the 2.5-second hold there, and verify the actual receiving app:
 locked-screen sound/DND behavior, profile/plan, acknowledgement, and a fresh
-GPS update with a correct map. Reset the TEST and verify repetitions stop.
+GPS update with a correct map. Reset the local TEST, stop remaining repetitions
+inside the provider app if necessary, and verify they stop.
 This preparation screen cannot transmit an alert.
 
 All six observations are required before recording success. This is explicitly
@@ -89,15 +120,26 @@ older than 30 days or later than the phone's current clock require a repeat.
 Device replacement or changed recipients also require a new drill; these are
 not automatically detectable. There is no periodic reminder service.
 
-With both routes configured the current watch prefers Grafana and uses Pushover
-as fallback. To verify the second route, save and sync it alone, and record only
+With both routes configured Garmin attempts both providers independently;
+Wear OS prefers Grafana and uses Pushover as fallback. Warn all configured
+recipients. To isolate a route, save and sync it alone, and record only
 the route actually observed. Never interpret a successful Grafana drill as proof
 that Pushover works.
 
 Watch recognition, provider acceptance, recipient delivery, acknowledgement and
-resolution remain separate facts. The analog cover and double haptic indicate
+resolution remain separate facts. The clock cover and double haptic indicate
 provider acceptance only. OpenDistress does not contact police automatically.
 Simulator drills prove UI behavior, never physical GPS or receiver interruption.
+
+The review screen separates **saved setup confirmation** (a fresh, matching
+Garmin ACK and its timestamp) from **owner-recorded delivery + real GPS** for
+each provider. Neither is a live safety score. Changed revisions, old records
+or invalid clock order request another drill instead of implying readiness.
+
+**Failure checklist · no sending** explains offline retry, missing/stale GPS,
+reopening and protected reset. These are manual checks, not an automatic fault
+injector. Use an isolated TEST route, warn recipients first, and never disable
+connectivity or GPS during a real incident.
 
 Native provider ACK return, recipient QR enrollment, direct LIVE enablement,
 and government integration are not implemented by the preparation screen.

@@ -50,7 +50,7 @@ with the matching event ID and a valid response HMAC. `RELAY ACCEPTED` means
 relay persistence—not provider acceptance, device delivery, human
 acknowledgement, or resolution.
 
-The neutral analog cover is shown only after at least one direct provider
+The neutral digital clock cover is shown only after at least one direct provider
 accepts the TEST and that fact is stored. Pushover requires HTTP 200 plus its
 valid request reference and emergency receipt; Grafana requires an HTTP 2xx
 from the configured formatted webhook. A double haptic accompanies the first
@@ -58,14 +58,41 @@ stored acceptance. The cover means only **a provider accepted the request**;
 it does not mean a receiver phone displayed or sounded it, a person ACKed it,
 or help is coming. The cover is an ordinary foreground app view, not a
 replacement system watch face. It deliberately contains no alert text or
-controls: the lower-left button or a screen tap reveals a separate
-provider-evidence page without stopping GPS or clearing anything, and the same
-input returns to the clean cover. The page names the accepting provider and
-states that phone delivery is unconfirmed. Instead of persistent button text,
-short edge arcs align with the physical middle-left and lower-left buttons. An
-action immediately widens and brightens its arc and briefly reveals `DIAL` or
-`RESET TEST`; holding middle-left on this detail page clears accepted TEST
-evidence and returns to readiness so another test can be triggered.
+controls at rest: short START, DOWN, BACK and ordinary taps leave it covered.
+Hold middle-left MENU, or hold the touchscreen, to deliberately reveal a separate
+provider-evidence page without stopping GPS or clearing anything. START, DOWN,
+BACK or a normal tap returns to the cover; 15 seconds without interaction also
+re-covers it. The page names the accepting provider and
+states that phone delivery is unconfirmed. Edge indicators point to the actual
+buttons, with short contextual labels on the readiness/status pages. An action
+widens and brightens its indicator; START also pulses while the deliberate hold
+progresses. Holding middle-left (`MENU`) on the detail page opens reset options.
+Venu models have no middle-left key: tap **Reset options** on the revealed page.
+Both routes then require a separate 2.5-second START hold; release cancels that
+hold and BACK cancels the confirmation. Reset stops local TEST GPS and clears
+accepted TEST evidence, but does **not** stop provider alarm repetitions or
+resolve an incident. A request in flight prevents reset.
+
+### Send-free practice
+
+From the idle app, hold MENU or tap the screen to enter **PRACTICE ONLY**. It
+rehearses a short START press, a full 2.5-second hold with the real progress ring,
+then another hold without looking. Each hold requires a separate press/release.
+BACK returns to the app; practice never becomes the persistent startup mode.
+This separate view has no provider, queue, GPS or alert delegate and cannot
+record delivery/readiness evidence. Pending or active work blocks entry.
+One light input cue and the simulated double acceptance cue use the same
+optional haptic setting as normal operation. Only a physical watch can prove
+whether these cues are noticeable or quiet. See [preparation](../../docs/preparation.md)
+for companion control diagrams, sport-access rehearsal and separate delivery drills.
+
+The clock uses original seven-segment artwork, weekday/date, and the watch's
+12/24-hour preference. It has no flashing alert label, fake sensor readouts, or
+third-party watch-face assets. Installed faces cannot be embedded in this app:
+Garmin's [System.exitTo API](https://developer.garmin.com/connect-iq/api-docs/Toybox/System.html#exitTo-instance_function)
+does not target watch faces and exits the current application. Keeping this
+cover inside OpenDistress preserves its foreground location path. This is not
+a claim that Garmin will keep the app running indefinitely.
 
 After that stored acceptance, and never before it, the beta requests a real
 watch position for up to 24 hours. Every provider that accepted the trigger is
@@ -81,9 +108,9 @@ acquisition and updates run only while the app is foreground. No synthetic
 unavailable record is sent, and simulator/mock fixes are not evidence that real
 GPS works. A pending fix
 and its remaining provider targets are stored before network calls, retried a
-bounded number of times, and resumed when the app is reopened. MENU or the
-24-hour expiry stops positioning and scrubs local coordinate records while
-retaining the provider-acceptance cover until MENU resets it.
+bounded number of times, and resumed when the app is reopened. Confirmed TEST
+reset or the 24-hour expiry stops positioning and scrubs local coordinates.
+Expiry retains the provider-acceptance cover until a deliberate reset.
 
 When the owner enables **Garmin phone location assist** in the optional Android
 OpenDistress Setup app, the watch also asks for one high-accuracy fused Android
@@ -100,9 +127,9 @@ the cover retries both the synchronous snapshot and the continuous positioning
 request every 10 seconds for the first five minutes, then once per minute. A
 snapshot discovered during that wait remains labeled last-known and does not
 complete the fresh-fix stage, so a later fresh callback at the same coordinates
-still produces an update. DOWN/tap opens the accepted detail page and reports
-`GPS searching`, `GPS update pending`, or `GPS update sent`; the analog cover
-itself remains text-free.
+still produces an update. A deliberate MENU/touch hold opens status and reports
+`GPS searching`, `GPS update pending`, or `GPS update sent`; the clock cover
+itself remains free of alert text.
 
 ## Memory and type safety
 
@@ -528,11 +555,40 @@ multiple retail variants, as named by Garmin's device reference:
 | Venu 4 / D2 Air X15 | `venu441mm`, `venu445mm` |
 | Venu X1 | `venux1` |
 
-The status layout, glance, and analog cover use display-relative bounds. The
+The status layout, glance, and digital clock cover use display-relative bounds. The
 matrix therefore includes small and large round AMOLED, round MIP, and the
 rectangular Venu X1 profile. A successful profile build is compatibility
 evidence only; button mapping, haptic behavior, foreground lifetime, Wi-Fi,
 GPS, and physical readability still require that exact hardware.
+
+Button geometry comes from the pinned SDK simulator profiles. Family-specific
+resources distinguish fēnix (START near 30 degrees), Forerunner/Instinct (near
+21 degrees), two-button round Venu, and rectangular Venu X1 (right edge at
+25%/75% height). The middle-left reset label has a leader to its key, so it is
+not confused with lower-left DOWN. These are screen indicators, not changes to
+Garmin's hardware shortcuts.
+
+### Offline visual and interaction fixture
+
+`simulator/preview.jungle` uses a separate application ID, no configured provider
+credentials, and overrides submission/location entry points. It is excluded
+from both production build files. From this directory:
+
+```sh
+monkeyc -f simulator/preview.jungle -d fenix847mm -o bin/OpenDistress-ui-preview.prg \
+  -y /absolute/path/to/developer_key.der -l 1
+monkeydo bin/OpenDistress-ui-preview.prg fenix847mm
+```
+
+UP cycles synthetic ready, partial-hold, sending, accepted clock, revealed
+status, and reset-confirmation states. On two-button Venu the fixture starts
+with revealed synthetic status so its reset-options target can be checked.
+Normal START/DOWN/touch navigation uses the production delegate. This fixture
+never proves provider acceptance, delivery, GPS, or a physical 2.5-second hold.
+Do not install it as the emergency app. See the dated
+[watch-feedback evidence](../../tests/end-to-end/evidence/2026-09-05-garmin-watch-feedback.md).
+The follow-up [preparation evidence](../../tests/end-to-end/evidence/2026-09-05-garmin-preparation.md)
+records the protected-clock, reset and practice tests, including unfinished gates.
 
 The Connect IQ SDK is not vendored. With its `bin` directory on `PATH`, from
 this directory:

@@ -26,6 +26,62 @@ class SetupWizardInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+    @Test fun preparationGuidanceNeverMutatesSavedSetup() {
+        assumeTrue(Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish")
+        assumeTrue(runCatching { context.packageManager.getPackageInfo("com.garmin.android.apps.connectmobile", 0) }.isFailure)
+        val store = SecureProvisioningStore.get(context)
+        val before = store.snapshot()
+        val prefs = context.getSharedPreferences("watch-target", 0)
+        val previousTarget = prefs.getString("selected", null)
+        var activity: Activity? = null
+        try {
+            store.replace(ProvisioningState())
+            WatchTargetStore(context).select(WatchTarget.GARMIN)
+            val unchanged = store.snapshot()
+            activity = instrumentation.startActivitySync(Intent(context, PreparationActivity::class.java)
+                .putExtra("garmin_controls", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            instrumentation.waitForIdleSync()
+            val preparation = activity
+            onUi {
+                assertTrue(text(preparation, "Learn your Garmin controls").isShown)
+                assertEquals(1, all(preparation).filterIsInstance<GarminControlDiagram>().size)
+                // Every family must resolve its themed colors and render without a watch connection.
+                GarminControlLayout.entries.forEach { layout ->
+                    val diagram = GarminControlDiagram(preparation, layout)
+                    diagram.layout(0, 0, 400, 400)
+                    val bitmap = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+                    diagram.draw(Canvas(bitmap)); bitmap.recycle()
+                }
+                capture(preparation, "garmin-controls.png")
+                click(preparation, "Next · rehearse without looking")
+                assertTrue(text(preparation, "Practice without sending").isShown)
+                assertEquals(unchanged, store.snapshot())
+            }
+            instrumentation.waitForIdleSync()
+            onUi {
+                capture(preparation, "garmin-blind-practice.png")
+                click(preparation, "Next · access during sport")
+                assertTrue(text(preparation, "Reach the app from everyday use").isShown)
+                click(preparation, "Failure checklist · no sending")
+                assertTrue(text(preparation, "When something fails").isShown)
+                assertEquals(unchanged, store.snapshot())
+            }
+            instrumentation.waitForIdleSync()
+            onUi {
+                capture(preparation, "garmin-failure-checks.png")
+                click(preparation, "Back to preparation")
+                assertTrue(text(preparation, "Practice before you need it").isShown)
+                assertTrue(text(preparation, "Save your delivery settings first.").isShown)
+                assertEquals(unchanged, store.snapshot())
+            }
+        } finally {
+            activity?.let { onUi { it.finish() } }
+            instrumentation.waitForIdleSync()
+            store.replace(before)
+            prefs.edit().apply { if (previousTarget == null) remove("selected") else putString("selected", previousTarget) }.commit()
+        }
+    }
+
     @Test fun wizardKeepsDraftPrivateAndRequiresReviewBeforeSync() {
         assumeTrue(Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish")
         val connectInstalled = runCatching { context.packageManager.getPackageInfo("com.garmin.android.apps.connectmobile", 0) }.isSuccess

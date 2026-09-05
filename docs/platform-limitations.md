@@ -22,10 +22,19 @@
   Those are activation experiments, not proof of globally available buttons.
 - A watch face, if hardware testing eventually earns one, launches the device
   app; it does not send the incident itself.
-- A device app cannot replace the selected system watch face. Its analog cover
+- A device app cannot replace the selected system watch face. Its digital clock cover
   is an ordinary foreground view. It appears only after direct Grafana or
   Pushover TEST acceptance and therefore cannot be used as evidence of phone
   delivery, human acknowledgement, or response.
+- The cover ignores ordinary taps and short navigation presses. MENU hold or
+  a firmware-timed touchscreen hold reveals status; neither sends an alert.
+  Status re-covers after 15 seconds without interaction. Reset options require
+  a separate 2.5-second START hold and stop local TEST tracking only, not remote
+  provider alarms. The system can still interrupt or exit the foreground app.
+- Explicit idle-only practice is a separate send-free view. It teaches button
+  timing and simulates optional cues; it cannot certify delivery or GPS. This
+  does not solve launch access during sport: rehearse the actual firmware route
+  and verify recording continues, without an active alert.
 - Garmin's normal phone-editable app settings require a Connect IQ Store
   installation. The separate private beta application ID lets the owner test
   those settings without releasing the app publicly; a bare USB PRG sideload

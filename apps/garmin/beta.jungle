@@ -1,3 +1,11 @@
 project.manifest = manifest-beta.xml
 base.sourcePath = source
 base.resourcePath = resources
+base.resourcePath = $(base.resourcePath);button-resources/fenix
+fr970.resourcePath = resources;button-resources/forerunner
+instinct3amoled45mm.resourcePath = resources;button-resources/instinct
+instinct3amoled50mm.resourcePath = resources;button-resources/instinct
+instinct3solar45mm.resourcePath = resources;button-resources/instinct
+venu441mm.resourcePath = resources;button-resources/venu
+venu445mm.resourcePath = resources;button-resources/venu
+venux1.resourcePath = resources;button-resources/venux1

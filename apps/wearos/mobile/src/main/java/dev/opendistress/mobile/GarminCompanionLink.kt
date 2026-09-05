@@ -37,6 +37,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
     private var pendingConfig: DirectConfig? = null
     private var pendingTransfer: GarminSetupBinding? = null
     private var confirmedTransfer: GarminSetupBinding? = null
+    private var confirmedAt: Long? = null
 
     private val applicationEvents = ConnectIQ.IQApplicationEventListener { device, installedApp, messages, status ->
         if (installedApp.applicationId !in GarminCompanionProtocol.GARMIN_APP_IDS) {
@@ -247,9 +248,10 @@ internal class GarminCompanionLink private constructor(context: Context) {
             !transfer.matches(device.deviceIdentifier, installedApp.applicationId,
                 saved.revision, GarminCompanionProtocol.digest(saved))) return
         confirmedTransfer = transfer
+        confirmedAt = ack.storedAtEpochSeconds
         pendingTransfer = null
         pendingConfig = null
-        update(GarminLinkStatus.Ready("Confirmed on ${device.friendlyName} — TEST route ready"))
+        update(GarminLinkStatus.Ready("Saved setup confirmed on ${device.friendlyName}", confirmedAt))
     }
 
     private fun readiness(device: IQDevice, installedApp: IQApp? = null): GarminLinkStatus {
@@ -258,7 +260,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
         return if (installedApp != null && confirmedTransfer?.matches(
                 device.deviceIdentifier, installedApp.applicationId,
                 config.revision, GarminCompanionProtocol.digest(config)) == true) {
-            GarminLinkStatus.Ready("Confirmed on ${device.friendlyName} — TEST route ready")
+            GarminLinkStatus.Ready("Saved setup confirmed on ${device.friendlyName}", confirmedAt)
         } else {
             GarminLinkStatus.Waiting("${device.friendlyName} connected — setup is not yet confirmed")
         }
@@ -365,7 +367,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
 
 internal sealed interface GarminLinkStatus {
     val description: String
-    data class Ready(override val description: String) : GarminLinkStatus
+    data class Ready(override val description: String, val confirmedAt: Long? = null) : GarminLinkStatus
     data class Waiting(override val description: String) : GarminLinkStatus
     data class Attention(override val description: String) : GarminLinkStatus
     data class Unavailable(override val description: String) : GarminLinkStatus

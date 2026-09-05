@@ -244,6 +244,14 @@ class OpenDistressView extends WatchUi.View {
     var _directGrafanaRetryBlocked = false;
     var _acceptedStatusVisible = false;
     var _acceptedActionFeedback = null;
+    var _acceptedActionStartedAtMs = 0;
+    var _pressedButton = null;
+    var _lastButton = null;
+    var _feedbackButton = null;
+    var _resetConfirmation = false;
+    var _resetHolding = false;
+    var _resetStartedAtMs = 0;
+    var _statusInteractionAtMs = 0;
 
     function initialize() {
         View.initialize();
@@ -276,8 +284,11 @@ class OpenDistressView extends WatchUi.View {
 
     function onHide() {
         _visible = false;
+        _resetConfirmation = false;
+        _resetHolding = false;
         _acceptedStatusVisible = false;
         _acceptedActionFeedback = null;
+        _pressedButton = null;
         cancelAlertArm();
         stopLocations();
         try {
@@ -305,7 +316,7 @@ class OpenDistressView extends WatchUi.View {
     }
 
     function scheduleIdleCoverRefresh() {
-        if (!_visible || _directResult == null) {
+        if (!_visible || _directResult == null || _acceptedActionFeedback != null || _resetHolding) {
             return;
         }
         var refreshMs = COVER_REFRESH_MS;
@@ -318,6 +329,12 @@ class OpenDistressView extends WatchUi.View {
                 && now - acceptedAt < LOCATION_ACQUIRE_FAST_SECONDS) {
                 refreshMs = LOCATION_ACQUIRE_REFRESH_MS;
             }
+        }
+        if (_acceptedStatusVisible) {
+            var elapsed = System.getTimer() - _statusInteractionAtMs;
+            var remaining = elapsed < 0 ? 1 : 15000 - elapsed;
+            if (remaining < 1) { remaining = 1; }
+            if (refreshMs > remaining) { refreshMs = remaining; }
         }
         try {
             _statusTimer.stop();
@@ -334,79 +351,69 @@ class OpenDistressView extends WatchUi.View {
         if (!_visible || _directResult == null) {
             return;
         }
+        var elapsed = System.getTimer() - _statusInteractionAtMs;
+        if (_acceptedStatusVisible && !_resetHolding && (elapsed < 0 || elapsed >= 15000)) {
+            _acceptedStatusVisible = false; _resetConfirmation = false;
+        }
         WatchUi.requestUpdate();
         pollDirectFallbackLocation();
         scheduleIdleCoverRefresh();
     }
 
-    function drawAnalogCover(dc) {
-        var width = dc.getWidth();
-        var height = dc.getHeight();
-        var minSize = width < height ? width : height;
-        var compactRound = width == height && minSize < 220;
-        var centerX = compactRound ? (width * 43) / 100 : width / 2;
-        var centerY = compactRound ? (height * 57) / 100 : height / 2;
-        var edgePadding = minSize / 15;
-        if (edgePadding < 10) {
-            edgePadding = 10;
+    function drawClockCover(dc) {
+        WatchPresentation.drawClock(dc);
+        // No persistent alarm hints on the clock; only a deliberate press reveals one.
+        if (_pressedButton != null) {
+            WatchPresentation.button(dc, _pressedButton, "", 1.0);
         }
-        var radius = minSize / 2 - edgePadding - (compactRound ? minSize / 12 : 0);
-        var majorInset = radius / 10;
-        var minorInset = radius / 18;
-        var majorPen = minSize >= 400 ? 4 : 3;
-        var minorPen = minSize >= 300 ? 2 : 1;
-
-        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_BLACK);
-        dc.setPenWidth(minorPen);
-        dc.drawCircle(centerX, centerY, radius + edgePadding / 3);
-        for (var i = 0; i < 12; i += 1) {
-            var angle = (i / 12.0) * Math.PI * 2 - Math.PI / 2;
-            var inset = i % 3 == 0 ? majorInset : minorInset;
-            dc.setPenWidth(i % 3 == 0 ? majorPen : minorPen);
-            dc.drawLine(
-                centerX + (radius - inset) * Math.cos(angle),
-                centerY + (radius - inset) * Math.sin(angle),
-                centerX + radius * Math.cos(angle),
-                centerY + radius * Math.sin(angle)
-            );
-        }
-
-        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_BLACK);
-        var numberInset = radius / 6;
-        dc.drawText(centerX, centerY - radius + numberInset, Graphics.FONT_XTINY, "12",
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
-        if (minSize >= 220) {
-            dc.drawText(centerX + radius - numberInset, centerY, Graphics.FONT_XTINY, "3",
-                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
-            dc.drawText(centerX - radius + numberInset, centerY, Graphics.FONT_XTINY, "9",
-                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
-        }
-        dc.drawText(centerX, centerY + radius - numberInset, Graphics.FONT_XTINY, "6",
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
-
-        var clock = System.getClockTime();
-        var minuteAngle = (clock.min / 60.0) * Math.PI * 2 - Math.PI / 2;
-        var hourAngle = ((((clock.hour % 12) * 60) + clock.min) / 720.0)
-            * Math.PI * 2 - Math.PI / 2;
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
-        dc.setPenWidth(minSize >= 400 ? 7 : (minSize >= 260 ? 5 : 3));
-        drawHand(dc, centerX, centerY, hourAngle, radius * 0.50);
-        dc.setPenWidth(minSize >= 400 ? 4 : (minSize >= 260 ? 3 : 2));
-        drawHand(dc, centerX, centerY, minuteAngle, radius * 0.72);
-        dc.fillCircle(centerX, centerY, minSize >= 400 ? 7 : 4);
-        dc.setPenWidth(1);
-    }
-
-    function drawHand(dc, centerX, centerY, angle, length) {
-        dc.drawLine(
-            centerX,
-            centerY,
-            centerX + length * Math.cos(angle),
-            centerY + length * Math.sin(angle)
-        );
     }
 
     function drawAcceptedStatus(dc) {
+        if (_resetConfirmation) {
+            if (WatchPresentation.isCompact(dc)) {
+                WatchPresentation.compactLine(dc, "RESET?", 16, true);
+                var resetLines = ["Stops watch GPS", "Provider alarms", "may continue",
+                    "Hold START 2.5s", "BACK cancels"];
+                for (var i = 0; i < resetLines.size(); i += 1) {
+                    WatchPresentation.compactLine(dc, resetLines[i], 40 + i * 10.5, false);
+                }
+            } else {
+            WatchPresentation.text(dc, "RESET TEST?", 15, 14);
+            WatchPresentation.text(dc, "Stops watch GPS\nProvider alarms may continue", 38, 27);
+            WatchPresentation.text(dc, "Hold START 2.5 sec\nBACK cancels", 69, 19);
+            }
+            WatchPresentation.button(dc, "START", "", _resetHolding ? 1.0
+                : (OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "RESET") ? acceptedActionPulse() : 0));
+            WatchPresentation.button(dc, "BACK", "", 0);
+            if (_resetHolding) {
+                WatchPresentation.progress(dc, System.getTimer() - _resetStartedAtMs, ALERT_ARM_HOLD_MS);
+            }
+            return;
+        }
+        if (WatchPresentation.isCompact(dc)) {
+            WatchPresentation.compactLine(dc, _acceptedActionFeedback != null ? "CLOCK" : "STATUS", 16, true);
+            var provider = _directResult["grafana_accepted"]
+                ? (_directResult["pushover_accepted"] ? "Grafana + Pushover" : "Grafana")
+                : (_directResult["pushover_accepted"] ? "Pushover" : "Provider");
+            var lines = [provider + " accepted", acceptedLocationSummary(),
+                "Delivery", "unconfirmed", "Hold MENU"];
+            // A combined acceptance needs its own line; never drop delivery evidence.
+            if (_directResult["grafana_accepted"] && _directResult["pushover_accepted"]) {
+                lines = [provider, "accepted", acceptedLocationSummary(),
+                    "Delivery unconfirmed", "Hold MENU"];
+            }
+            for (var i = 0; i < lines.size(); i += 1) {
+                WatchPresentation.compactLine(dc, lines[i], 40 + i * 10.5, false);
+            }
+            WatchPresentation.button(dc, "START", "",
+                OpenDistressProtocol.stringEquals(_feedbackButton, "START") ? acceptedActionPulse() : 0);
+            WatchPresentation.button(dc, "MENU", "", 0);
+            if (_pressedButton != null) { WatchPresentation.button(dc, _pressedButton, "", 1.0); }
+            if (_acceptedActionFeedback != null && _feedbackButton != null) {
+                WatchPresentation.button(dc, _feedbackButton, "", acceptedActionPulse());
+            }
+            return;
+        }
         var width = dc.getWidth();
         var height = dc.getHeight();
         var isRound = width == height;
@@ -422,7 +429,7 @@ class OpenDistressView extends WatchUi.View {
                 Graphics.FONT_TINY, Graphics.FONT_XTINY],
             :justification => Graphics.TEXT_JUSTIFY_CENTER,
             :locX => safeLeft,
-            :locY => (height * (compactRound ? 12 : 18)) / 100,
+            :locY => (height * (compactRound ? 12 : 14)) / 100,
             :width => safeWidth,
             :height => (height * (compactRound ? 18 : 15)) / 100
         });
@@ -430,78 +437,71 @@ class OpenDistressView extends WatchUi.View {
 
         var detail = new WatchUi.TextArea({
             :text => acceptedProviderSummary()
-                + "\n" + acceptedLocationSummary()
-                + "\nDelivery not confirmed",
+                + "\n" + acceptedLocationSummary(),
             :color => Graphics.COLOR_LT_GRAY,
             :backgroundColor => Graphics.COLOR_BLACK,
-            :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
+            :font => [Graphics.FONT_XTINY],
             :justification => Graphics.TEXT_JUSTIFY_CENTER,
             :locX => safeLeft,
-            :locY => (height * (compactRound ? 34 : 36)) / 100,
+            :locY => (height * (compactRound ? 34 : 38)) / 100,
             :width => safeWidth,
             :height => (height * (compactRound ? 30 : 25)) / 100
         });
         detail.draw(dc);
+        var delivery = new WatchUi.TextArea({
+            :text => "Delivery unconfirmed",
+            :color => Graphics.COLOR_LT_GRAY, :backgroundColor => Graphics.COLOR_BLACK,
+            :font => [Graphics.FONT_XTINY], :justification => Graphics.TEXT_JUSTIFY_CENTER,
+            :locX => safeLeft, :locY => height * 0.59,
+            :width => safeWidth, :height => height * 0.11
+        });
+        delivery.draw(dc);
         drawAcceptedButtonIndicators(dc);
 
-        if (_acceptedActionFeedback != null) {
+        if (_acceptedActionFeedback != null || !WatchPresentation.hasMenuButton()) {
+            if (!WatchPresentation.hasMenuButton()) {
+                dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_BLACK);
+                dc.setPenWidth(_acceptedActionFeedback != null
+                    ? 1 + (3 * acceptedActionPulse()).toNumber() : 1);
+                dc.drawRoundedRectangle(safeLeft, height * 0.70,
+                    safeWidth, height * 0.13, height * 0.02);
+                dc.setPenWidth(1);
+            }
             var feedback = new WatchUi.TextArea({
                 :text => OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "RESET")
                     ? "RESET TEST"
-                    : "DIAL",
+                    : (_acceptedActionFeedback != null ? "CLOCK" : "Reset options"),
                 :color => Graphics.COLOR_WHITE,
                 :backgroundColor => Graphics.COLOR_BLACK,
                 :font => [Graphics.FONT_MEDIUM, Graphics.FONT_SMALL,
                     Graphics.FONT_TINY, Graphics.FONT_XTINY],
                 :justification => Graphics.TEXT_JUSTIFY_CENTER,
                 :locX => safeLeft,
-                :locY => (height * (compactRound ? 68 : 67)) / 100,
+                :locY => (height * (compactRound ? 70 : 71)) / 100,
                 :width => safeWidth,
-                :height => (height * 16) / 100
+                :height => (height * 12) / 100
             });
             feedback.draw(dc);
         }
     }
 
     function drawAcceptedButtonIndicators(dc) {
-        var width = dc.getWidth();
-        var height = dc.getHeight();
         var resetActive = OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "RESET");
         var dialActive = OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "DIAL");
-        if (width == height) {
-            var radius = width / 2 - (width >= 400 ? 12 : 7);
-            drawAcceptedButtonIndicator(dc, width / 2, height / 2,
-                radius, 180, resetActive);
-            drawAcceptedButtonIndicator(dc, width / 2, height / 2,
-                radius, 225, dialActive);
-            return;
+        var pulse = acceptedActionPulse();
+        WatchPresentation.button(dc, "START", _acceptedActionFeedback == null ? "Clock" : "",
+            dialActive && OpenDistressProtocol.stringEquals(_feedbackButton, "START") ? pulse : 0);
+        WatchPresentation.button(dc, "MENU", _acceptedActionFeedback == null ? "Hold: options" : "",
+            resetActive ? pulse : 0);
+        if (dialActive && OpenDistressProtocol.stringEquals(_feedbackButton, "DOWN")) {
+            WatchPresentation.button(dc, "DOWN", "", pulse);
         }
-        drawAcceptedEdgeIndicator(dc, height / 2, resetActive);
-        drawAcceptedEdgeIndicator(dc, (height * 72) / 100, dialActive);
-    }
-
-    function drawAcceptedButtonIndicator(dc, centerX, centerY, radius,
-        centerDegrees, active) {
-        var minSize = dc.getWidth() < dc.getHeight() ? dc.getWidth() : dc.getHeight();
-        var halfSweep = active ? 18 : 7;
-        dc.setPenWidth(active
-            ? (minSize >= 400 ? 16 : (minSize >= 260 ? 12 : 8))
-            : (minSize >= 400 ? 8 : (minSize >= 260 ? 6 : 4)));
-        dc.setColor(active ? Graphics.COLOR_WHITE : Graphics.COLOR_DK_GRAY,
-            Graphics.COLOR_BLACK);
-        dc.drawArc(centerX, centerY, radius, Graphics.ARC_CLOCKWISE,
-            centerDegrees + halfSweep, centerDegrees - halfSweep);
-        dc.setPenWidth(1);
-    }
-
-    function drawAcceptedEdgeIndicator(dc, centerY, active) {
-        var height = dc.getHeight();
-        var halfLength = active ? height / 12 : height / 24;
-        dc.setPenWidth(active ? 12 : 6);
-        dc.setColor(active ? Graphics.COLOR_WHITE : Graphics.COLOR_DK_GRAY,
-            Graphics.COLOR_BLACK);
-        dc.drawLine(5, centerY - halfLength, 5, centerY + halfLength);
-        dc.setPenWidth(1);
+        if (dialActive && OpenDistressProtocol.stringEquals(_feedbackButton, "BACK")) {
+            WatchPresentation.button(dc, "BACK", "", pulse);
+        }
+        if (_pressedButton != null) {
+            WatchPresentation.button(dc, _pressedButton, "", 1.0);
+        }
     }
 
     function selectStartupMode() {
@@ -977,7 +977,7 @@ class OpenDistressView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
         dc.clear();
         if (shouldShowCover()) {
-            drawAnalogCover(dc);
+            drawClockCover(dc);
             return;
         }
         if (shouldShowAcceptedStatus()) {
@@ -994,19 +994,19 @@ class OpenDistressView extends WatchUi.View {
         var height = dc.getHeight();
         var isRound = width == height;
         var compactRound = isRound && width < 220;
-        var safeWidth = (width * (compactRound ? 62 : (isRound ? 76 : 88))) / 100;
+        var safeWidth = (width * (compactRound ? 88 : (isRound ? 76 : 88))) / 100;
         var safeLeft = (width - safeWidth) / 2;
         var title = new WatchUi.TextArea({
             :text => _state,
             :color => Graphics.COLOR_WHITE,
             :backgroundColor => Graphics.COLOR_BLACK,
-            :font => [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM,
+            :font => compactRound ? [Graphics.FONT_XTINY] : [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM,
                 Graphics.FONT_SMALL, Graphics.FONT_TINY, Graphics.FONT_XTINY],
             :justification => Graphics.TEXT_JUSTIFY_CENTER,
             :locX => safeLeft,
-            :locY => (height * (compactRound ? 14 : 18)) / 100,
+            :locY => (height * (compactRound ? 38 : 18)) / 100,
             :width => safeWidth,
-            :height => (height * (compactRound ? 34 : 27)) / 100
+            :height => (height * 27) / 100
         });
         title.draw(dc);
 
@@ -1018,9 +1018,9 @@ class OpenDistressView extends WatchUi.View {
                 Graphics.FONT_XTINY],
             :justification => Graphics.TEXT_JUSTIFY_CENTER,
             :locX => safeLeft,
-            :locY => (height * (compactRound ? 50 : 47)) / 100,
+            :locY => (height * (compactRound ? 62 : 47)) / 100,
             :width => safeWidth,
-            :height => (height * (compactRound ? 34 : 29)) / 100
+            :height => (height * (compactRound ? 30 : 29)) / 100
         });
         detail.draw(dc);
         if (_displayEventId != null) {
@@ -1040,6 +1040,12 @@ class OpenDistressView extends WatchUi.View {
         if (_armingAlert) {
             drawAlertArmProgress(dc);
         }
+        if (_pressedButton != null) {
+            WatchPresentation.button(dc, _pressedButton, "", 1.0);
+        }
+        if (_queue.size() > 0 && !_inFlight && _queue[0]["v"] == 1) {
+            WatchPresentation.button(dc, "MENU", "Hold: clear", 0);
+        }
     }
 
     function compactDisplayId(value) {
@@ -1056,13 +1062,28 @@ class OpenDistressView extends WatchUi.View {
 
     // One action, generous round-screen margins. The accepted dial stays text-free.
     function drawReadyScreen(dc) {
+        if (WatchPresentation.isCompact(dc)) {
+            WatchPresentation.compactLine(dc, "TEST", 16, true);
+            WatchPresentation.compactLine(dc, _armingAlert ? "Holding" : "Ready", 36, false);
+            WatchPresentation.compactLine(dc, "Hold START 2.5s", 50, false);
+            WatchPresentation.compactLine(dc, "Release cancels", 64, false);
+            if (!_armingAlert) {
+                WatchPresentation.compactLine(dc, "MENU: practice", 78, false);
+                WatchPresentation.button(dc, "MENU", "", 0);
+            } else { drawAlertArmProgress(dc); }
+            WatchPresentation.button(dc, "START", "", _armingAlert ? 1.0 : 0);
+            if (_pressedButton != null && !_armingAlert) {
+                WatchPresentation.button(dc, _pressedButton, "", 1.0);
+            }
+            return;
+        }
         var width = dc.getWidth();
         var height = dc.getHeight();
         var safeWidth = (width * 70) / 100;
         var left = (width - safeWidth) / 2;
-        var labels = ["TEST MODE", _armingAlert ? "Keep holding" : "Ready",
-            _armingAlert ? "Release to cancel" : "Hold START\n2.5 seconds"];
-        var tops = [22, 37, 58];
+        var labels = ["TEST MODE", _armingAlert ? "Hold" : "Ready",
+            _armingAlert ? "Release to cancel" : "Hold 2.5 sec"];
+        var tops = [16, 41, 62];
         var heights = [12, 18, 25];
         for (var i = 0; i < labels.size(); i += 1) {
             var text = new WatchUi.TextArea({
@@ -1071,7 +1092,7 @@ class OpenDistressView extends WatchUi.View {
                 :backgroundColor => Graphics.COLOR_BLACK,
                 :font => i == 1
                     ? [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL, Graphics.FONT_TINY]
-                    : [Graphics.FONT_SMALL, Graphics.FONT_TINY, Graphics.FONT_XTINY],
+                    : [Graphics.FONT_TINY, Graphics.FONT_XTINY],
                 :justification => Graphics.TEXT_JUSTIFY_CENTER,
                 :locX => left, :locY => (height * tops[i]) / 100,
                 :width => safeWidth, :height => (height * heights[i]) / 100
@@ -1080,12 +1101,20 @@ class OpenDistressView extends WatchUi.View {
         }
         if (_armingAlert) {
             drawAlertArmProgress(dc);
-        } else if (width == height) {
-            dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_BLACK);
-            dc.setPenWidth(4);
-            dc.drawArc(width / 2, height / 2, (width * 46) / 100,
-                Graphics.ARC_CLOCKWISE, 48, 28);
-            dc.setPenWidth(1);
+        }
+        // The hold ring measures real elapsed time; the local key pulse only
+        // confirms input and never represents provider acceptance.
+        var pulse = _armingAlert
+            ? 0.4 + 0.6 * Math.sin(Math.PI * (alertArmElapsedMs() % 700) / 700.0)
+            : 0;
+        WatchPresentation.button(dc, "START", _armingAlert ? "Holding" : "START", pulse);
+        if (!_armingAlert) {
+            if (WatchPresentation.hasMenuButton()) {
+                WatchPresentation.button(dc, "MENU", "Practice", 0);
+            } else { WatchPresentation.text(dc, "Tap: practice", 83, 10); }
+        }
+        if (_pressedButton != null && !_armingAlert) {
+            WatchPresentation.button(dc, _pressedButton, "", 1.0);
         }
     }
 
@@ -1108,6 +1137,10 @@ class OpenDistressView extends WatchUi.View {
         }
         if (elapsed > ALERT_ARM_HOLD_MS) {
             elapsed = ALERT_ARM_HOLD_MS;
+        }
+        if (WatchPresentation.isCompact(dc)) {
+            WatchPresentation.progress(dc, elapsed, ALERT_ARM_HOLD_MS);
+            return;
         }
 
         var width = dc.getWidth();
@@ -1190,6 +1223,9 @@ class OpenDistressView extends WatchUi.View {
     }
 
     function startActionPressed() {
+        if (_resetConfirmation && shouldShowAcceptedStatus()) {
+            return startResetHold();
+        }
         if (_armingAlert
             || _inFlight
             || _queue.size() > 0
@@ -1199,13 +1235,7 @@ class OpenDistressView extends WatchUi.View {
         }
         _armingAlert = true;
         _armStartedAtMs = System.getTimer();
-        try {
-            if (DirectAlertSettings.hapticsEnabled() && Attention has :vibrate) {
-                Attention.vibrate([new Attention.VibeProfile(15, 60)]);
-            }
-        } catch (error) {
-            // A cue never gates a deliberate hold.
-        }
+        WatchFeedback.input();
         try {
             _retryTimer.stop();
         } catch (error) {
@@ -1221,8 +1251,35 @@ class OpenDistressView extends WatchUi.View {
     }
 
     function startActionReleased() {
+        cancelResetHold();
         cancelAlertArm();
         return true;
+    }
+
+    function startResetHold() {
+        if (_inFlight || _resetHolding || _acceptedActionFeedback != null) { return true; }
+        _resetHolding = true; _resetStartedAtMs = System.getTimer();
+        WatchFeedback.input();
+        try { _statusTimer.stop(); _statusTimer.start(method(:advanceResetHold), ALERT_ARM_FRAME_MS, true); }
+        catch (error) { _resetHolding = false; scheduleIdleCoverRefresh(); }
+        WatchUi.requestUpdate(); return true;
+    }
+
+    function cancelResetHold() {
+        if (!_resetHolding) { return; }
+        _resetHolding = false;
+        _statusTimer.stop(); scheduleIdleCoverRefresh(); WatchUi.requestUpdate();
+    }
+
+    function advanceResetHold() {
+        var elapsed = System.getTimer() - _resetStartedAtMs;
+        if (!_visible || !_resetConfirmation || !shouldShowAcceptedStatus() || _inFlight || elapsed < 0) {
+            cancelResetHold(); return;
+        }
+        if (_resetHolding && elapsed >= ALERT_ARM_HOLD_MS) {
+            _resetHolding = false;
+            beginAcceptedActionFeedback("RESET");
+        } else { WatchUi.requestUpdate(); }
     }
 
     function advanceAlertArm() {
@@ -1277,18 +1334,34 @@ class OpenDistressView extends WatchUi.View {
     }
 
     function selectAction() {
+        if (_resetConfirmation) { return true; }
         if (shouldShowAcceptedStatus()) {
             return beginAcceptedActionFeedback("DIAL");
         }
-        toggleAcceptedStatus();
+        // A tap/short key press on the clock must not expose the incident.
         return true;
     }
 
     function downAction() {
+        if (_resetConfirmation) { return backAction(); }
         if (shouldShowAcceptedStatus()) {
             return beginAcceptedActionFeedback("DIAL");
         }
-        toggleAcceptedStatus();
+        return true;
+    }
+
+    function revealAcceptedStatus() {
+        if (shouldShowCover()) { toggleAcceptedStatus(); }
+        return true;
+    }
+
+    function openPractice() {
+        // Never leave active/pending work for a practice screen. Enter explicitly
+        // from an idle app; practice is neither persistent nor the startup mode.
+        if (_queue.size() != 0 || _activeIncident != null || _directResult != null
+            || _inFlight || _armingAlert) { return true; }
+        var practice = new WatchPracticeView();
+        WatchUi.pushView(practice, new WatchPracticeDelegate(practice), WatchUi.SLIDE_IMMEDIATE);
         return true;
     }
 
@@ -1330,10 +1403,12 @@ class OpenDistressView extends WatchUi.View {
             return;
         }
         _acceptedStatusVisible = !_acceptedStatusVisible;
+        _statusInteractionAtMs = System.getTimer();
         if (_acceptedStatusVisible) {
             _state = "PROVIDER ACCEPTED";
         }
         WatchUi.requestUpdate();
+        scheduleIdleCoverRefresh();
     }
 
     function beginAcceptedActionFeedback(action) {
@@ -1341,18 +1416,69 @@ class OpenDistressView extends WatchUi.View {
             return true;
         }
         _acceptedActionFeedback = action;
+        _acceptedActionStartedAtMs = System.getTimer();
+        _feedbackButton = OpenDistressProtocol.stringEquals(action, "RESET")
+            ? "START" : _lastButton;
         WatchUi.requestUpdate();
         try {
             _statusTimer.stop();
         } catch (error) {
         }
         try {
-            _statusTimer.start(method(:completeAcceptedActionFeedback),
-                ACCEPTED_ACTION_FEEDBACK_MS, false);
+            _statusTimer.start(method(:advanceAcceptedActionFeedback),
+                ALERT_ARM_FRAME_MS, true);
         } catch (error) {
             completeAcceptedActionFeedback();
         }
         return true;
+    }
+
+    function acceptedActionPulse() {
+        var elapsed = System.getTimer() - _acceptedActionStartedAtMs;
+        if (elapsed < 0 || elapsed >= ACCEPTED_ACTION_FEEDBACK_MS) { return 0; }
+        return 1.0 - elapsed.toFloat() / ACCEPTED_ACTION_FEEDBACK_MS;
+    }
+
+    function advanceAcceptedActionFeedback() {
+        var elapsed = System.getTimer() - _acceptedActionStartedAtMs;
+        if (!_visible) { _acceptedActionFeedback = null; _statusTimer.stop(); return; }
+        if (elapsed < 0 || elapsed >= ACCEPTED_ACTION_FEEDBACK_MS) {
+            completeAcceptedActionFeedback();
+        } else { WatchUi.requestUpdate(); }
+    }
+
+    function showButtonPress(key, pressed) {
+        _pressedButton = pressed ? key : null;
+        if (pressed) { _lastButton = key; }
+        if (pressed && _acceptedStatusVisible) { _statusInteractionAtMs = System.getTimer(); }
+        WatchUi.requestUpdate();
+    }
+
+    function tapAction(event) {
+        _lastButton = null;
+        if (_acceptedStatusVisible) { _statusInteractionAtMs = System.getTimer(); }
+        if (_resetConfirmation) { return true; }
+        var coordinates = event.getCoordinates();
+        var h = System.getDeviceSettings().screenHeight;
+        // Two-button Venu has no MENU key. A labelled, explicit TEST reset is
+        // available only on the already-revealed status page, never the clock.
+        if (!WatchPresentation.hasMenuButton() && shouldShowAcceptedStatus()
+            && coordinates[0] >= System.getDeviceSettings().screenWidth * 0.12
+            && coordinates[0] <= System.getDeviceSettings().screenWidth * 0.88
+            && coordinates[1] >= h * 0.70 && coordinates[1] <= h * 0.83) {
+            return menuAction();
+        }
+        if (_directResult == null) { return openPractice(); }
+        return selectAction();
+    }
+
+    function backAction() {
+        if (_resetConfirmation) {
+            cancelResetHold(); _resetConfirmation = false; WatchUi.requestUpdate(); return true;
+        }
+        if (shouldShowAcceptedStatus()) { return beginAcceptedActionFeedback("DIAL"); }
+        if (shouldShowCover()) { return true; }
+        return false;
     }
 
     function completeAcceptedActionFeedback() {
@@ -1363,6 +1489,11 @@ class OpenDistressView extends WatchUi.View {
         var action = _acceptedActionFeedback;
         _acceptedActionFeedback = null;
         if (OpenDistressProtocol.stringEquals(action, "RESET")) {
+            // A GPS submission can start during the brief visual feedback.
+            // Do not clear work underneath that in-flight request.
+            if (_inFlight || !_visible || !_resetConfirmation || !shouldShowAcceptedStatus()) {
+                scheduleIdleCoverRefresh(); return;
+            }
             resetAcceptedTest();
             return;
         }
@@ -3041,18 +3172,7 @@ class OpenDistressView extends WatchUi.View {
     }
 
     function confirmProviderAcceptance() {
-        try {
-            if (!DirectAlertSettings.hapticsEnabled()) { return; }
-            if (Attention has :vibrate) {
-                Attention.vibrate([
-                    new Attention.VibeProfile(15, 100),
-                    new Attention.VibeProfile(0, 80),
-                    new Attention.VibeProfile(15, 100)
-                ]);
-            }
-        } catch (error) {
-            // Provider acceptance is already durable; feedback remains best-effort.
-        }
+        WatchFeedback.accepted();
     }
 
     function sendDirectLocation() {
@@ -3616,6 +3736,8 @@ class OpenDistressView extends WatchUi.View {
     }
 
     function resetAcceptedTest() {
+        _resetConfirmation = false;
+        _resetHolding = false;
         stopLocations();
         _deferredCompanionLocation = null;
         if (persistStateWithDirect([], _activeIncident, null)) {
@@ -3633,6 +3755,10 @@ class OpenDistressView extends WatchUi.View {
     }
 
     function menuAction() {
+        if (_directResult != null && !_acceptedStatusVisible) {
+            // Reading status does not interrupt a location request in flight.
+            return revealAcceptedStatus();
+        }
         if (_inFlight) {
             return true;
         }
@@ -3695,13 +3821,12 @@ class OpenDistressView extends WatchUi.View {
                 toggleAcceptedStatus();
                 return true;
             }
-            return beginAcceptedActionFeedback("RESET");
+            _resetConfirmation = true;
+            _statusInteractionAtMs = System.getTimer();
+            WatchUi.requestUpdate();
+            return true;
         }
-        _state = "READY — TEST";
-        _detail = "Hold top button 2.5 seconds";
-        selectStartupMode();
-        WatchUi.requestUpdate();
-        return true;
+        return openPractice();
     }
 
     function setState(state, detail) {
@@ -3713,6 +3838,7 @@ class OpenDistressView extends WatchUi.View {
 
 class OpenDistressDelegate extends WatchUi.BehaviorDelegate {
     var _view;
+    var _startWasAccepted = false;
 
     function initialize(view) {
         BehaviorDelegate.initialize();
@@ -3720,7 +3846,9 @@ class OpenDistressDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onSelect() {
-        return _view.selectAction();
+        // Garmin dispatches behaviour first. Returning true here swallows
+        // onTap's coordinates and makes every touch act like START.
+        return false;
     }
 
     function onNextPage() {
@@ -3729,7 +3857,9 @@ class OpenDistressDelegate extends WatchUi.BehaviorDelegate {
 
     function onKeyPressed(event) {
         var key = event.getKey();
+        _view.showButtonPress(buttonName(key), true);
         if (key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER) {
+            _startWasAccepted = _view._directResult != null;
             return _view.startActionPressed();
         }
         return false;
@@ -3737,14 +3867,38 @@ class OpenDistressDelegate extends WatchUi.BehaviorDelegate {
 
     function onKeyReleased(event) {
         var key = event.getKey();
+        _view.showButtonPress(buttonName(key), false);
         if (key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER) {
             return _view.startActionReleased();
         }
         return false;
     }
 
+    function buttonName(key) {
+        if (key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER) { return "START"; }
+        if (key == WatchUi.KEY_UP || key == WatchUi.KEY_MENU) { return "MENU"; }
+        if (key == WatchUi.KEY_DOWN) { return "DOWN"; }
+        if (key == WatchUi.KEY_ESC) { return "BACK"; }
+        return null;
+    }
+
+    function onTap(event) { return _view.tapAction(event); }
+
+    function onKey(event) {
+        var key = event.getKey();
+        if (key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER) {
+            // Releasing the hold that just sent the alert must not immediately
+            // uncover the clock. A later press can return revealed status to it.
+            if (_startWasAccepted) { return _view.selectAction(); }
+            return true;
+        }
+        return false;
+    }
+
+    function onBack() { return _view.backAction(); }
+
     function onHold(event) {
-        return true;
+        return _view.revealAcceptedStatus();
     }
 
     function onRelease(event) {
@@ -3754,6 +3908,105 @@ class OpenDistressDelegate extends WatchUi.BehaviorDelegate {
     function onMenu() {
         return _view.menuAction();
     }
+}
+
+(:test)
+class HoldDecisionProbe extends OpenDistressView {
+    var activations = 0;
+    function initialize() {
+        OpenDistressView.initialize();
+        _queue = []; _directResult = null; _activeIncident = null;
+        _visible = true; _inFlight = false;
+    }
+    function activate() { activations += 1; }
+}
+
+(:test)
+function watchInputFeedbackDoesNotTriggerOrClear(logger) {
+    var view = new HoldDecisionProbe();
+    view.showButtonPress("DOWN", true);
+    view.downAction();
+    view.showButtonPress("DOWN", false);
+    view.selectAction();
+    view.startActionPressed();
+    view.startActionReleased();
+    if (view.activations != 0 || view._armingAlert || view._queue.size() != 0) {
+        logger.error("Navigation or a released hold created an event"); return false;
+    }
+    view.startActionPressed();
+    view._armStartedAtMs = System.getTimer() - 2500;
+    view.advanceAlertArm();
+    view.advanceAlertArm();
+    if (view.activations != 1 || view._armingAlert) {
+        logger.error("Completed deliberate hold did not activate exactly once"); return false;
+    }
+    view.startActionPressed();
+    view.onHide();
+    view.advanceAlertArm();
+    return view.activations == 1 && !view._armingAlert;
+}
+
+(:test)
+function watchPresentationUsesValidGeometryAndBoundedPulse(logger) {
+    var start = WatchPresentation.buttonAngle("START");
+    var back = WatchPresentation.buttonAngle("BACK");
+    if (start < 0 || start > 90 || back < 270 || back > 360) {
+        logger.error("Invalid physical key resource geometry"); return false;
+    }
+    var view = new HoldDecisionProbe();
+    view._acceptedActionStartedAtMs = System.getTimer() - 200;
+    if (view.acceptedActionPulse() != 0) { return false; }
+    view._acceptedActionStartedAtMs = System.getTimer();
+    return view.acceptedActionPulse() >= 0 && view.acceptedActionPulse() <= 1;
+}
+
+(:test)
+class WatchInputProbeEvent {
+    var _coordinates;
+    function initialize(x, y) { _coordinates = [x, y]; }
+    function getKey() { return WatchUi.KEY_ENTER; }
+    function getCoordinates() { return _coordinates; }
+}
+
+(:test)
+class WatchInputRoutingProbe extends HoldDecisionProbe {
+    var selections = 0;
+    var resets = 0;
+    function initialize() { HoldDecisionProbe.initialize(); }
+    function selectAction() { selections += 1; return true; }
+    function menuAction() { resets += 1; return true; }
+}
+
+(:test)
+function watchDelegatePreservesTouchAndFreshAcceptance(logger) {
+    var view = new WatchInputRoutingProbe();
+    var delegate = new OpenDistressDelegate(view);
+    var settings = System.getDeviceSettings();
+    var event = new WatchInputProbeEvent(settings.screenWidth / 2, settings.screenHeight * 0.76);
+    if (delegate.onSelect()) {
+        logger.error("Behaviour select swallowed the coordinate-bearing touch event"); return false;
+    }
+    delegate.onKeyPressed(event);
+    view._directResult = {}; // Simulate acceptance while START remains held.
+    delegate.onKeyReleased(event);
+    delegate.onKey(event);
+    if (view.selections != 0 || view.activations != 0) { return false; }
+    delegate.onKeyPressed(event);
+    delegate.onKeyReleased(event);
+    delegate.onKey(event);
+    if (view.selections != 1) { return false; }
+    view._acceptedStatusVisible = true;
+    view._state = "PROVIDER ACCEPTED";
+    delegate.onTap(event);
+    if (!WatchPresentation.hasMenuButton()) {
+        if (view.resets != 1 || view.selections != 1) { return false; }
+    } else if (view.resets != 0 || view.selections != 2) { return false; }
+    // Outside the reset target, and on the covered clock, touch never resets.
+    var resets = view.resets;
+    delegate.onTap(new WatchInputProbeEvent(0, 0));
+    view._acceptedStatusVisible = false;
+    delegate.onTap(event);
+    return view.resets == resets;
 }
 
 (:test)
@@ -3767,6 +4020,55 @@ function bestAvailableGpsConfigurationStarts(logger) {
         return false;
     }
     return true;
+}
+
+(:test)
+class OfflineReplayProbe extends OpenDistressView {
+    var attempts = 0;
+    function initialize() { OpenDistressView.initialize(); }
+    function sendPending() { attempts += 1; } // Simulated unavailable transport: no external calls.
+    function pollDirectFallbackLocation() {} // Explicit no-GPS test fixture.
+}
+
+(:test)
+function offlinePendingSurvivesReopenAndBlocksPractice(logger) {
+    var event = OpenDistressProtocol.newTestEvent("AAECAwQFBgcICQoLDA0ODw",
+        "EBESExQVFhcYGRobHB0eHw", Time.now().value());
+    Storage.setValue("event_state_v2", {"queue" => [event], "active" => null, "direct_result" => null});
+    var view = new OfflineReplayProbe();
+    view.onShow(); view.openPractice();
+    var retained = view._visible && view.attempts == 1 && view._queue.size() == 1 && !view.shouldShowCover();
+    view.onHide();
+    view = new OfflineReplayProbe(); view.onShow();
+    retained = retained && view.attempts == 1 && view._queue.size() == 1
+        && OpenDistressProtocol.stringEquals(view._queue[0]["event_id"], event["event_id"])
+        && view._queue[0]["created_at"] == event["created_at"]
+        && view._queue[0]["expires_at"] == event["expires_at"] && !view.shouldShowCover();
+    view.onHide(); Storage.deleteValue("event_state_v2"); return retained;
+}
+
+(:test)
+function coveredNoGpsStatusNeedsHoldAndTimeoutNeverResets(logger) {
+    var view = new OfflineReplayProbe();
+    view._visible = true; view._state = "PROVIDER ACCEPTED";
+    view._directResult = {"last_location_hex" => "", "pending_location_hex" => "",
+        "accepted_at" => 0, "capture_stage" => 1};
+    view.selectAction(); view.downAction(); view.backAction();
+    if (!view.shouldShowCover()) { return false; }
+    view._inFlight = true; view.menuAction();
+    if (!view.shouldShowAcceptedStatus() || !view.acceptedLocationSummary().equals("GPS searching")) { return false; }
+    view.menuAction();
+    if (view._resetConfirmation) { return false; } // Status allowed, reset blocked in flight.
+    view._inFlight = false;
+    view.menuAction(); view.startActionPressed(); view.startActionReleased();
+    if (view._directResult == null || view._acceptedActionFeedback != null) { return false; }
+    view.startActionPressed(); view._resetStartedAtMs = System.getTimer() - 2500;
+    view.advanceResetHold(); view._inFlight = true; view.completeAcceptedActionFeedback();
+    if (view._directResult == null) { return false; } // Submission started during visual feedback.
+    view._inFlight = false;
+    view._statusInteractionAtMs = System.getTimer() - 15000; view.refreshIdleCover();
+    var retained = view.shouldShowCover() && view._directResult != null && !view._resetConfirmation;
+    view.onHide(); return retained;
 }
 
 (:test)
@@ -3808,10 +4110,21 @@ function directValidRestartStateRoundTrips(logger) {
         && OpenDistressProtocol.stringEquals(reloaded._directResult["event_id"], eventId);
     var coverProtected = survived && reloaded.shouldShowCover();
     reloaded.downAction();
+    reloaded.selectAction();
+    if (!reloaded.shouldShowCover()) { return false; }
+    reloaded.revealAcceptedStatus();
     var detailsRevealed = reloaded._acceptedStatusVisible
         && !reloaded.shouldShowCover()
         && reloaded._directResult != null;
     reloaded.menuAction();
+    if (!reloaded._resetConfirmation || reloaded._acceptedActionFeedback != null) { return false; }
+    reloaded._visible = true;
+    reloaded.startActionPressed();
+    reloaded.startActionReleased();
+    if (reloaded._directResult == null) { return false; }
+    reloaded.startActionPressed();
+    reloaded._resetStartedAtMs = System.getTimer() - 2500;
+    reloaded.advanceResetHold();
     var resetFeedback = OpenDistressProtocol.stringEquals(
         reloaded._acceptedActionFeedback, "RESET");
     reloaded.completeAcceptedActionFeedback();
