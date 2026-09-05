@@ -8,6 +8,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SetupDraftTest {
+    @Test fun savedBriefingCanBeEditedWithoutDuplicatingWords() {
+        val compiled = ResponsePlanTemplates.compile(ResponsePlanTemplates.CALLBACK, "apple river")
+        val (words, plan) = ResponsePlanTemplates.split(compiled)
+        assertEquals("apple river", words)
+        assertEquals(ResponsePlanTemplates.CALLBACK, plan)
+        assertEquals(compiled, ResponsePlanTemplates.compile(plan, words))
+        assertEquals("" to "Custom plan", ResponsePlanTemplates.split("Custom plan"))
+        assertEquals("" to "Expected: unusual custom text", ResponsePlanTemplates.split("Expected: unusual custom text"))
+    }
     @Test fun draftRoundTripsWithoutChangingPublishedConfiguration() {
         val config = DirectConfig(1, null, "A".repeat(30), "B".repeat(30), "", "", "", "", "", "", "", "")
         val draft = SetupDraft(mapOf("protectedPersonName" to "Draft only", "responseInstructions" to ResponsePlanTemplates.CALLBACK),

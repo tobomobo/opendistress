@@ -109,9 +109,9 @@ class SetupWizardInstrumentedTest {
                 field(first, "Protected person name").setText("Example wearer")
                 click(first, "Continue")
                 assertTrue(text(first, "4 of 6 · Conversation words").isShown)
-                click(first, "Generate two new words")
-                val agreement = all(first).filterIsInstance<MaterialCheckBox>().first { it.text.startsWith("I can recall both words") }
-                agreement.isChecked = true
+                val generated = store.snapshot().draft!!.words
+                assertTrue(generated.isNotEmpty())
+                assertTrue(text(first, generated).isShown)
                 click(first, "Continue")
                 assertTrue(text(first, "5 of 6 · Watch behavior").isShown)
                 click(first, "Continue")
@@ -147,13 +147,35 @@ class SetupWizardInstrumentedTest {
                 assertTrue(GarminCompanionProtocol.configMessage(store.snapshot().config!!).values.any {
                     it.toString().contains(store.snapshot().draft!!.words)
                 })
-                repeat(4) { click(resumed, "Back") }
-                assertTrue(text(resumed, "2 of 6 · Response plan").isShown)
+                assertTrue(text(resumed, "Prepared, at your pace.").isShown)
+                click(resumed, "View my emergency plan")
+                assertTrue(text(resumed, store.snapshot().draft!!.words).isShown)
+                click(resumed, "Edit response plan")
+                assertTrue(text(resumed, "Response plan").isShown)
+                field(resumed, "Responder instructions").setText("Draft only, not synced")
+                click(resumed, "Close")
+                assertEquals(sent.responseInstructions, store.snapshot().config!!.responseInstructions)
             }
             instrumentation.waitForIdleSync()
-            onUi { capture(resumed, "wizard-response-plan.png"); click(resumed, "Back") }
+            onUi { capture(resumed, "companion-home.png"); resumed.finish() }
             instrumentation.waitForIdleSync()
-            onUi { capture(resumed, "wizard-delivery.png") }
+            activity = launch()
+            val reopened = activity
+            onUi {
+                assertTrue(text(reopened, "Prepared, at your pace.").isShown)
+                click(reopened, "My plan")
+                assertFalse(all(reopened).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "Draft only, not synced" })
+            }
+            instrumentation.waitForIdleSync()
+            onUi {
+                capture(reopened, "companion-saved-plan.png")
+                click(reopened, "Settings")
+                click(reopened, "Restart setup wizard")
+                assertTrue(text(reopened, "1 of 6 · Delivery").isShown)
+                assertEquals("A".repeat(30), field(reopened, "Pushover user/group key").text.toString())
+                click(reopened, "Continue")
+                assertEquals("Draft only, not synced", field(reopened, "Responder instructions").text.toString())
+            }
         } finally {
             activity?.let { onUi { it.finish() } }
             instrumentation.waitForIdleSync()

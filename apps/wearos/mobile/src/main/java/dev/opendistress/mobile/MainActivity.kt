@@ -2,7 +2,8 @@
 package dev.opendistress.mobile
 
 import android.Manifest
-import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -38,7 +39,7 @@ import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
 import dev.opendistress.shared.DirectConfig
 
-class MainActivity : Activity(), DataClient.OnDataChangedListener {
+class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private lateinit var coordinator: ProvisioningCoordinator
     private lateinit var garminLink: GarminCompanionLink
     private lateinit var status: MaterialTextView
@@ -71,9 +72,14 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
     private lateinit var review: MaterialTextView
     private lateinit var consent: MaterialCheckBox
     private lateinit var wordsView: MaterialTextView
-    private lateinit var wordsAgreement: MaterialCheckBox
     private var conversationWords = ""
     private var storageReady = false
+    private lateinit var dashboard: LinearLayout
+    private lateinit var dashboardScroll: ScrollView
+    private lateinit var wizardNavigation: LinearLayout
+    private var editingSection = false
+    private var dashboardPage = "Home"
+    private var homeStatus: MaterialTextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,13 +99,13 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             draft.values.forEach { (key, value) -> fields[key]?.setText(value) }
             haptics.isChecked = draft.haptics
             conversationWords = draft.words
-            wordsAgreement.isChecked = draft.wordsLearned
             wizardStep = draft.step
             draftStatus.text = "Phone draft restored · review and save to apply edits. Watch status refers to the last saved setup, not this preview."
             draftStatus.visibility = View.VISIBLE
         }
         storageReady = true
         showWizardStep(wizardStep)
+        if (coordinator.snapshot().config != null) showDashboard("Home")
         showWearStatus(coordinator.statusDescription())
         locationAssist.isChecked = garminLink.locationAssistEnabled() && hasFineLocation()
         save.setOnClickListener { saveConfiguration() }
@@ -123,6 +129,17 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             consent.isChecked = false
         }
         if (targetStore.selected() == null) chooseWatch()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (dashboardScroll.visibility == View.GONE && coordinator.snapshot().config != null) {
+                    if (persistDraft()) showDashboard("Home")
+                } else if (dashboardScroll.visibility == View.VISIBLE && dashboardPage != "Home") {
+                    showDashboard("Home")
+                } else if (dashboardScroll.visibility == View.GONE && wizardStep > 0) {
+                    if (persistDraft()) showWizardStep(wizardStep - 1)
+                } else finish()
+            }
+        })
     }
 
     override fun onStart() {
@@ -148,7 +165,6 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
 
     override fun onPause() {
         if (storageReady) persistDraft(showError = false)
-        wordsView.text = if (conversationWords.isEmpty()) "No words generated" else "Saved words · tap Reveal"
         super.onPause()
     }
 
@@ -162,11 +178,6 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             return
         }
         if (!persistDraft()) return
-        if (conversationWords.isNotEmpty() && !wordsAgreement.isChecked) {
-            showWizardStep(3)
-            showSetupError("Learn your two words, then confirm that you can recall them. The expected words will be sent with your briefing.")
-            return
-        }
         if (value("responseInstructions").isEmpty()) {
             showWizardStep(1)
             showSetupError("Please agree and enter a response plan first. A delivery destination alone does not tell recipients what to do.")
@@ -198,6 +209,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             coordinator.save(config, ::showWearStatus)
             draftStatus.visibility = View.GONE
             if (isGarmin) garminLink.sync(config)
+            showDashboard("Home")
         } catch (_: Exception) {
             showSetupError("Configuration could not be stored securely — nothing was sent")
         }
@@ -232,7 +244,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         }
         page.addView(MaterialToolbar(this).apply {
             title = getString(R.string.app_bar_title)
-            subtitle = getString(R.string.app_bar_subtitle)
+            subtitle = "Companion"
             setTitleTextAppearance(this@MainActivity, R.style.TextAppearance_OpenDistress_Brand)
             setTitleTextColor(onSurface)
             setSubtitleTextColor(onSurfaceVariant)
@@ -265,6 +277,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             }
         }, matchWidth())
         reviewPage.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            visibility = View.GONE
             text = "Preparation & physical drill"
             minHeight = dp(56)
             setOnClickListener { startActivity(Intent(this@MainActivity, PreparationActivity::class.java)) }
@@ -291,7 +304,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         addField(emergency, "personDescription", R.string.person_description, 150, multiline = true)
         addField(emergency, "backgroundInfo", R.string.background_information, 180, multiline = true)
         planPage.addView(wizardCopy("What should your people do?", true))
-        planPage.addView(wizardCopy("Write what recipients should do immediately, including whether calling is safe and what to do if you cannot respond. Your briefing travels with every initial alert; recipients do not need to remember it. This does not call anyone automatically. Choose a starting point and adapt it."))
+        planPage.addView(wizardCopy("Choose whether an incoming call is safe. We fill in a starting plan; you can edit every word. Recipients receive it with your alert. No call happens automatically."))
         listOf("Quiet response · do not call" to ResponsePlanTemplates.QUIET,
             "Call first · check two words" to ResponsePlanTemplates.CALLBACK).forEach { (label, template) ->
             planPage.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
@@ -299,11 +312,20 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
                 minHeight = dp(52)
                 setOnClickListener {
                     val field = fields.getValue("responseInstructions")
-                    if (field.text.isNullOrBlank()) field.setText(template)
+                    fun applyTemplate() {
+                        field.setText(template)
+                        if (template == ResponsePlanTemplates.CALLBACK && conversationWords.isEmpty()) {
+                            conversationWords = ConversationWords.generate(assets.open("bip39-english.txt").bufferedReader().use { it.readLines() })
+                            wordsView.text = conversationWords
+                        }
+                        consent.isChecked = false
+                        persistDraft()
+                    }
+                    if (field.text.isNullOrBlank()) applyTemplate()
                     else MaterialAlertDialogBuilder(this@MainActivity).setTitle("Replace your response plan?")
                         .setMessage("This replaces the current text with a starting template. Review and adapt it before saving.")
                         .setNegativeButton("Keep mine", null)
-                        .setPositiveButton("Use template") { _, _ -> field.setText(template) }.show()
+                        .setPositiveButton("Use template") { _, _ -> applyTemplate() }.show()
                 }
             }, matchWidth())
         }
@@ -385,9 +407,11 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
         watchSection.addView(draftStatus, 1, matchWidth())
+        watchSection.visibility = View.GONE
         reviewPage.addView(watchSection, matchWidth(topMargin = dp(8)))
         preparationEvidence = wizardCopy("")
         reviewPage.addView(MaterialCardView(this).apply {
+            visibility = View.GONE
             radius = dp(24).toFloat()
             cardElevation = 0f
             addView(LinearLayout(this@MainActivity).apply {
@@ -486,6 +510,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             com.google.android.material.R.attr.materialButtonOutlinedStyle,
         ).apply {
             id = SYNC_BUTTON_ID
+            visibility = View.GONE
             setText(R.string.retry_sync)
             minHeight = dp(52)
             cornerRadius = dp(26)
@@ -498,6 +523,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             setTextColor(primary)
         }, matchWidth(topMargin = dp(10)))
         reviewPage.addView(MaterialTextView(this).apply {
+            visibility = View.GONE
             setText(R.string.readiness_explanation)
             setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
             setTextColor(onSurfaceVariant)
@@ -515,10 +541,24 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             addView(content)
         }
         page.addView(wizardScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        dashboard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(24))
+        }
+        dashboardScroll = ScrollView(this).apply {
+            visibility = View.GONE
+            addView(dashboard)
+        }
+        page.addView(dashboardScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         previousStep = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             text = "Back"
             minHeight = dp(52)
-            setOnClickListener { if (persistDraft()) showWizardStep(wizardStep - 1) }
+            setOnClickListener {
+                if (persistDraft()) {
+                    if (editingSection || wizardStep == 0) showDashboard("Home")
+                    else showWizardStep(wizardStep - 1)
+                }
+            }
         }
         nextStep = MaterialButton(this).apply {
             text = "Continue"
@@ -537,14 +577,19 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
                         return@setOnClickListener
                     }
                 }
-                if (persistDraft()) showWizardStep(wizardStep + 1)
+                if (wizardStep == 1 && value("responseInstructions").isBlank()) {
+                    showSetupError("Choose a response plan or write your own before continuing.")
+                    return@setOnClickListener
+                }
+                if (persistDraft()) showWizardStep(if (editingSection) 5 else wizardStep + 1)
             }
         }
-        page.addView(LinearLayout(this).apply {
+        wizardNavigation = LinearLayout(this).apply {
             setPadding(dp(20), dp(8), dp(20), dp(8))
             addView(previousStep, LinearLayout.LayoutParams(0, dp(56), 1f))
             addView(nextStep, LinearLayout.LayoutParams(0, dp(56), 1f).apply { marginStart = dp(12) })
-        }, matchWidth())
+        }
+        page.addView(wizardNavigation, matchWidth())
         showWizardStep(0)
         setContentView(page.apply {
             setOnApplyWindowInsetsListener { view, insets ->
@@ -554,6 +599,120 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
                 insets
             }
         })
+    }
+
+    private fun openEditor(step: Int) {
+        editingSection = true
+        showWizardStep(step)
+    }
+
+    private fun showDashboard(destination: String) {
+        if (!storageReady) return
+        dashboardPage = destination
+        wizardScroll.visibility = View.GONE
+        wizardTitle.visibility = View.GONE
+        wizardProgress.visibility = View.GONE
+        wizardNavigation.visibility = View.GONE
+        dashboardScroll.visibility = View.VISIBLE
+        dashboard.removeAllViews()
+        homeStatus = null
+        val saved = coordinator.snapshot().config
+        fun action(label: String, primary: Boolean = false, onClick: () -> Unit) {
+            dashboard.addView(MaterialButton(this, null, if (primary)
+                com.google.android.material.R.attr.materialButtonStyle else
+                com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = label
+                minHeight = dp(52)
+                setOnClickListener { onClick() }
+            }, matchWidth(topMargin = dp(8)))
+        }
+        dashboard.addView(LinearLayout(this).apply {
+            listOf("Home", "My plan", "Settings").forEach { label ->
+                addView(MaterialButton(this@MainActivity, null,
+                    com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = label
+                    isSelected = destination == label
+                    if (isSelected) {
+                        backgroundTintList = ColorStateList.valueOf(color(androidx.appcompat.R.attr.colorPrimary, Color.DKGRAY))
+                        setTextColor(color(com.google.android.material.R.attr.colorOnPrimary, Color.WHITE))
+                    }
+                    minHeight = dp(48)
+                    setOnClickListener { showDashboard(label) }
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
+            }
+        }, matchWidth())
+        when (destination) {
+            "Home" -> {
+                dashboard.addView(wizardCopy("Prepared, at your pace.", true))
+                dashboard.addView(wizardCopy(if (isGarmin) "Garmin" else if (isPixel) "Pixel Watch / Wear OS" else "Choose a watch"))
+                homeStatus = wizardCopy("").also { dashboard.addView(it, matchWidth(topMargin = dp(16))) }
+                updateHomeStatus()
+                dashboard.addView(wizardCopy(if (saved == null) "Finish setup before testing."
+                    else "Your plan is saved on this phone. Watch sync is a separate status."))
+                if (saved == null) action("Continue setup", true) { editingSection = false; showWizardStep(wizardStep) }
+                else {
+                    action("View my emergency plan", true) { showDashboard("My plan") }
+                    action("Sync saved setup") {
+                        if (isPixel) coordinator.synchronize(::showWearStatus, force = true)
+                        if (isGarmin) garminLink.sync(saved)
+                    }
+                }
+                action("Connection details") { showDashboard("Connection") }
+                dashboard.addView(wizardCopy("TEST beta · Setup synced does not mean an alert was delivered."))
+            }
+            "My plan" -> {
+                dashboard.addView(wizardCopy("My emergency plan", true))
+                dashboard.addView(wizardCopy("Last saved version · edits are applied only after review and sync."))
+                if (saved == null) dashboard.addView(wizardCopy("No saved plan yet."))
+                else {
+                    val (words, plan) = ResponsePlanTemplates.split(saved.responseInstructions)
+                    dashboard.addView(wizardCopy(saved.protectedPersonName.ifBlank { "Person sending the alert" }, true))
+                    dashboard.addView(wizardCopy(plan.ifBlank { "No response instructions set" }))
+                    dashboard.addView(wizardCopy("Conversation words", true))
+                    dashboard.addView(wizardCopy(words.ifBlank { "Not set" }))
+                }
+                action("Edit response plan") { openEditor(1) }
+                action("Edit conversation words") { openEditor(3) }
+                action("View personal information") { showDashboard("Profile") }
+                action("Edit personal information") { openEditor(2) }
+                action("Preview pending changes") { openEditor(5) }
+            }
+            "Profile" -> {
+                dashboard.addView(wizardCopy("Saved personal information", true))
+                if (saved != null) listOf("Name" to saved.protectedPersonName,
+                    "Message" to saved.customAlertMessage, "Home address · not live location" to saved.homeAddress,
+                    "Dependants / care" to saved.childrenInfo, "Description" to saved.personDescription,
+                    "Background" to saved.backgroundInfo, "Photo link" to saved.profilePhotoUrl).forEach { (label, value) ->
+                    if (value.isNotBlank()) {
+                        dashboard.addView(wizardCopy(label, true)); dashboard.addView(wizardCopy(value))
+                    }
+                }
+                action("Edit personal information") { openEditor(2) }
+            }
+            "Settings" -> {
+                dashboard.addView(wizardCopy("Settings", true))
+                action("Delivery services") { openEditor(0) }
+                action("Location assist & vibration") { openEditor(4) }
+                action("Practice & diagnostics") { startActivity(Intent(this, PreparationActivity::class.java)) }
+                action("Restart setup wizard") {
+                    // Keep the existing values and any unfinished edits. Never reset storage.
+                    editingSection = false
+                    showWizardStep(0)
+                }
+            }
+            "Connection" -> {
+                dashboard.addView(wizardCopy("Connection & sync", true))
+                dashboard.addView(wizardCopy(if (isGarmin) garminStatus.text.toString() else status.text.toString()))
+                refreshPreparationEvidence()
+                dashboard.addView(wizardCopy(preparationEvidence.text.toString()))
+                action("Refresh") { showDashboard("Connection") }
+            }
+        }
+        dashboardScroll.post { dashboardScroll.scrollTo(0, 0) }
+    }
+
+    private fun updateHomeStatus() {
+        homeStatus?.text = if (isGarmin) garminStatusTitle.text else statusTitle.text
     }
 
     private fun wizardCopy(copy: String, heading: Boolean = false) = MaterialTextView(this).apply {
@@ -576,15 +735,22 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
     }
 
     private fun showWizardStep(step: Int) {
+        if (::dashboardScroll.isInitialized) dashboardScroll.visibility = View.GONE
+        wizardScroll.visibility = View.VISIBLE
+        wizardTitle.visibility = View.VISIBLE
+        wizardProgress.visibility = if (editingSection) View.GONE else View.VISIBLE
+        if (::wizardNavigation.isInitialized) wizardNavigation.visibility = View.VISIBLE
         refreshPreparationEvidence()
         wizardStep = step.coerceIn(0, 5)
         val titles = listOf("Delivery", "Response plan", "Your information", "Conversation words", "Watch behavior", "Review & sync")
-        wizardTitle.text = "${wizardStep + 1} of 6 · ${titles[wizardStep]}"
+        wizardTitle.text = if (editingSection) titles[wizardStep] else "${wizardStep + 1} of 6 · ${titles[wizardStep]}"
         wizardProgress.progress = wizardStep + 1
         wizardPages.forEachIndexed { index, view -> view.visibility = if (index == wizardStep) View.VISIBLE else View.GONE }
-        previousStep.isEnabled = wizardStep > 0
+        previousStep.isEnabled = wizardStep > 0 || editingSection || (storageReady && coordinator.snapshot().config != null)
+        previousStep.text = if (editingSection) "Close" else "Back"
+        nextStep.text = if (editingSection) "Review changes" else "Continue"
         nextStep.visibility = if (wizardStep < 5) View.VISIBLE else View.GONE
-        if (wizardStep == 3) wordsView.text = if (conversationWords.isEmpty()) "No words generated" else "Saved words · tap Reveal"
+        if (wizardStep == 3) wordsView.text = conversationWords.ifEmpty { "No words set" }
         fieldLayouts["responseInstructions"]?.apply {
             counterMaxLength = ResponsePlanTemplates.planBudget(conversationWords)
             helperText = "$counterMaxLength characters available for instructions; the remaining space is reserved for the expected words. Nothing is silently shortened."
@@ -610,8 +776,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
                 }
                 if (value("responseInstructions").isEmpty()) append("No response plan entered. Agree one with your recipients before syncing.\n\n")
                 append("Conversation words: included in the reviewed briefing and shared with the watch and selected providers. ")
-                append(if (conversationWords.isEmpty()) "Not set."
-                    else if (wordsAgreement.isChecked) "Marked as learned." else "Learn them before saving.")
+                append(conversationWords.ifEmpty { "Not set." })
                 append("\n\nSaving sends settings, not an alert. Synced does not mean a recipient has received or acknowledged a test.")
             }
         }
@@ -623,7 +788,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         return try {
             SecureProvisioningStore.get(this).saveDraft(SetupDraft(
                 fields.mapValues { it.value.text.toString() }, wizardStep, haptics.isChecked,
-                conversationWords, wordsAgreement.isChecked,
+                conversationWords, false,
             ))
             true
         } catch (_: Exception) {
@@ -637,18 +802,10 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
     }
 
     private fun buildConversationWords(parent: LinearLayout) {
-        parent.addView(wizardCopy("Learn once. Include automatically.", true), matchWidth())
-        parent.addView(wizardCopy("For a callback check, learn these two words now. Your recipients receive the expected words and your instructions with the alert; they do not need to memorize anything beforehand.\n\nAfter review and sync, the words are stored on the watch and sent via Grafana or Pushover, which can read them. Garmin setup passes through Garmin Connect. These are not wallet words. Correct words alone do not prove safety or end an incident."), matchWidth())
+        parent.addView(wizardCopy("Your conversation words", true), matchWidth())
+        parent.addView(wizardCopy("Visible here whenever you need them. Included in your reviewed briefing for recipients and providers. They help with a callback, but do not prove safety or end an incident."), matchWidth())
         wordsView = wizardCopy("No words generated", true).apply { isSaveEnabled = false }
         parent.addView(wordsView, matchWidth())
-        wordsAgreement = MaterialCheckBox(this).apply {
-            text = "I can recall both words without opening the app."
-            isSaveEnabled = false
-            setOnCheckedChangeListener { _, checked ->
-                if (checked && conversationWords.isEmpty()) isChecked = false
-                consent.isChecked = false
-            }
-        }
         parent.addView(MaterialButton(this).apply {
             text = "Generate two new words"
             minHeight = dp(52)
@@ -657,7 +814,6 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
                     try {
                         val words = assets.open("bip39-english.txt").bufferedReader().use { it.readLines() }
                         conversationWords = ConversationWords.generate(words)
-                        wordsAgreement.isChecked = false
                         consent.isChecked = false
                         if (persistDraft()) wordsView.text = conversationWords
                     } catch (_: Exception) {
@@ -671,23 +827,40 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             }
         }, matchWidth())
         parent.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Reveal / hide words"
+            text = "Edit words"
             minHeight = dp(52)
             setOnClickListener {
-                wordsView.text = if (conversationWords.isEmpty()) "No words generated"
-                    else if (wordsView.text.toString() == conversationWords) "Saved words · tap Reveal" else conversationWords
+                val input = EditText(this@MainActivity).apply {
+                    setText(conversationWords)
+                    hint = "Two words, e.g. apple river"
+                    isSaveEnabled = false
+                }
+                val dialog = MaterialAlertDialogBuilder(this@MainActivity).setTitle("Conversation words")
+                    .setView(input).setNegativeButton("Cancel", null).setPositiveButton("Use words", null).create()
+                dialog.setOnShowListener {
+                    dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                        val candidate = input.text.toString().trim().lowercase(java.util.Locale.ROOT)
+                        if (!candidate.matches(Regex("[a-z]{3,8} [a-z]{3,8}"))) {
+                            input.error = "Enter two English words, 3–8 letters each"
+                        } else {
+                            conversationWords = candidate
+                            wordsView.text = candidate
+                            consent.isChecked = false
+                            if (persistDraft()) dialog.dismiss()
+                        }
+                    }
+                }
+                dialog.show()
             }
         }, matchWidth())
-        parent.addView(wordsAgreement, matchWidth())
         parent.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Remove this agreement"
+            text = "Remove words"
             minHeight = dp(48)
             setOnClickListener {
                 if (conversationWords.isNotEmpty()) MaterialAlertDialogBuilder(this@MainActivity).setTitle("Remove conversation words?")
                     .setMessage("Review your response plan and sync after removal. Until then the watch may still send the old briefing and words.")
                     .setNegativeButton("Keep", null).setPositiveButton("Remove") { _, _ ->
                         conversationWords = ""
-                        wordsAgreement.isChecked = false
                         consent.isChecked = false
                         persistDraft()
                         wordsView.text = "No words generated"
@@ -764,7 +937,9 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
         fields.getValue("childrenInfo").setText(config.childrenInfo)
         fields.getValue("personDescription").setText(config.personDescription)
         fields.getValue("backgroundInfo").setText(config.backgroundInfo)
-        fields.getValue("responseInstructions").setText(config.responseInstructions)
+        val briefing = ResponsePlanTemplates.split(config.responseInstructions)
+        fields.getValue("responseInstructions").setText(briefing.second)
+        conversationWords = briefing.first
         fields.getValue("profilePhotoUrl").setText(config.profilePhotoUrl)
     }
 
@@ -823,6 +998,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             statusIndicator.setTextColor(foreground)
             statusIndicator.background = circle(foreground, background)
             status.text = message
+            updateHomeStatus()
         }
     }
 
@@ -863,6 +1039,7 @@ class MainActivity : Activity(), DataClient.OnDataChangedListener {
             garminStatus.text = listOfNotNull(garminLink.connectedWatchName, linkStatus.description,
                 confirmation, "Connection and setup confirmation do not prove alert delivery.").joinToString("\n\n")
             refreshPreparationEvidence()
+            updateHomeStatus()
         }
     }
 

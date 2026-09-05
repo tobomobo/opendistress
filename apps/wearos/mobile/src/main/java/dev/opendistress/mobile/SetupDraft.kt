@@ -71,12 +71,18 @@ internal object ConversationWords {
 }
 
 internal object ResponsePlanTemplates {
+    /** Only unwrap our own exact generated prefix; preserve all custom text. */
+    fun split(briefing: String): Pair<String, String> {
+        val prefix = Regex("^Expected: ([a-z]{3,8} [a-z]{3,8})\\n\\n").find(briefing)
+        return if (prefix == null) "" to briefing
+        else prefix.groupValues[1] to briefing.substring(prefix.value.length)
+    }
     const val QUIET = "Do not call me: ringing may put me at risk. Contact police and share this alert and last known location. No reply is not an all-clear."
     const val CALLBACK = "Call me; ask for both words, do not read them out.\nNo reply, wrong words or doubt: call police with last known location.\nWords do not prove safety."
 
     fun compile(plan: String, words: String): String {
         require(plan.isNotBlank()) { "Enter a response plan first" }
-        require(plan != CALLBACK || words.isNotEmpty()) { "Generate and learn your callback words first" }
+        require(plan != CALLBACK || words.isNotEmpty()) { "Set your callback words first" }
         val briefing = if (words.isEmpty()) plan else "Expected: $words\n\n$plan"
         require(briefing.length <= 180) {
             "Briefing is ${briefing.length}/180 characters. Shorten the plan to ${planBudget(words)} characters; the words must not be cut off."

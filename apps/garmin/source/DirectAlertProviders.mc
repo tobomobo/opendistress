@@ -8,6 +8,13 @@ import Toybox.Position;
 import Toybox.StringUtil;
 
 module DirectAlertSettings {
+    var _cachedConfig = null;
+    var _cacheLoaded = false;
+
+    function invalidateCache() {
+        _cachedConfig = null;
+        _cacheLoaded = false;
+    }
     const STORAGE_KEY = "companion_direct_config_v1";
     const PROTOCOL = "opendistress.companion.v1";
     const CONFIG_KEYS = [
@@ -41,11 +48,21 @@ module DirectAlertSettings {
     }
 
     function storedConfig() {
+        // Profile rendering reads many fields in one callback. Validate once,
+        // not once per field, to stay within the physical watch watchdog budget.
+        if (_cacheLoaded) {
+            return _cachedConfig;
+        }
         var stored = Storage.getValue(STORAGE_KEY);
-        return validConfig(stored) ? stored : null;
+        _cachedConfig = validConfig(stored) ? stored : null;
+        _cacheLoaded = true;
+        return _cachedConfig;
     }
 
     function install(message) {
+        // Re-read durable state for each incoming revision; never compare an
+        // incoming update against a cached snapshot from an earlier callback.
+        invalidateCache();
         if (!validConfig(message)) {
             return false;
         }
@@ -62,15 +79,21 @@ module DirectAlertSettings {
                 return false;
             }
         }
+        invalidateCache();
         Storage.setValue(STORAGE_KEY, message);
         var reloaded = Storage.getValue(STORAGE_KEY);
         if (!validConfig(reloaded)) {
             return false;
         }
         var reloadedConfig = reloaded as Lang.Dictionary;
-        return OpenDistressProtocol.secureEquals(
+        var matches = OpenDistressProtocol.secureEquals(
             message["config_digest"], reloadedConfig["config_digest"]
         );
+        if (matches) {
+            _cachedConfig = reloadedConfig;
+            _cacheLoaded = true;
+        }
+        return matches;
     }
 
     function validConfig(value) {
