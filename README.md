@@ -1,232 +1,187 @@
+<img src="docs/store-assets/opendistress-store-icon.svg" alt="OpenDistress readiness ring" width="88" height="88">
+
 # OpenDistress
 
 **Prepare quietly. Signal deliberately.**
 
-An MIT-licensed, Garmin-first discreet safety-signalling prototype with
-independent Wear OS and watchOS clients. OpenDistress is intended as a
-preconfigured security measure for people exposed to elevated personal risk,
-not as a general-purpose alarm or a replacement for emergency services.
+Open-source distress signalling from your wrist, configured before you need it.
+OpenDistress is for people who want to prepare a deliberate signal for situations
+where reaching a phone or speaking may not be possible. Agree on a response plan
+with trusted people, prepare your information, and rehearse the whole route.
 
-> **Not an emergency-ready product.** The source slices are implemented, but
-> Garmin strict/device validation, provider trials, native enrollment hardening,
-> and the physical reliability matrix are still explicit release gates.
+Garmin-first, with a Pixel Watch / Wear OS TEST beta and a shared Android setup
+app. The direct-provider beta uses **Grafana Cloud IRM or Pushover**: you do not
+need to host an OpenDistress server or use a decentralised messaging network.
+Recipients use the selected provider's app, not a separate OpenDistress app.
 
-```text
-Garmin / Wear OS / watchOS
-    -> authenticated TEST or encrypted LIVE/location event
-Python relay -> durable SQLite outbox -> Pushover + ntfy
-trusted recipient CLI -> authenticate and decrypt v2 content locally
-```
+> **Experimental TEST beta, not an emergency-ready system.** Direct-provider
+> notifications are deliberately marked as tests. This is not a replacement
+> for emergency services and does not contact them automatically. Do not rely
+> on this build as your only way to ask for help.
 
-The relay never receives v2 content keys. A signed HTTP 202 proves only that an
-event was durably recorded; provider acceptance, device delivery, recipient
-acknowledgement, and incident resolution remain separate evidence.
+[Try the beta](#try-the-test-beta) · [Preparation guide](docs/preparation.md) ·
+[Platform limits](docs/platform-limitations.md) ·
+[Releases](https://github.com/tobomobo/opendistress/releases)
 
-Product copy, component names, colours, and Store metadata are defined in
-[`docs/branding.md`](docs/branding.md). This beta deliberately adopts new
-OpenDistress wire identifiers, application IDs, package IDs, and bundle IDs;
-there is no compatibility promise for pre-release builds.
+## Prepare, signal, verify
 
-## What is here
+1. **Prepare on your phone.** Choose Garmin or Pixel Watch in Android Setup.
+   Its wizard guides you through delivery, a response plan, optional personal
+   information, optional conversation words, watch behaviour, and review/sync.
+   Agree the response plan with recipients; personal details are optional and
+   describe the person wearing the watch. Home address is not current location.
+   Drafts stay on the phone until you review and choose **Save and sync to watch**.
+   Garmin's Connect IQ Store settings are also available without the companion,
+   but do not provide this wizard.
+2. **Open the watch app and hold deliberately.** On five-button Garmin models,
+   hold the upper-right `START`/`ENTER` button for 2.5 seconds; on Wear OS, hold
+   the on-screen control.
+   The ring fills from the bottom in both directions. Releasing early cancels.
+   This is not a global hardware shortcut; Garmin touchscreen taps do not send.
+3. **Watch for provider acceptance.** Once acceptance is stored, the foreground
+   app shows a neutral analog cover and, if enabled, gives two short vibration
+   pulses. It then attempts
+   location updates, with source and age information when available. The cover
+   is an app view, not a replacement system watch face.
+4. **Verify with your recipients.** Check the actual message, locked-phone
+   behaviour, location and acknowledgement in the receiving app. Reset the TEST
+   explicitly before the next drill. Recorded drills are your observations,
+   not automatic delivery telemetry.
 
-- A Garmin Connect IQ app in Monkey C with durable TEST/LIVE queues, encrypted
-  foreground location updates, app-list/glance/complication launch surfaces,
-  responsive layouts for current fēnix, Forerunner, Instinct, and Venu
-  profiles, phone-configured direct Grafana Cloud IRM and optional Pushover
-  emergency TEST delivery, plus an immediate phone-path request and bounded
-  saved-Wi-Fi fallback that never delays the first attempt.
-- A stdlib-only Python relay with strict HMAC intake, SQLite leases and retry,
-  recipient routes bound to their provider configuration, Pushover emergency
-  receipts/cancellation, and authenticated ntfy publishing.
-- A Node 22 trusted-recipient CLI that authenticates and decrypts v2 events.
-- An optional content-blind mailbox transport with fixed-size encrypted v2
-  capsules, hashed per-mailbox capabilities, bounded storage, and encrypted
-  exact-capsule acknowledgements. The Node reference codec is implemented;
-  companion, Android receiver, and Garmin integration remain explicit gates.
-- Native Kotlin Wear OS and Swift watchOS apps using their platform crypto,
-  persistence, HTTPS, location, feedback, and accessibility APIs. Wear OS now
-  includes an Android setup app that provisions direct TEST routes and the
-  emergency card without hardcoded credentials. The same optional Android app
-  can provision Garmin TEST settings and offer a post-acceptance fused
-  phone-location candidate.
-- Frozen v1/v2 schemas and cross-runtime public vectors in
-  [`protocol/`](protocol/).
+**Provider accepted ≠ phone received ≠ person acknowledged ≠ help is coming.**
+The analog cover and acceptance vibration pattern confirm only provider
+acceptance; other vibration cues indicate watch interaction, not delivery. Full-screen,
+silent-mode and Do Not Disturb behaviour depend on the provider, permissions
+and receiving phone. They must be tested, not inferred from the watch.
 
-The conditional Garmin launcher face was not added because the stock launch
-routes have not yet been physically measured. Direct SMS/voice is also
-unclaimed: it needs a companion or provider plus real permission, SIM, carrier,
-and hardware testing.
+## Choose your platform
 
-The relay-free Garmin path is deliberately a bounded TEST proof of concept. It
-sends a clearly marked TEST alert directly to a phone-configured Grafana Cloud
-IRM formatted webhook, Pushover, or both. Garmin settings or the optional
-Android companion can add an
-optional display name, a prepared alert message, and a provider-neutral
-emergency card containing a response plan, home address, children/family
-information, person description, background, and an HTTPS photo URL. Separate
-adapters render that model into Grafana's notification/detail fields or
-Pushover's bounded message plus supplementary photo link. The prepared message
-is intentionally part of Grafana's push body; the other structured details can
-remain in the opened alert. Pushover may show its message content on the lock
-screen. These details sync through Garmin
-and are plaintext to the selected providers, so they are outside the privacy
-guarantees of the normative protocol. With both providers configured, the watch
-uses one network request at a time and attempts the preferred Grafana route
-first; Pushover is the independent fallback when Grafana is not definitely
-accepted. The first HTTP-level
-provider acceptance changes the foreground app to its neutral analog cover and
-triggers a double haptic. This proves neither phone delivery, Important/Critical
-Push behavior, human acknowledgement, nor that help is coming. The current TEST
-cover remains visually clean; the lower-left button or a tap reveals a separate
-detail page without clearing anything. That page names the accepting provider,
-marks phone delivery as unconfirmed, and places two short arc indicators beside
-the physical middle-left and lower-left buttons. Pressing an action immediately
-widens its arc and briefly reveals `DIAL` or `RESET TEST`; the latter performs
-the explicit TEST reset required before another drill.
+| Platform | Current path | Setup and important limits |
+| --- | --- | --- |
+| **Garmin Connect IQ** | Garmin-first direct TEST beta | Configure through Connect IQ Store app settings, or the optional Android companion through Garmin Connect. Foreground app required; Wi-Fi fallback is best effort, not a Garmin LTE guarantee. [Garmin guide](apps/garmin/README.md) |
+| **Pixel Watch / Wear OS** | Direct TEST beta | Install both Android Setup and watch APKs. Configure on Android, then sync to the watch. A Tile opens the app; it does not trigger an alert. [Android & Wear OS guide](apps/wearos/README.md) |
+| **Apple Watch / watchOS** | Separate encrypted-v2 developer prototype | Not feature-equivalent to the direct beta. Requires relay provisioning and Apple signing; no iPhone setup app. An unsigned archive is not an installable release. [watchOS guide](apps/watchos/README.md) |
 
-Only after the first stored acceptance, the foreground beta starts the watch's
-real position API for up to 24 hours. It requests the most accurate available
-Garmin mode in this order: multi-GNSS multi-band L1+L5, multi-GNSS L1, SatIQ,
-then GPS/legacy continuous positioning. Indoors, it can immediately send the
-watch's last-known fix with its age and warning; during an already-running
-Garmin sport it also reads that activity's current location without starting or
-altering the recording. Garmin does not expose a fix timestamp on that activity
-surface, so the update says that its age is unknown. Each provider that accepted the trigger receives that
-best available initial location, the first fresh fix, and meaningful later
-movement, but only while its current credentials match
-the fingerprint stored at acceptance; Grafana updates reuse the
-same alert UID, while Pushover uses separate map-link messages. Both render
-location notifications update-first, with blank-line-separated TEST status,
-GPS status, signal age, and map sections instead of one dense sentence. These
-GPS drill messages are outside v1 TEST and plaintext to Grafana and/or Pushover
-plus the map-link provider. Use them only with the owner's explicit consent.
-Simulator or mock coordinates never count as physical GPS evidence. Grafana's in-app ACK
-is useful receiver evidence but is not yet returned to or displayed by the
-watch.
+The shared OpenDistress companion is **Android-only**. Garmin's Connect IQ
+settings remain a separate route; an iPhone is not supported by the shared
+companion. Supported Garmin build targets are listed in the
+[beta manifest](apps/garmin/manifest-beta.xml). A compiled target is not a
+physically verified device.
 
-The optional Android companion stores the provider-neutral setup once under
-Android Keystore and shows separate readiness states for Wear OS and Garmin.
-Wear OS keeps its RSA-wrapped Data Layer provisioning. Garmin uses the official
-Connect IQ Mobile SDK through Garmin Connect, validates an exact versioned
-configuration digest on the watch, stores the complete TEST setup, and returns
-a matching confirmation. This is not the Wear OS end-to-end encrypted
-provisioning channel; it has the same privacy-relaxed Garmin trust boundary as
-Connect IQ settings.
+## Try the TEST beta
 
-If the owner separately enables precise phone location, an already accepted
-Garmin direct TEST may request one fresh Android fused candidate. The watch
-rejects mock, pre-acceptance, expired, mismatched, out-of-range, or excessively
-inaccurate samples; it keeps ownership of the sequence and provider requests
-and labels an accepted candidate with phone source, age, and metre accuracy.
-Phone absence, permission denial, OS throttling, or transfer failure never
-blocks the alert or watch GPS. This remains plaintext direct-TEST location, not
-encrypted LIVE v2. Garmin has acknowledged a current Garmin Connect 5.27.3
-Android regression that can drop watch-to-phone Connect IQ messages; while it
-persists, setup can still travel phone-to-watch but the automatic ACK and phone
-location request may not return. Confirm `READY TEST` on the watch and keep
-phone-assisted GPS classified as unverified best effort.
+1. Choose a platform above and follow its installation guide. Check
+   [published releases](https://github.com/tobomobo/opendistress/releases) or
+   [native CI artifacts](https://github.com/tobomobo/opendistress/actions/workflows/native.yml)
+   for available builds. A draft release is not a public download, and the
+   latest repository code may be newer than a Store build.
+2. Set up Grafana Cloud IRM or Pushover and its receiving app. Configure the
+   webhook or keys through the supported phone setup route; the direct beta
+   does not require credentials to be hardcoded into the app.
+3. Review the briefing, then save and sync. A connected watch is not necessarily
+   synced: confirm `READY TEST` on Garmin and check the matching configuration
+   confirmation in Android Setup when available. For Wear OS, wait for its
+   matching setup acknowledgement. Saved, sent and confirmed are separate states.
+4. Warn every intended recipient, agree what the test means, and follow the
+   [physical drill](docs/preparation.md). With both providers configured, Grafana
+   is preferred and Pushover is a fallback; retries can reach both. Test each
+   route rather than assuming one working provider proves the other works.
 
-The Wear OS / Pixel Watch beta implements the same deliberate 2.5-second TEST
-hold, direct Grafana/Pushover routes, emergency card, provider-accepted analog
-screen, explicit reset, and post-acceptance location drill. Its Android setup
-app encrypts configuration locally, then transfers an RSA-wrapped AES-GCM
-envelope through the Wearable Data Layer; the watch acknowledges the exact
-stored revision and can subsequently send over its available Wear OS network.
-The Tile is only a launcher, because third-party apps cannot globally intercept
-Pixel Watch hardware buttons. Location runs as a visible foreground service
-for up to 24 hours and uses fused location, which may select watch or paired
-Android-phone data. Persisted WorkManager replay protects committed provider
-requests across process death/reboot; Android's background-start rules mean a
-rebooted high-rate GPS session still needs the app reopened unless all-time
-location access is added and approved. Android provisioning, provider acceptance, phone delivery,
-and physical Pixel Watch behavior remain separate evidence gates.
+For downloads: Garmin `.iq` files are Store-upload packages; device-specific
+`.prg` files are sideload builds and do not provide the Store settings workflow
+by themselves. Android `.apk` files are installable test builds; `.aab` files
+are developer bundles requiring release signing and Store distribution.
+Check each release's notes and checksums. Beta updates may be incompatible;
+rehearse again after changing a device, configuration or receiving phone.
+Native CI artifacts require a GitHub login and are retained for 14 days.
+The paired APKs use a fresh debug signing key per CI build, so they may not
+install over an earlier build. Uninstalling loses local setup; do not do so
+without a plan to configure, sync and rehearse again. They are test installers,
+not a stable update channel.
 
-## Run host checks
+## Location and privacy
 
-The Android companion includes a saved profile preview and guided physical
-drill with revision-bound, owner-reported test records. See
-[`docs/preparation.md`](docs/preparation.md) for the workflow and evidence limits.
+The direct beta sends the initial TEST without waiting for GPS. Location
+acquisition starts **after provider acceptance**. Garmin requests its best
+available positioning mode, can report a last-known fix with an age warning,
+and attempts updates while the app remains open, for up to 24 hours. Wear OS
+uses a visible location foreground service with the same maximum duration;
+reboot and background-start restrictions still apply.
 
-Python 3.11+ and Node 22 are the host requirements:
+Optional Android phone-location assistance for Garmin is best effort, not a
+prerequisite for the alert or watch GPS. Garmin Connect message delivery and
+Android background restrictions can prevent it or the setup ACK from returning.
+No GPS fix, an old fix, or an unknown timestamp must not be presented as a
+fresh, accurate location. Indoor accuracy and phone-independent delivery are
+physical test cases, not guarantees.
+
+**The direct beta is not end-to-end encrypted to your recipients.** Android
+Setup encrypts its local configuration. Wear OS provisioning is encrypted to
+the watch, but Garmin provisioning passes through Garmin Connect. After review
+and sync, optional conversation words are automatically sent with the response
+plan in the initial alert. Recipients do not need to look them up elsewhere.
+They are a human callback aid, not wallet seed words, proof of safety or an
+automatic all-clear; OpenDistress does not make the callback or verify the words.
+Garmin Connect can read the synced briefing, and selected notification providers
+receive readable briefing, profile and location data. Receiver lock screens may
+expose that content; opening map or photo links also involves their hosts.
+Include only information you intend to share. See the
+[conversation-word guide](docs/preparation.md#optional-conversation-words),
+[privacy](docs/privacy.md) and the
+[threat model](docs/threat-model.md).
+
+## For developers
+
+The repository also contains an **optional, separate encrypted protocol stack**.
+It is not required for the direct TEST beta and does not make that beta E2E
+encrypted. The v2 relay does not receive content keys, but still observes
+metadata. Its signed HTTP 202 confirms durable intake only.
+
+| Component | Responsibility |
+| --- | --- |
+| [`apps/garmin/`](apps/garmin/) | Native Monkey C watch client |
+| [`apps/wearos/`](apps/wearos/) | Native Kotlin watch client and shared Android setup |
+| [`apps/watchos/`](apps/watchos/) | SwiftUI encrypted-v2 watch prototype |
+| [`protocol/`](protocol/) | Normative schemas, canonical signing grammar and public test vectors |
+| [`relay/`](relay/) | Python/SQLite intake, durable outbox, Pushover and ntfy workers |
+| [`recipient/`](recipient/) | Node reference decryption and acknowledgement tools |
+
+The optional blind-mailbox transport has reference code, but no completed
+watch-to-native-recipient enrollment flow. See [architecture](docs/architecture.md),
+[roadmap](docs/roadmap.md), [receiver enrollment](docs/receiver-enrollment.md)
+and [design decisions](docs/decisions.md) for the boundaries and remaining work.
+
+### Run host checks
+
+Python 3.11+ and Node 22:
 
 ```sh
 make ci
 ```
 
-Native build commands and their remaining gates are documented in
-[`apps/garmin/README.md`](apps/garmin/README.md),
-[`apps/wearos/README.md`](apps/wearos/README.md), and
-[`apps/watchos/README.md`](apps/watchos/README.md).
-The Garmin guide also documents the protected GitHub Actions beta-packaging
-workflow and the remaining manual Connect IQ Store upload.
+Native build and signing instructions live in each platform guide. CI,
+compiler, simulator, provider and physical-device results are separate evidence;
+`NOT_RUN` never means pass. See [reliability](docs/reliability.md), the
+[simulator matrix](tests/end-to-end/simulator-matrix.csv) and
+[physical matrix](tests/end-to-end/physical-matrix.csv). Garmin strict type
+checking and physical reliability remain release gates.
 
-## Run the relay locally
+### Run the relay locally
 
-Copy both private configuration files outside the repository, replace every
-public/example value, and restrict their permissions:
+Use the [relay development guide](docs/relay-development.md) for configuration,
+local startup, optional mailboxes and incident resolution. This is an advanced
+developer path, not a prerequisite for trying Grafana/Pushover on the watch.
 
-```sh
-cp relay/devices.example.json /tmp/opendistress-devices.json
-cp relay/routes.example.json /tmp/opendistress-routes.json
-chmod 600 /tmp/opendistress-devices.json /tmp/opendistress-routes.json
-python3 -c 'import base64,secrets; print("device_id="+base64.urlsafe_b64encode(secrets.token_bytes(16)).decode().rstrip("=")); print("test_key="+secrets.token_hex(32)); print("live_key="+secrets.token_hex(32))'
-```
+## Contribute
 
-Set each device's private keys, group, recipients, and routes. Pushover user
-keys belong in the route file; its application token stays in the environment:
-
-```sh
-export PUSHOVER_APP_TOKEN='replace-me'
-python3 -m relay \
-  --devices /tmp/opendistress-devices.json \
-  --routes /tmp/opendistress-routes.json \
-  --mailboxes /tmp/opendistress-mailboxes.json \
-  --database /tmp/opendistress-relay.sqlite3
-```
-
-`--mailboxes` is optional. Create one private enrollment bundle and a server
-record containing only capability hashes with:
-
-```sh
-python3 scripts/mailbox_enroll.py \
-  --server-record /tmp/opendistress-mailboxes.json \
-  --enrollment /private/path/recipient-mailbox.json
-```
-
-Both files are created with mode 0600 and existing files are never overwritten.
-The enrollment contains capabilities and content keys and must never be placed
-on the relay. The mailbox API and remaining metadata are documented in
-[`protocol/README.md`](protocol/README.md) and [`docs/privacy.md`](docs/privacy.md).
-
-The development listener is loopback plain HTTP. Put it behind one trusted HTTPS
-terminator, disable request/header/IP logging there, and never expose the Python
-listener directly. Provider recovery is intentionally at-least-once; a crash
-after an external provider accepts can produce a duplicate.
-
-Resolve an incident directly in its database, even if route files or provider
-credentials are unavailable or have rotated:
-
-```sh
-python3 -m relay \
-  --database /tmp/opendistress-relay.sqlite3 \
-  --resolve-incident DEVICE_ID:INCIDENT_ID
-```
-
-This command performs no provider I/O. It durably stops unsent work and queues
-any required Pushover emergency cancellation for a later worker running with
-the exact provider configuration that originally accepted the alert.
-Resolution also works against the previous v4 schema without migrating it.
-Because v4 did not record provider fingerprints, any already-accepted v4
-emergency must be cancelled manually at Pushover or allowed to expire; the
-relay will not guess which credentials created it.
-
-The offline recipient command is documented in
-[`recipient/README.md`](recipient/README.md). Security constraints, architecture,
-receiver Critical Alert enrollment, and the still-`NOT_RUN` physical rows are
-in [`SECURITY.md`](SECURITY.md),
-[`docs/receiver-enrollment.md`](docs/receiver-enrollment.md),
-[`docs/`](docs/), and
-[`tests/end-to-end/physical-matrix.csv`](tests/end-to-end/physical-matrix.csv).
+Useful contributions include reproducible device tests, accessibility checks,
+setup improvements and narrowly scoped reliability fixes. For bug reports,
+include app version, device/OS version, expected behaviour and reproduction
+steps. **Do not post webhook URLs, API keys, locations or emergency profiles.**
+Report security issues through [SECURITY.md](SECURITY.md); contributors should
+read [AGENTS.md](AGENTS.md) and the [protocol](protocol/README.md) before changing
+cross-component behaviour. Naming and copy guidance live in
+[branding](docs/branding.md).
 
 ## License
 

@@ -71,6 +71,23 @@ layer, the warm-white ring and amber signal point form the foreground, and an
 all-white monochrome layer supports Android themed icons. API 26 resources omit
 the newer monochrome element; API 33 resources add it explicitly.
 
+## GitHub repository metadata
+
+**Description**
+
+`Discreet smartwatch distress signalling, prepared in advance. Garmin-first TEST beta with Pixel Watch support and shared Android setup.`
+
+**Topics**
+
+`garmin`, `connect-iq`, `wear-os`, `pixel-watch`, `android`, `companion-app`,
+`smartwatch`, `personal-safety`, `emergency-preparedness`, `grafana`, `pushover`,
+`open-source`
+
+Keep the repository name `opendistress`. Leave the website field empty until
+there is a dedicated project site; installation and release links belong in the
+README. Do not imply watchOS feature parity, private direct-provider delivery,
+or emergency readiness in the short description.
+
 ## Garmin Connect IQ Store metadata
 
 **Name**
@@ -87,7 +104,8 @@ the newer monochrome element; API 33 resources add it explicitly.
 > personal risk. Configure a Grafana Cloud IRM or Pushover TEST route in calm
 > conditions, then deliberately hold the watch's START button for 2.5 seconds
 > to send a clearly marked test signal. After provider acceptance, the watch
-> confirms with haptics, displays a neutral analog cover, and attempts
+> displays a neutral analog cover, gives two short vibration pulses if enabled,
+> and attempts
 > best-available location updates while the app remains open.
 >
 > This beta does not contact emergency services. Provider acceptance does not
