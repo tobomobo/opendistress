@@ -21,7 +21,7 @@ fun quoted(value: String): String =
 
 android {
     namespace = "dev.opendistress.wear"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.opendistress.wear"
