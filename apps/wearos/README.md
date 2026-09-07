@@ -190,8 +190,8 @@ extracted.
 
 ## Build and test
 
-Use JDK 17 or newer and Android SDK 36. The checked-in wrapper pins and verifies
-Gradle 9.5.0:
+Use JDK 17 or newer and Android SDK platforms 36 and 37. The checked-in wrapper
+pins and verifies Gradle 9.7.1:
 
 ```sh
 apps/wearos/gradlew --no-daemon -p apps/wearos \
