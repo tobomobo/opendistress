@@ -214,9 +214,9 @@ class NativeContractTests(unittest.TestCase):
             self.assertIn(expected, workflow)
         self.assertNotIn("OS=latest", workflow)
         wrapper = (WEAR / "gradle/wrapper/gradle-wrapper.properties").read_text()
-        self.assertIn("gradle-9.5.0-bin.zip", wrapper)
+        self.assertIn("gradle-9.7.1-bin.zip", wrapper)
         self.assertIn(
-            "distributionSha256Sum=553c78f50dafcd54d65b9a444649057857469edf836431389695608536d6b746",
+            "distributionSha256Sum=acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a",
             wrapper,
         )
 
