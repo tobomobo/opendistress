@@ -15,6 +15,10 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.InputFilter
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.text.InputType
 import android.text.Editable
 import android.text.TextWatcher
@@ -31,12 +35,10 @@ import com.google.android.gms.wearable.Wearable
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
-import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.checkbox.MaterialCheckBox
-import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
@@ -71,7 +73,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private var wizardStep = 0
     private lateinit var wizardScroll: ScrollView
     private lateinit var wizardTitle: MaterialTextView
-    private lateinit var wizardProgress: LinearProgressIndicator
+    private lateinit var wizardProgress: StepProgressView
+    private val ui by lazy { CompanionUi(this) }
+    private var homeRing: ReadinessRingView? = null
     private lateinit var previousStep: MaterialButton
     private lateinit var nextStep: MaterialButton
     private lateinit var review: MaterialTextView
@@ -88,7 +92,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        DynamicColors.applyToActivityIfAvailable(this)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         buildInterface()
         garminLink = GarminCompanionLink.get(this)
@@ -259,7 +262,8 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         }
         page.addView(MaterialToolbar(this).apply {
             title = getString(R.string.app_bar_title)
-            subtitle = "Companion"
+            subtitle = "Setup · TEST beta"
+            logo = android.graphics.drawable.InsetDrawable(getDrawable(R.drawable.ic_mark_small), 0, 0, dp(14), 0)
             setTitleTextAppearance(this@MainActivity, R.style.TextAppearance_OpenDistress_Brand)
             setTitleTextColor(onSurface)
             setSubtitleTextColor(onSurfaceVariant)
@@ -270,7 +274,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(32))
+            setPadding(dp(20), dp(4), dp(20), dp(32))
         }
         repeat(6) { wizardPages.add(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }) }
         val routePage = wizardPages[0]
@@ -279,9 +283,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         val wordsPage = wizardPages[3]
         val watchPage = wizardPages[4]
         val reviewPage = wizardPages[5]
-        routePage.addView(wizardCopy("Prepare once. Rehearse together.", true))
+        routePage.addView(pageHeading("Prepare once. Rehearse together."))
         routePage.addView(wizardCopy("Choose where your TEST alerts go. Recipients and escalation are configured in Grafana or Pushover, not by entering names here. No test is sent during setup."))
-        routePage.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        routePage.addView(ui.tonalButton("").apply {
             text = if (isGarmin) "Garmin · Change watch" else if (isPixel) "Pixel Watch · Change watch" else "Choose your watch"
             minHeight = dp(48)
             setOnClickListener {
@@ -291,7 +295,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     .setPositiveButton("Choose watch") { _, _ -> if (persistDraft()) chooseWatch() }.show()
             }
         }, matchWidth())
-        reviewPage.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        reviewPage.addView(ui.tonalButton("").apply {
             visibility = View.GONE
             text = "Preparation & physical drill"
             minHeight = dp(56)
@@ -318,13 +322,15 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         addField(emergency, "childrenInfo", R.string.children_information, 150, multiline = true)
         addField(emergency, "personDescription", R.string.person_description, 150, multiline = true)
         addField(emergency, "backgroundInfo", R.string.background_information, 180, multiline = true)
-        planPage.addView(wizardCopy("What should your people do?", true))
+        planPage.addView(pageHeading("What should your people do?"))
         planPage.addView(wizardCopy("Choose whether an incoming call is safe. We fill in a starting plan; you can edit every word. Recipients receive it with your alert. No call happens automatically."))
         listOf("Quiet response · do not call" to ResponsePlanTemplates.QUIET,
             "Call first · check two words" to ResponsePlanTemplates.CALLBACK).forEach { (label, template) ->
-            planPage.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            planPage.addView(ui.tonalButton("").apply {
                 text = label
-                minHeight = dp(52)
+                minHeight = dp(56)
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                setPadding(dp(20), 0, dp(20), 0)
                 setOnClickListener {
                     val field = fields.getValue("responseInstructions")
                     fun applyTemplate() {
@@ -434,49 +440,40 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 setPadding(dp(18), dp(16), dp(18), dp(16))
                 addView(wizardCopy("Evidence, not a safety score", true))
                 addView(preparationEvidence)
-                addView(MaterialButton(this@MainActivity, null,
-                    com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                addView(ui.tonalButton("").apply {
                     text = "Practice & physical checks"
                     setOnClickListener { startActivity(Intent(this@MainActivity, PreparationActivity::class.java)) }
                 })
             })
         }, matchWidth(topMargin = dp(16)))
 
-        val locationCopy = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(MaterialTextView(this@MainActivity).apply {
-                setText(R.string.phone_location_assist)
-                setTextAppearance(R.style.TextAppearance_OpenDistress_Section)
-                setTextColor(onSurface)
-            }, matchWidth())
-            addView(MaterialTextView(this@MainActivity).apply {
-                setText(R.string.phone_location_explanation)
-                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
-                setTextColor(onSurfaceVariant)
-                setLineSpacing(0f, 1.1f)
-            }, matchWidth(topMargin = dp(5)))
-        }
         locationAssist = MaterialSwitch(this).apply {
             contentDescription = getString(R.string.phone_location_assist)
         }
-        val locationRow = LinearLayout(this).apply {
+        val locationTitle = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(18), dp(18), dp(12), dp(18))
-            addView(locationCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(ui.title(getString(R.string.phone_location_assist)),
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(locationAssist, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { marginStart = dp(12) })
         }
+        val locationRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(12))
+            addView(locationTitle, matchWidth())
+            addView(ui.caption(getString(R.string.phone_location_explanation)), matchWidth(topMargin = dp(8)))
+        }
         locationReadiness = MaterialTextView(this).apply {
             setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
             setTextColor(onSurfaceVariant)
             setLineSpacing(0f, 1.1f)
-            setPadding(dp(18), 0, dp(18), dp(8))
+            setPadding(dp(20), 0, dp(20), dp(8))
             visibility = View.GONE
         }
-        locationFix = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        locationFix = ui.tonalButton("").apply {
             visibility = View.GONE
             setOnClickListener { fixLocationAssist() }
         }
@@ -489,7 +486,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { marginStart = dp(18); bottomMargin = dp(14) })
         }
-        watchPage.addView(wizardCopy("How your watch helps", true))
+        watchPage.addView(pageHeading("How your watch helps"))
         watchPage.addView(MaterialCardView(this).apply {
             visibility = if (isGarmin) View.VISIBLE else View.GONE
             radius = dp(24).toFloat()
@@ -510,8 +507,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         watchPage.addView(haptics, matchWidth(topMargin = dp(16)))
         if (isGarmin) {
             watchPage.addView(wizardCopy("Learn the exact buttons before a test. In the Garmin app, open Practice from the idle screen: no messages are sent. Rehearse a short press, a full hold, then the same hold without looking."))
-            watchPage.addView(MaterialButton(this, null,
-                com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            watchPage.addView(ui.tonalButton("").apply {
                 text = "Garmin controls & blind practice"
                 setOnClickListener { startActivity(Intent(this@MainActivity, PreparationActivity::class.java)
                     .putExtra("garmin_controls", true)) }
@@ -523,7 +519,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             setTextColor(onSurfaceVariant)
             setPadding(dp(18), 0, dp(18), dp(12))
         }, matchWidth())
-        save = MaterialButton(this).apply {
+        save = ui.primaryButton("").apply {
             setText(R.string.save_and_send)
             minHeight = dp(56)
             cornerRadius = dp(28)
@@ -531,19 +527,15 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             insetTop = 0
             insetBottom = 0
         }
-        review = wizardCopy("")
-        reviewPage.addView(review, 0, matchWidth())
+        review = ui.text("", R.style.TextAppearance_OpenDistress_Body, ui.onSurface)
+        reviewPage.addView(ui.card(review), 0, matchWidth(topMargin = dp(8)))
         consent = MaterialCheckBox(this).apply {
             text = "I reviewed this briefing, including any expected words, and approve sending it to my watch and alert recipients."
             minHeight = dp(56)
         }
         reviewPage.addView(consent, matchWidth(topMargin = dp(12)))
         reviewPage.addView(save, matchWidth(topMargin = dp(16)))
-        reviewPage.addView(MaterialButton(
-            this,
-            null,
-            com.google.android.material.R.attr.materialButtonOutlinedStyle,
-        ).apply {
+        reviewPage.addView(ui.tonalButton("").apply {
             id = SYNC_BUTTON_ID
             visibility = View.GONE
             setText(R.string.retry_sync)
@@ -552,10 +544,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             textSize = 15f
             insetTop = 0
             insetBottom = 0
-            strokeWidth = dp(1)
-            strokeColor = ColorStateList.valueOf(outline)
-            backgroundTintList = ColorStateList.valueOf(surface)
-            setTextColor(primary)
         }, matchWidth(topMargin = dp(10)))
         reviewPage.addView(MaterialTextView(this).apply {
             visibility = View.GONE
@@ -566,10 +554,12 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             setPadding(dp(4), dp(16), dp(4), 0)
         })
 
-        wizardTitle = wizardCopy("", true).apply { setPadding(dp(20), dp(12), dp(20), dp(16)) }
+        wizardProgress = StepProgressView(this, 6)
+        page.addView(wizardProgress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(5)).apply {
+            setMargins(dp(20), dp(4), dp(20), 0)
+        })
+        wizardTitle = ui.heading("").apply { setPadding(dp(20), dp(18), dp(20), dp(4)) }
         page.addView(wizardTitle, matchWidth())
-        wizardProgress = LinearProgressIndicator(this).apply { max = 6 }
-        page.addView(wizardProgress, matchWidth())
         wizardPages.forEach { content.addView(it, matchWidth()) }
         wizardScroll = ScrollView(this).apply {
             isFillViewport = true
@@ -585,7 +575,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             addView(dashboard)
         }
         page.addView(dashboardScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        previousStep = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        previousStep = ui.textButton("").apply {
             text = "Back"
             minHeight = dp(52)
             setOnClickListener {
@@ -595,7 +585,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 }
             }
         }
-        nextStep = MaterialButton(this).apply {
+        nextStep = ui.primaryButton("").apply {
             text = "Continue"
             minHeight = dp(52)
             setOnClickListener {
@@ -620,9 +610,11 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             }
         }
         wizardNavigation = LinearLayout(this).apply {
-            setPadding(dp(20), dp(8), dp(20), dp(8))
+            setPadding(dp(16), dp(10), dp(20), dp(12))
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(ui.cardColor)
             addView(previousStep, LinearLayout.LayoutParams(0, dp(56), 1f))
-            addView(nextStep, LinearLayout.LayoutParams(0, dp(56), 1f).apply { marginStart = dp(12) })
+            addView(nextStep, LinearLayout.LayoutParams(0, dp(56), 1.6f).apply { marginStart = dp(12) })
         }
         page.addView(wizardNavigation, matchWidth())
         showWizardStep(0)
@@ -634,6 +626,15 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 insets
             }
         })
+    }
+
+    /** "2 of 6 · Response plan" with a quiet, smaller step counter. */
+    private fun stepTitle(step: Int, title: String): CharSequence {
+        val prefix = "${step + 1} of 6 · "
+        return SpannableString(prefix + title).apply {
+            setSpan(RelativeSizeSpan(0.62f), 0, prefix.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(ForegroundColorSpan(ui.accent), 0, prefix.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 
     private fun openEditor(step: Int) {
@@ -652,60 +653,80 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         dashboard.removeAllViews()
         homeStatus = null
         val saved = coordinator.snapshot().config
+        homeRing = null
         fun action(label: String, primary: Boolean = false, onClick: () -> Unit) {
-            dashboard.addView(MaterialButton(this, null, if (primary)
-                com.google.android.material.R.attr.materialButtonStyle else
-                com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                text = label
-                minHeight = dp(52)
-                setOnClickListener { onClick() }
-            }, matchWidth(topMargin = dp(8)))
+            dashboard.addView(if (primary) ui.primaryButton(label, onClick) else ui.rowButton(label, onClick),
+                matchWidth(topMargin = dp(if (primary) 14 else 8)))
         }
+        fun section(label: String) = dashboard.addView(ui.eyebrow(label).apply { setPadding(dp(2), dp(22), 0, dp(2)) })
+        fun fact(label: String, value: String) = ui.column(
+            ui.eyebrow(label).apply { setTextColor(ui.muted) },
+            ui.text(value, R.style.TextAppearance_OpenDistress_Body, ui.onSurface).apply { setPadding(0, dp(2), 0, dp(14)) },
+        )
+        // Segmented navigation; the selected pill is filled.
         dashboard.addView(LinearLayout(this).apply {
-            listOf("Home", "My plan", "Settings").forEach { label ->
-                addView(MaterialButton(this@MainActivity, null,
-                    com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                    text = label
-                    isSelected = destination == label
-                    if (isSelected) {
-                        backgroundTintList = ColorStateList.valueOf(color(androidx.appcompat.R.attr.colorPrimary, Color.DKGRAY))
-                        setTextColor(color(com.google.android.material.R.attr.colorOnPrimary, Color.WHITE))
-                    }
-                    minHeight = dp(48)
-                    setOnClickListener { showDashboard(label) }
-                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(26).toFloat()
+                setColor(color(com.google.android.material.R.attr.colorSurfaceContainerHigh, Color.LTGRAY))
             }
-        }, matchWidth())
+            listOf("Home", "My plan", "Settings").forEach { label ->
+                val selected = destination == label || (label == "My plan" && destination == "Profile") ||
+                    (label == "Home" && destination == "Connection")
+                addView((if (selected) ui.primaryButton(label) else ui.textButton(label)).apply {
+                    isSelected = selected
+                    minHeight = dp(44)
+                    cornerRadius = dp(22)
+                    setOnClickListener { showDashboard(label) }
+                }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            }
+        }, matchWidth(topMargin = dp(4)))
         when (destination) {
             "Home" -> {
-                dashboard.addView(wizardCopy("Prepared, at your pace.", true))
-                dashboard.addView(wizardCopy(if (isGarmin) "Garmin" else if (isPixel) "Pixel Watch / Wear OS" else "Choose a watch"))
-                homeStatus = wizardCopy("").also { dashboard.addView(it, matchWidth(topMargin = dp(16))) }
+                val ring = ReadinessRingView(this).also { homeRing = it }
+                homeStatus = ui.title("")
+                val watch = ui.eyebrow(if (isGarmin) "Garmin" else if (isPixel) "Pixel Watch / Wear OS" else "Choose a watch")
+                val heroCopy = ui.column(watch, homeStatus!!.apply { setPadding(0, dp(2), 0, dp(4)) },
+                    ui.caption(if (saved == null) "Finish setup before testing."
+                        else "Your plan is saved on this phone. Watch sync is a separate status."))
+                val hero = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(ring, LinearLayout.LayoutParams(dp(76), dp(76)).apply { marginEnd = dp(18) })
+                    addView(heroCopy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                }
+                dashboard.addView(pageHeading("Prepared, at your pace."), matchWidth(topMargin = dp(8)))
+                dashboard.addView(ui.card(hero), matchWidth(topMargin = dp(4)))
                 updateHomeStatus()
-                dashboard.addView(wizardCopy(if (saved == null) "Finish setup before testing."
-                    else "Your plan is saved on this phone. Watch sync is a separate status."))
                 if (saved == null) action("Continue setup", true) { editingSection = false; showWizardStep(wizardStep) }
                 else {
                     action("View my emergency plan", true) { showDashboard("My plan") }
+                    section("Watch")
                     action("Sync saved setup") {
                         if (isPixel) coordinator.synchronize(::showWearStatus, force = true)
                         if (isGarmin) garminLink.sync(saved)
                     }
                 }
                 action("Connection details") { showDashboard("Connection") }
-                dashboard.addView(wizardCopy("TEST beta · Setup synced does not mean an alert was delivered."))
+                action("Practice & physical checks") { startActivity(Intent(this, PreparationActivity::class.java)) }
+                dashboard.addView(ui.callout("TEST beta · Setup synced does not mean an alert was delivered."),
+                    matchWidth(topMargin = dp(18)))
             }
             "My plan" -> {
-                dashboard.addView(wizardCopy("My emergency plan", true))
-                dashboard.addView(wizardCopy("Last saved version · edits are applied only after review and sync."))
-                if (saved == null) dashboard.addView(wizardCopy("No saved plan yet."))
+                dashboard.addView(pageHeading("My emergency plan"), matchWidth(topMargin = dp(8)))
+                dashboard.addView(ui.caption("Last saved version · edits are applied only after review and sync."))
+                if (saved == null) dashboard.addView(ui.callout("No saved plan yet."), matchWidth(topMargin = dp(12)))
                 else {
                     val (words, plan) = ResponsePlanTemplates.split(saved.responseInstructions)
-                    dashboard.addView(wizardCopy(saved.protectedPersonName.ifBlank { "Person sending the alert" }, true))
-                    dashboard.addView(wizardCopy(plan.ifBlank { "No response instructions set" }))
-                    dashboard.addView(wizardCopy("Conversation words", true))
-                    dashboard.addView(wizardCopy(words.ifBlank { "Not set" }))
+                    dashboard.addView(ui.card(
+                        ui.eyebrow("Person sending the alert").apply { setTextColor(ui.muted) },
+                        ui.title(saved.protectedPersonName.ifBlank { "Person sending the alert" }).apply { setPadding(0, 0, 0, dp(14)) },
+                        ui.eyebrow("Response plan").apply { setTextColor(ui.muted) },
+                        ui.text(plan.ifBlank { "No response instructions set" }, R.style.TextAppearance_OpenDistress_Body, ui.onSurface),
+                    ), matchWidth(topMargin = dp(14)))
+                    dashboard.addView(wordsCard(words.ifBlank { "Not set" }), matchWidth(topMargin = dp(12)))
                 }
+                section("Edit")
                 action("Edit response plan") { openEditor(1) }
                 action("Edit conversation words") { openEditor(3) }
                 action("View personal information") { showDashboard("Profile") }
@@ -713,37 +734,43 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 action("Preview pending changes") { openEditor(5) }
             }
             "Profile" -> {
-                dashboard.addView(wizardCopy("Saved personal information", true))
-                if (saved != null) listOf("Name" to saved.protectedPersonName,
+                dashboard.addView(pageHeading("Saved personal information"), matchWidth(topMargin = dp(8)))
+                val rows = if (saved == null) emptyList() else listOf("Name" to saved.protectedPersonName,
                     "Message" to saved.customAlertMessage, "Home address · not live location" to saved.homeAddress,
                     "Dependants / care" to saved.childrenInfo, "Description" to saved.personDescription,
-                    "Background" to saved.backgroundInfo, "Photo link" to saved.profilePhotoUrl).forEach { (label, value) ->
-                    if (value.isNotBlank()) {
-                        dashboard.addView(wizardCopy(label, true)); dashboard.addView(wizardCopy(value))
-                    }
-                }
+                    "Background" to saved.backgroundInfo, "Photo link" to saved.profilePhotoUrl).filter { it.second.isNotBlank() }
+                if (rows.isEmpty()) dashboard.addView(ui.callout("No personal information saved."), matchWidth(topMargin = dp(12)))
+                else dashboard.addView(ui.card(*rows.map { (label, value) -> fact(label, value) }.toTypedArray()),
+                    matchWidth(topMargin = dp(12)))
                 action("Edit personal information") { openEditor(2) }
             }
             "Settings" -> {
-                dashboard.addView(wizardCopy("Settings", true))
+                dashboard.addView(pageHeading("Settings"), matchWidth(topMargin = dp(8)))
+                section("Setup")
                 action("Delivery services") { openEditor(0) }
                 action("Location assist & vibration") { openEditor(4) }
                 action("Practice & diagnostics") { startActivity(Intent(this, PreparationActivity::class.java)) }
+                section("Start over")
                 action("Restart setup wizard") {
                     // Keep the existing values and any unfinished edits. Never reset storage.
                     editingSection = false
                     showWizardStep(0)
                 }
+                dashboard.addView(ui.caption("Restarting keeps your saved values and unfinished edits."),
+                    matchWidth(topMargin = dp(8)))
             }
             "Connection" -> {
-                dashboard.addView(wizardCopy("Connection & sync", true))
-                dashboard.addView(wizardCopy(if (isGarmin) garminStatus.text.toString() else status.text.toString()))
+                dashboard.addView(pageHeading("Connection & sync"), matchWidth(topMargin = dp(8)))
+                dashboard.addView(ui.card(ui.text(if (isGarmin) garminStatus.text.toString() else status.text.toString(),
+                    R.style.TextAppearance_OpenDistress_Body, ui.onSurface)), matchWidth(topMargin = dp(8)))
                 if (isGarmin) {
-                    dashboard.addView(wizardCopy(garminLink.watchApp?.summary()
-                        ?: "Watch app version appears once the watch is connected."))
-                    dashboard.addView(wizardCopy("Garmin installs updates through the Connect IQ Store. " +
-                        "This phone cannot see the Store's latest version; after an update it re-sends " +
-                        "your saved setup and you check TEST MODE · Ready on the watch."))
+                    section("Watch app")
+                    dashboard.addView(ui.card(
+                        ui.title(garminLink.watchApp?.summary() ?: "Watch app version appears once the watch is connected."),
+                        ui.caption("Garmin installs updates through the Connect IQ Store. " +
+                            "This phone cannot see the Store's latest version; after an update it re-sends " +
+                            "your saved setup and you check TEST MODE · Ready on the watch.").apply { setPadding(0, dp(6), 0, 0) },
+                    ), matchWidth(topMargin = dp(4)))
                     action("Check for watch app update") {
                         if (!garminLink.openStorePage()) {
                             showGarminStatus(GarminLinkStatus.Attention(
@@ -759,8 +786,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                         }
                     }
                 }
+                section("Your drills")
                 refreshPreparationEvidence()
-                dashboard.addView(wizardCopy(preparationEvidence.text.toString()))
+                dashboard.addView(ui.card(ui.caption(preparationEvidence.text.toString())), matchWidth(topMargin = dp(4)))
                 action("Refresh") { showDashboard("Connection") }
             }
         }
@@ -768,17 +796,39 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     }
 
     private fun updateHomeStatus() {
-        homeStatus?.text = if (isGarmin) garminStatusTitle.text else statusTitle.text
+        val title = if (isGarmin) garminStatusTitle.text else statusTitle.text
+        homeStatus?.text = title
+        homeRing?.state = when {
+            !storageReady || coordinator.snapshot().config == null -> RingState.EMPTY
+            title == getString(R.string.watch_attention) -> RingState.ATTENTION
+            title.startsWith("Connected · Synced") || title.startsWith("Setup confirmed") ||
+                title == getString(R.string.watch_ready) -> RingState.READY
+            else -> RingState.WAITING
+        }
+    }
+
+    /** Conversation words, large enough to read aloud from the screen. */
+    private fun wordsCard(words: String) = MaterialCardView(this).apply {
+        radius = dp(20).toFloat()
+        cardElevation = 0f
+        strokeWidth = 0
+        setCardBackgroundColor(color(com.google.android.material.R.attr.colorSecondaryContainer, Color.LTGRAY))
+        addView(ui.column(
+            ui.eyebrow("Conversation words"),
+            ui.text(words, R.style.TextAppearance_OpenDistress_Hero,
+                color(com.google.android.material.R.attr.colorOnSecondaryContainer, Color.BLACK)).apply { setPadding(0, dp(4), 0, 0) },
+        ).apply { setPadding(dp(20), dp(16), dp(20), dp(18)) })
     }
 
     private fun wizardCopy(copy: String, heading: Boolean = false) = MaterialTextView(this).apply {
         text = copy
-        setTextAppearance(if (heading) com.google.android.material.R.style.TextAppearance_Material3_HeadlineSmall
-            else com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
-        setTextColor(color(com.google.android.material.R.attr.colorOnSurface, Color.DKGRAY))
-        setLineSpacing(0f, 1.12f)
-        setPadding(dp(4), dp(12), dp(4), dp(16))
+        setTextAppearance(if (heading) R.style.TextAppearance_OpenDistress_Section
+            else R.style.TextAppearance_OpenDistress_Body)
+        setTextColor(if (heading) ui.onSurface else ui.muted)
+        setPadding(dp(2), dp(if (heading) 18 else 2), dp(2), dp(if (heading) 6 else 12))
     }
+
+    private fun pageHeading(copy: String) = ui.heading(copy).apply { setPadding(dp(2), dp(14), dp(2), dp(8)) }
 
     private fun addSection(parent: LinearLayout, label: Int, explanation: Int): LinearLayout {
         val body = LinearLayout(this).apply {
@@ -799,8 +849,8 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         refreshPreparationEvidence()
         wizardStep = step.coerceIn(0, 5)
         val titles = listOf("Delivery", "Response plan", "Your information", "Conversation words", "Watch behavior", "Review & sync")
-        wizardTitle.text = if (editingSection) titles[wizardStep] else "${wizardStep + 1} of 6 · ${titles[wizardStep]}"
-        wizardProgress.progress = wizardStep + 1
+        wizardTitle.text = if (editingSection) titles[wizardStep] else stepTitle(wizardStep, titles[wizardStep])
+        wizardProgress.current = wizardStep
         wizardPages.forEachIndexed { index, view -> view.visibility = if (index == wizardStep) View.VISIBLE else View.GONE }
         previousStep.isEnabled = wizardStep > 0 || editingSection || (storageReady && coordinator.snapshot().config != null)
         previousStep.text = if (editingSection) "Close" else "Back"
@@ -858,11 +908,18 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     }
 
     private fun buildConversationWords(parent: LinearLayout) {
-        parent.addView(wizardCopy("Your conversation words", true), matchWidth())
+        parent.addView(pageHeading("Your conversation words"), matchWidth())
         parent.addView(wizardCopy("Visible here whenever you need them. Included in your reviewed briefing for recipients and providers. They help with a callback, but do not prove safety or end an incident."), matchWidth())
-        wordsView = wizardCopy("No words generated", true).apply { isSaveEnabled = false }
-        parent.addView(wordsView, matchWidth())
-        parent.addView(MaterialButton(this).apply {
+        wordsView = ui.text("No words generated", R.style.TextAppearance_OpenDistress_Hero,
+            color(com.google.android.material.R.attr.colorOnSecondaryContainer, Color.BLACK)).apply { isSaveEnabled = false }
+        parent.addView(MaterialCardView(this).apply {
+            radius = dp(20).toFloat()
+            cardElevation = 0f
+            strokeWidth = 0
+            setCardBackgroundColor(color(com.google.android.material.R.attr.colorSecondaryContainer, Color.LTGRAY))
+            addView(ui.column(ui.eyebrow("Say these two words"), wordsView).apply { setPadding(dp(20), dp(16), dp(20), dp(18)) })
+        }, matchWidth(topMargin = dp(6)))
+        parent.addView(ui.primaryButton("").apply {
             text = "Generate two new words"
             minHeight = dp(52)
             setOnClickListener {
@@ -882,7 +939,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     .setNegativeButton("Keep words", null).setPositiveButton("Replace") { _, _ -> generate() }.show()
             }
         }, matchWidth())
-        parent.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        parent.addView(ui.tonalButton("").apply {
             text = "Edit words"
             minHeight = dp(52)
             setOnClickListener {
@@ -909,7 +966,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 dialog.show()
             }
         }, matchWidth())
-        parent.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        parent.addView(ui.tonalButton("").apply {
             text = "Remove words"
             minHeight = dp(48)
             setOnClickListener {
@@ -934,10 +991,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         secret: Boolean = false,
         multiline: Boolean = false,
     ) {
-        val field = TextInputEditText(this).apply {
+        val box = TextInputLayout(this)
+        val field = TextInputEditText(box.context).apply {
             isSaveEnabled = false // sensitive drafts live only in the encrypted store, never saved-instance state
-            background = null
-            setPadding(dp(16), dp(24), dp(16), dp(12))
             filters = arrayOf(InputFilter.LengthFilter(maxLength))
             inputType = when {
                 secret -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -954,7 +1010,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 EditText.IMPORTANT_FOR_AUTOFILL_AUTO
         }
         fields[key] = field
-        parent.addView(TextInputLayout(this).apply {
+        parent.addView(box.apply {
             fieldLayouts[key] = this
             hint = getString(label)
             isCounterEnabled = !secret
@@ -968,18 +1024,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 "profilePhotoUrl" -> "Optional link only; providers and anyone opening it may see the URL. No photo is uploaded here."
                 else -> null
             }
-            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_FILLED
-            boxBackgroundColor = color(com.google.android.material.R.attr.colorSurfaceContainerHighest, Color.LTGRAY)
-            boxStrokeColor = color(com.google.android.material.R.attr.colorOutline, Color.GRAY)
-            setBoxCornerRadii(
-                dp(16).toFloat(),
-                dp(16).toFloat(),
-                dp(16).toFloat(),
-                dp(16).toFloat(),
-            )
             if (secret) endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
             addView(field, matchWidth())
-        }, matchWidth(topMargin = dp(12)))
+        }, matchWidth(topMargin = dp(14)))
     }
 
     private fun populate(config: DirectConfig) {
@@ -1155,9 +1202,10 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         return MaterialCardView(this).apply {
-            radius = dp(24).toFloat()
+            radius = dp(20).toFloat()
             cardElevation = 0f
-            strokeWidth = 0
+            strokeWidth = dp(1)
+            strokeColor = ui.hairline
             addView(row, matchWidth())
         }
     }
