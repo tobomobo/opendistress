@@ -169,6 +169,11 @@ module WatchPresentation {
 
     // Idle mark: a quiet open ring with the amber signal point at six o'clock.
     function readyRing(dc) {
+        readyRingWithGps(dc, true);
+    }
+
+    // The signal point is hollow while the watch is still searching for GPS.
+    function readyRingWithGps(dc, gpsReady) {
         if (isCompact(dc)) { return; }
         var g = ringGeometry(dc);
         smooth(dc, true);
@@ -176,7 +181,15 @@ module WatchPresentation {
         dc.setPenWidth(2);
         dc.drawCircle(g[0], g[1], g[2]);
         dc.setColor(AMBER, Graphics.COLOR_BLACK);
-        dc.fillCircle(g[0], g[1] + g[2], g[3] * 0.6);
+        if (gpsReady) {
+            dc.fillCircle(g[0], g[1] + g[2], g[3] * 0.6);
+        } else {
+            dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_BLACK);
+            dc.fillCircle(g[0], g[1] + g[2], g[3] * 0.6);
+            dc.setColor(AMBER, Graphics.COLOR_BLACK);
+            dc.setPenWidth(2);
+            dc.drawCircle(g[0], g[1] + g[2], g[3] * 0.5);
+        }
         smooth(dc, false);
         dc.setPenWidth(1);
     }

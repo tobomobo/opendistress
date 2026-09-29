@@ -426,3 +426,17 @@ budget, and callbacks respect the scheduled retry. Continuous positioning is
 re-requested only after a failed start or a silent minute instead of every 10
 seconds, so a converging acquisition is not restarted.
 
+## 2026-09-29 — Warm the Garmin GPS receiver while the app is open
+
+A first fix after provider acceptance could take tens of seconds from a cold
+receiver, which is when the first update matters most. The watch now requests
+its best-available continuous positioning as soon as the app is open and idle,
+and keeps it running while a TEST is stored. Warm-up callbacks are reduced to
+fix quality for a `GPS searching`/`GPS ready` hint; coordinates are neither
+stored, queued nor sent before acceptance, so the post-acceptance sending rule
+is unchanged. At acceptance the running request is handed to tracking instead
+of being restarted, and `Position.getInfo()` then returns a seconds-old fix that
+is still labelled last-known with its age. Warm-up stops ten minutes after the
+last input or when the view hides, bounding battery cost. Time-to-first-fix and
+battery impact remain physical gates.
+

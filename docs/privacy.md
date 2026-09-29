@@ -71,7 +71,9 @@ to the watch. The watch rejects mock, pre-acceptance, expired,
 configuration-mismatched, out-of-range, and excessively inaccurate values, then
 labels any provider update with phone source, age, and rounded metre accuracy.
 The candidate is not averaged with watch GPS and is never requested before
-acceptance.
+acceptance. While the Garmin app is open before acceptance, its GPS receiver may
+run to warm up; only fix quality is kept in memory and no position is stored or
+sent.
 This is outside TEST v1 and v2, and therefore outside the encrypted location
 guarantee above. Grafana, Pushover, Garmin's settings/network path, and Google
 can observe or retain data within their respective roles and policies. The

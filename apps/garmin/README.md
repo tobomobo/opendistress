@@ -111,8 +111,15 @@ does not target watch faces and exits the current application. Keeping this
 cover inside OpenDistress preserves its foreground location path. This is not
 a claim that Garmin will keep the app running indefinitely.
 
-After that stored acceptance, and never before it, the beta requests a real
-watch position for up to 24 hours. Every provider that accepted the trigger is
+After that stored acceptance, and never before it, the beta records and sends a
+real watch position for up to 24 hours. Before acceptance the app only warms up
+the receiver: while it is open and idle, or while a TEST is stored, it requests
+the same best-available continuous positioning so that the first fix after
+acceptance is quick. Warm-up callbacks keep only the fix quality in memory to
+show `GPS searching` or `GPS ready` (and a hollow or filled signal point) on the
+ready screen; they never store, queue or send coordinates. Warm-up stops ten
+minutes after the last button input, when the view is hidden, or when accepted
+tracking takes over the running request. Every provider that accepted the trigger is
 targeted sequentially for each fix. Pushover gets a separate high-priority
 first map-link message and normal-priority later moves. Grafana gets updates on
 the same alert UID, including the map link. The immediate fallback may be the
