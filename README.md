@@ -36,7 +36,9 @@ Recipients use the selected provider's app, not a separate OpenDistress app.
 2. **Open the watch app and hold deliberately.** On five-button Garmin models,
    hold the upper-right `START`/`ENTER` button for 2.5 seconds; on Wear OS, hold
    the on-screen control.
-   The ring fills from the bottom in both directions. Releasing early cancels.
+   The amber ring fills from the bottom in both directions, with light ticks
+   that speed up as it closes and one longer buzz when the TEST is stored.
+   Releasing early cancels.
    This is not a global hardware shortcut; Garmin touchscreen taps do not send.
    Learn the buttons first with idle-only **PRACTICE ONLY** on Garmin: a short
    press, a full hold, then a hold without looking. This exercise sends nothing.
@@ -81,7 +83,7 @@ physically verified device.
    webhook or keys through the supported phone setup route; the direct beta
    does not require credentials to be hardcoded into the app.
 3. Review the briefing, then save and sync. A connected watch is not necessarily
-   synced: confirm `READY TEST` on Garmin and check the matching configuration
+   synced: confirm `TEST MODE · Ready` on Garmin and check the matching configuration
    confirmation in Android Setup when available. For Wear OS, wait for its
    matching setup acknowledgement. Saved, sent and confirmed are separate states.
 4. Warn every intended recipient, agree what the test means, and follow the

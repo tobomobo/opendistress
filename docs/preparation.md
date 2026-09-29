@@ -78,9 +78,12 @@ In the idle Garmin OpenDistress app, hold MENU or tap the screen to open
 **PRACTICE ONLY**. Complete a short press, a full 2.5-second hold, then repeat
 without looking. Nothing is sent, no GPS is requested and no readiness evidence
 is recorded. BACK exits; the next launch does not silently remain in practice.
-Active/pending work blocks practice. Optional light input and simulated double
-acceptance cues use the same saved watch-haptic setting as real operation.
-Learn them on the actual watch; software cannot guarantee inaudible vibration.
+Active/pending work blocks practice. Practice plays the real cue order with the
+same saved watch-haptic setting: a press pulse, three lighter ticks that come
+faster as the ring closes, one longer buzz when the hold completes (in the real
+app: TEST stored, sending started), then a clearly simulated double acceptance
+pulse. Release after the longer buzz. Learn the rhythm on the actual watch;
+software cannot guarantee that vibration is perceptible or inaudible.
 
 Also rehearse getting into the app from the normal watch face and during a safe
 activity, with no alert active. On fēnix 8, Garmin documents **Watch Settings →

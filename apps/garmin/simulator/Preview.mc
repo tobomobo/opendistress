@@ -49,18 +49,29 @@ class PreviewView extends OpenDistressView {
     }
     // UP cycles fixtures without requiring a real alert or an automation long press.
     function nextFixture() {
-        _scenario = (_scenario + 1) % 8;
+        _scenario = (_scenario + 1) % 10;
         _retryTimer.stop(); _statusTimer.stop();
         _pressedButton = null; _acceptedActionFeedback = null;
         _directResult = null; _acceptedStatusVisible = false; _armingAlert = false;
         _resetConfirmation = false; _resetHolding = false;
+        _queue = []; _inFlight = false; _retryScheduled = false; _resetDone = false;
+        _signalStored = false;
         _state = "READY — TEST";
         if (_scenario == 1) {
             _armingAlert = true; _armStartedAtMs = System.getTimer() - 1250;
         } else if (_scenario == 2) {
-            _state = "SENDING TEST"; _detail = "Waiting for provider\nKeep app open";
+            // Synthetic stored TEST with a simulated request in flight; nothing is sent.
+            _queue = [{"v" => 1, "event_id" => "PREVIEW"}]; _inFlight = true;
+            _signalStored = true; _signalStoredAtMs = System.getTimer();
+            _state = "SENDING TEST"; _detail = "Phone reported connected; route not forced";
         } else if (_scenario == 7) {
             openPractice();
+        } else if (_scenario == 8) {
+            _queue = [{"v" => 1, "event_id" => "PREVIEW"}];
+            _retryScheduled = true; _nextRetryAtMs = System.getTimer() + 30000;
+            _state = "TEST PENDING"; _detail = "No phone link; TEST not sent yet";
+        } else if (_scenario == 9) {
+            _resetDone = true; _resetDoneAtMs = System.getTimer() + 600000;
         } else if (_scenario >= 3) {
             showAcceptedFixture();
             _acceptedStatusVisible = _scenario >= 4;
@@ -69,6 +80,7 @@ class PreviewView extends OpenDistressView {
             _statusInteractionAtMs = System.getTimer();
         }
         WatchUi.requestUpdate();
+        scheduleAmbient();
         return true;
     }
 }

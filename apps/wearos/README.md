@@ -83,7 +83,7 @@ RSA-wrapped Wear OS channel: Garmin Connect remains trusted with the plaintext
 TEST setup, matching the existing Connect IQ settings privacy boundary.
 Garmin's acknowledged Android issue `CIQQA-4631` can currently drop the reverse
 watch-to-phone message on Garmin Connect 5.27.3. The screen therefore tells the
-owner to verify `READY TEST` on the watch after a successful phone-to-watch send;
+owner to verify `TEST MODE · Ready` on the watch after a successful phone-to-watch send;
 ACK-backed readiness and phone-assisted location remain best effort until a
 physical retest proves the Garmin fix.
 

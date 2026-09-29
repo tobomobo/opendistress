@@ -106,9 +106,20 @@
   both the configuration ACK and phone-location request, so neither is a
   release claim without a physical version-specific retest.
   When no initial location exists, the foreground cover retries the snapshot
-  and continuous request every 10 seconds for five minutes and then every
-  minute. This improves recovery from a late cache or transient API failure but
-  cannot manufacture an indoor fix when Garmin exposes no usable position.
+  every 10 seconds for five minutes and then every minute. It re-issues the
+  continuous request only after a failed start or a minute without callbacks,
+  so an acquisition that is still converging is not restarted. This improves
+  recovery from a late cache or transient API failure but cannot manufacture an
+  indoor fix when Garmin exposes no usable position.
+- A fix that Garmin reports never left the watch (no phone link or full BLE
+  queue) is kept and retried with backoff while the app stays open. It reaches
+  recipients only after the phone link returns, with its real capture age.
+- Connect IQ apps cannot change native activity, workout or interval menus.
+  The current fēnix 8 manual places the Structured Repeats editor under
+  Training → Intervals → Structured Repeats → lower-left → **More → Edit
+  Workout**; an earlier edition used Quick Workout → Intervals → Structured
+  Repeats → upper-right → Edit Workout. Staged firmware rollouts can leave two
+  watches on different menus, so compare firmware before suspecting an app.
 - Foreground cadence stops at local expiry or a verified signed relay status of
   `resolved`/`expired`. Polling occurs only while the client is foregrounded, so
   lifecycle and network delays still postpone that stop.
