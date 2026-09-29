@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 import json
+import re
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -231,7 +232,8 @@ class GarminContractTests(unittest.TestCase):
         ]
 
         self.assertIn('_queue[0]["v"] == 1', failure)
-        self.assertIn('setState("TEST PENDING", detail)', failure)
+        self.assertIn('setState("TEST PENDING", unsent && phoneLinkWarning() != null', failure)
+        self.assertIn('"No phone link; TEST not sent yet" : detail', failure)
         self.assertIn('testPending ? "TEST CONFIG ERROR"', failure)
 
     def test_monkey_c_self_test_embeds_v1_and_v2_public_vectors(self):
@@ -379,6 +381,16 @@ class GarminContractTests(unittest.TestCase):
             : source.index("function cancelAlertArm()")
         ]
 
+        presentation = (GARMIN / "source/WatchPresentation.mc").read_text()
+        ring = presentation[
+            presentation.index("function holdRing(")
+            : presentation.index("function readyRing(")
+        ]
+        arcs = presentation[
+            presentation.index("function arcPair(")
+            : presentation.index("function ringPoint(")
+        ]
+
         self.assertIn("ALERT_ARM_FRAME_MS = 50", source)
         self.assertIn("drawAlertArmProgress(dc);", update)
         elapsed = source[
@@ -386,12 +398,20 @@ class GarminContractTests(unittest.TestCase):
             : source.index("function drawAlertArmProgress(dc)")
         ]
         self.assertIn("System.getTimer()", elapsed)
-        self.assertIn("ALERT_ARM_START_DEGREES = 270", source)
-        self.assertIn("Graphics.ARC_CLOCKWISE", progress)
-        self.assertIn("Graphics.ARC_COUNTER_CLOCKWISE", progress)
-        self.assertEqual(progress.count("dc.drawArc("), 2)
+        self.assertIn("WatchPresentation.holdRing(dc, elapsed, ALERT_ARM_HOLD_MS, false)", progress)
+        # Both arcs start at six o'clock and the sweep is elapsed time only.
+        self.assertIn("Graphics.ARC_CLOCKWISE, 270, (630 - sweep) % 360", arcs)
+        self.assertIn("Graphics.ARC_COUNTER_CLOCKWISE, 270, (270 + sweep) % 360", arcs)
+        self.assertEqual(arcs.count("dc.drawArc("), 2)
+        self.assertIn("var sweep = elapsed * 180 / duration;", ring)
+        self.assertIn("if (elapsed > duration) { elapsed = duration; }", ring)
+        self.assertNotIn("flare", ring[: ring.index("var sweep")])
         self.assertIn("elapsed >= ALERT_ARM_HOLD_MS", advance)
         self.assertIn("commitArmedAlert();", advance)
+        # Beat ticks accompany the hold but never decide it.
+        self.assertIn("HOLD_BEAT_PERCENT = [40, 68, 88]", presentation)
+        self.assertIn("WatchFeedback.tick();", advance)
+        self.assertLess(advance.index("commitArmedAlert();"), advance.index("WatchFeedback.tick();"))
 
     def test_test_mode_select_and_short_press_do_not_trigger(self):
         source = (GARMIN / "source/OpenDistressApp.mc").read_text()
@@ -1033,9 +1053,89 @@ class GarminContractTests(unittest.TestCase):
         source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         live = source[source.index("function activateLive()") : source.index("function captureLocations()")]
 
+        test = source[source.index("function activateTest()") : source.index("function activateLive()")]
+        feedback = (GARMIN / "source/WatchFeedback.mc").read_text()
+
         self.assertLess(live.index("!persistState([event], active)"), live.index("confirmDurableTrigger();"))
         self.assertLess(live.index("confirmDurableTrigger();"), live.index("sendPending();"))
-        self.assertIn("Attention.vibrate([new Attention.VibeProfile(25, 120)])", live)
+        self.assertIn("WatchFeedback.committed();", live)
+        self.assertIn("function committed() { vibrate([new Attention.VibeProfile(25, 120)]); }", feedback)
+        # TEST now gives the same stored-signal cue, still only after persistence.
+        self.assertLess(test.index("!persistState([event], _activeIncident)"), test.index("confirmDurableTrigger();"))
+        self.assertLess(test.index("confirmDurableTrigger();"), test.index("sendPending();"))
+
+    def test_hold_and_reset_haptics_stay_quiet_and_distinct(self):
+        feedback = (GARMIN / "source/WatchFeedback.mc").read_text()
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        reset = source[source.index("function resetAcceptedTest()") : source.index("function menuAction()")]
+        reset_hold = source[source.index("function advanceResetHold()") : source.index("function advanceAlertArm()")]
+        profiles = [
+            (int(duty), int(length))
+            for duty, length in re.findall(r"VibeProfile\((\d+), (\d+)\)", feedback)
+        ]
+
+        self.assertTrue(profiles)
+        self.assertTrue(all(duty <= 25 for duty, _ in profiles), profiles)
+        self.assertIn("function tick() { vibrate([new Attention.VibeProfile(12, 35)]); }", feedback)
+        self.assertIn("DirectAlertSettings.hapticsEnabled()", feedback)
+        self.assertIn("WatchFeedback.tick();", reset_hold)
+        self.assertLess(reset.index("persistStateWithDirect([], _activeIncident, null)"),
+                        reset.index("WatchFeedback.committed();"))
+        self.assertIn("_resetDone = true;", reset)
+        # The confirmation must keep saying that provider alarms are not cancelled.
+        self.assertIn('Alarms may continue:\\nacknowledge in app.', source)
+        self.assertIn('"Provider alarms", "may continue"', source)
+        practice = (GARMIN / "source/WatchPractice.mc").read_text()
+        self.assertLess(practice.index("WatchFeedback.committed();"), practice.index("_acceptCuePending = true;"))
+        self.assertIn("SIMULATED_ACCEPT_MS = 1500", practice)
+
+    def test_pending_test_keeps_retrying_and_short_start_retries_now(self):
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        failure = source[source.index("function handleFailureWith(") : source.index("function retryPending()")]
+        delegate = source[source.index("class OpenDistressDelegate") : source.index("class HoldDecisionProbe")]
+        unsent = source[source.index("function isUnsentTransport(") : source.index("function retryPending()")]
+
+        self.assertIn("RETRY_SLOW_DELAYS_MS = [15000, 30000, 60000]", source)
+        self.assertIn("MAX_AMBIGUOUS_RETRIES = 5", source)
+        self.assertIn("unsent || !testPending || !hasDirectAlertConfiguration()", failure)
+        self.assertIn("_retryTimer.start(method(:retryPending), delay, false)", failure)
+        self.assertIn("Communications.BLE_CONNECTION_UNAVAILABLE", unsent)
+        self.assertIn("Communications.BLE_QUEUE_FULL", unsent)
+        self.assertNotIn("BLE_HOST_TIMEOUT", unsent)
+        self.assertIn("_startWasPending = _view.canRetryPendingNow();", delegate)
+        self.assertLess(delegate.index("_startWasPending = _view.canRetryPendingNow();"),
+                        delegate.index("return _view.startActionPressed();"))
+        self.assertIn("return _view.retryPendingNow();", delegate)
+        retry_now = source[source.index("function retryPendingNow()") : source.index("function retryCountdownSeconds()")]
+        self.assertIn("sendPending();", retry_now)
+        self.assertNotIn("newTestEvent", retry_now)
+        self.assertIn("function shortStartRetriesOnlyAnAlreadyPendingEvent(logger)", source)
+        self.assertIn("function pendingRetriesBackOffAndStopOnlyForAmbiguousDirectResults(logger)", source)
+
+    def test_offline_gps_fix_is_kept_and_callbacks_respect_backoff(self):
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        direct_position = source[source.index("function onDirectPosition(") : source.index("function shouldQueueCadenceLocation(")]
+        offline = source[
+            source.index("function scheduleDirectLocationOfflineRetry()")
+            : source.index("function startDirectLocationRetryTimer(")
+        ]
+        start = source[
+            source.index("function startDirectContinuousLocations()")
+            : source.index("function scheduleDirectLocationExpiry(")
+        ]
+
+        self.assertIn("if (!_inFlight && !_directRetryScheduled) {", direct_position)
+        production = source[: source.index("(:test)")]
+        self.assertEqual(production.count("scheduleDirectLocationOfflineRetry();"), 2)
+        self.assertNotIn("_retryCount", offline)
+        self.assertNotIn("rejectDirectLocationProvider", offline)
+        self.assertIn("OFFLINE_LOCATION_RETRY_MS = [10000, 20000, 30000, 60000]", source)
+        self.assertIn("LOCATION_REENABLE_AFTER_MS = 60000", source)
+        self.assertIn("nowMs - lastSign < LOCATION_REENABLE_AFTER_MS", start)
+        self.assertIn("enableBestContinuousLocation();", start)
+        self.assertIn("_locationEventsActive = false;", source[source.index("function stopLocations()"):source.index("function expireLocations()")])
+        self.assertIn("function offlineFixWaitsForBackoffWithoutSpendingRouteBudget(logger)", source)
+        self.assertIn("function continuousGpsIsReissuedOnlyWhenSilentOrStopped(logger)", source)
 
     def test_restart_preserves_active_live_semantics_and_retry_timer_cannot_go_stale(self):
         source = (GARMIN / "source/OpenDistressApp.mc").read_text()

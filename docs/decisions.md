@@ -388,3 +388,41 @@ process, fix, or transport is a no-op for the existing watch-owned alert and GPS
 path. An always-on Android location service and background-location permission
 are deferred until physical evidence justifies their battery and Play-policy
 cost.
+
+## 2026-09-29 — Make the deliberate hold legible without looking
+
+The 2.5-second START hold was a thin white ring with a single press cue. A
+wearer rehearsing without looking had no way to count the hold, and in the real
+TEST flow nothing marked the moment the event was stored: Practice played the
+provider double pulse at 2.5 seconds, while the real double pulse arrives only
+after network acceptance. The hold now uses the brand amber ring, three
+accelerating beats (40/68/88%) that flare the glow and emit one light haptic
+tick each, and the same single longer "stored" cue after persistence that LIVE
+already used. Practice mirrors that order and simulates acceptance 1.5 seconds
+later. Timing remains elapsed-time only; beats never change the threshold. All
+profiles stay at or below a 25% duty cycle. Reset uses the same interaction in
+warm white and ends on an explicit TEST RESET confirmation that repeats that
+provider alarms may continue. Perceptibility and quietness remain physical
+gates.
+
+## 2026-09-29 — Retry a stored TEST while the app is open
+
+A stored TEST previously stopped after two automatic retries, and the
+"top button retries" copy no longer matched the hold-gated START handler. A
+short phone outage could therefore leave the alert pending until the app was
+reopened. Retries now continue at 5, 5, 15, 30 and then 60 seconds while the
+app is foreground, with a visible countdown and a short START press to resend
+the same immutable event. A request Garmin reports as never sent (no phone link
+or full BLE queue) may repeat until expiry because it cannot duplicate a
+provider alert; an ambiguous direct-provider result stops after five automatic
+retries because Pushover has no idempotency key. Relay events stay repeatable
+because the relay deduplicates by event ID.
+
+The same distinction now applies to post-acceptance GPS. Position callbacks had
+bypassed the retry timer, so losing the phone for a few seconds spent the
+per-route budget and recorded an undelivered fix as the last one, silencing a
+stationary wearer. Never-sent fixes now wait with backoff without spending the
+budget, and callbacks respect the scheduled retry. Continuous positioning is
+re-requested only after a failed start or a silent minute instead of every 10
+seconds, so a converging acquisition is not restarted.
+

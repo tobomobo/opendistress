@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.Math;
 import Toybox.System;
 import Toybox.Time;
 import Toybox.Time.Gregorian;
@@ -8,20 +9,44 @@ import Toybox.WatchUi;
 
 // Presentation only: no provider, storage, trigger, or tracking authority.
 module WatchPresentation {
+    // Brand palette (docs/branding.md) on a black AMOLED background. The 1-bit
+    // compact display ignores these and keeps white-only strokes.
+    const AMBER = 0xF5A623;
+    const AMBER_SOFT = 0x8F5F12;
+    const AMBER_DIM = 0x3D2A08;
+    const WARM_WHITE = 0xF4F0E6;
+    const TRACK = 0x2E2E2E;
+    const RESET_GLOW = 0x3C3A36;
+    const ERROR_RED = 0xC8323C;
+    // Hold beats as a percentage of the hold. They accelerate towards the
+    // threshold and coincide with WatchFeedback.tick(); the press is beat zero.
+    const HOLD_BEAT_PERCENT = [40, 68, 88];
+    const BEAT_FLARE_MS = 260;
+    const SIGNAL_ORBIT_MS = 1400;
+
     // One native line per slot: TextArea can clip glyphs at a percentage-height
     // boundary even when it has selected a nominally fitting font.
     function line(dc, value, centerY, prominent) {
+        lineColor(dc, value, centerY, prominent,
+            prominent ? Graphics.COLOR_WHITE : Graphics.COLOR_LT_GRAY);
+    }
+
+    function lineColor(dc, value, centerY, prominent, color) {
+        lineFit(dc, value, centerY, prominent, color, 0.72);
+    }
+
+    // `fraction` narrows the slot where a line sits close to the ring.
+    function lineFit(dc, value, centerY, prominent, color, fraction) {
         var fonts = prominent ? [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM,
             Graphics.FONT_SMALL, Graphics.FONT_TINY, Graphics.FONT_XTINY]
             : [Graphics.FONT_TINY, Graphics.FONT_XTINY];
         var font = fonts[fonts.size() - 1];
         for (var i = 0; i < fonts.size(); i += 1) {
-            if (dc.getTextWidthInPixels(value, fonts[i]) <= dc.getWidth() * 0.72) {
+            if (dc.getTextWidthInPixels(value, fonts[i]) <= dc.getWidth() * fraction) {
                 font = fonts[i]; break;
             }
         }
-        dc.setColor(prominent ? Graphics.COLOR_WHITE : Graphics.COLOR_LT_GRAY,
-            Graphics.COLOR_BLACK);
+        dc.setColor(isCompact(dc) ? Graphics.COLOR_WHITE : color, Graphics.COLOR_BLACK);
         dc.drawText(dc.getWidth() / 2, dc.getHeight() * centerY / 100,
             font, value, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
     }
@@ -48,19 +73,152 @@ module WatchPresentation {
         area.draw(dc);
     }
     function progress(dc, elapsed, duration) {
+        holdRing(dc, elapsed, duration, false);
+    }
+
+    // [centre x, centre y, radius, core pen]. The ring sits just inside the
+    // physical-key indicators; compact 1-bit keeps its verified outer edge.
+    function ringGeometry(dc) {
         var w = dc.getWidth(); var h = dc.getHeight();
         var size = w < h ? w : h;
-        var sweep = elapsed < 0 ? 0 : (elapsed >= duration ? 180 : elapsed * 180 / duration);
-        var compact = w == h && w < 220;
-        var x = w * 0.5; var y = h * 0.5;
-        var r = size * (compact ? 0.48 : 0.45);
-        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_BLACK); dc.setPenWidth(3);
+        if (isCompact(dc)) { return [w / 2, h / 2, size * 0.48, 3]; }
+        var pen = size / 34;
+        if (pen < 5) { pen = 5; }
+        return [w / 2, h / 2, size / 2 - size / 24, pen];
+    }
+
+    function smooth(dc, enabled) {
+        if (dc has :setAntiAlias) { dc.setAntiAlias(enabled); }
+    }
+
+    // Beats reached so far; a new beat is the cue for one haptic tick.
+    function holdBeat(elapsed, duration) {
+        var beat = 0;
+        for (var i = 0; i < HOLD_BEAT_PERCENT.size(); i += 1) {
+            if (elapsed >= 0 && elapsed * 100 >= duration * HOLD_BEAT_PERCENT[i]) { beat = i + 1; }
+        }
+        return beat;
+    }
+
+    // 1.0 at the press and at every beat, decaying to 0 within BEAT_FLARE_MS.
+    function holdFlare(elapsed, duration) {
+        if (elapsed < 0 || duration <= 0) { return 0.0; }
+        var last = 0;
+        for (var i = 0; i < HOLD_BEAT_PERCENT.size(); i += 1) {
+            var at = duration * HOLD_BEAT_PERCENT[i] / 100;
+            if (elapsed >= at) { last = at; }
+        }
+        var since = elapsed - last;
+        return since >= BEAT_FLARE_MS ? 0.0 : 1.0 - since.toFloat() / BEAT_FLARE_MS;
+    }
+
+    function arcPair(dc, x, y, r, sweep) {
+        dc.drawArc(x, y, r, Graphics.ARC_CLOCKWISE, 270, (630 - sweep) % 360);
+        dc.drawArc(x, y, r, Graphics.ARC_COUNTER_CLOCKWISE, 270, (270 + sweep) % 360);
+    }
+
+    function ringPoint(x, y, r, degrees) {
+        var radians = Math.toRadians(degrees);
+        return [x + r * Math.cos(radians), y - r * Math.sin(radians)];
+    }
+
+    // Deliberate-hold ring. It closes from six o'clock in both directions over
+    // real elapsed time only; the beat flare is decoration and never timing.
+    // The reset variant is warm white so it cannot be mistaken for sending.
+    function holdRing(dc, elapsed, duration, reset) {
+        var g = ringGeometry(dc);
+        var x = g[0]; var y = g[1]; var r = g[2]; var pen = g[3];
+        if (elapsed < 0) { elapsed = 0; }
+        if (elapsed > duration) { elapsed = duration; }
+        var sweep = elapsed * 180 / duration;
+        var mono = isCompact(dc);
+        var flare = holdFlare(elapsed, duration);
+        var core = mono ? Graphics.COLOR_WHITE : (reset ? WARM_WHITE : AMBER);
+        smooth(dc, true);
+        // The whole path lights up while held, so the goal is visible at once.
+        dc.setColor(mono ? Graphics.COLOR_DK_GRAY : (reset ? RESET_GLOW : AMBER_DIM),
+            Graphics.COLOR_BLACK);
+        dc.setPenWidth(mono ? 3 : pen / 3 + 1);
         dc.drawCircle(x, y, r);
         if (sweep > 0) {
-            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
-            dc.drawArc(x, y, r, Graphics.ARC_CLOCKWISE, 270, (630 - sweep) % 360);
-            dc.drawArc(x, y, r, Graphics.ARC_COUNTER_CLOCKWISE, 270, (270 + sweep) % 360);
+            if (!mono) {
+                dc.setColor(reset ? RESET_GLOW : (flare > 0.45 ? AMBER_SOFT : AMBER_DIM),
+                    Graphics.COLOR_BLACK);
+                dc.setPenWidth(pen + (pen * (0.8 + flare)).toNumber());
+                arcPair(dc, x, y, r, sweep);
+            }
+            dc.setColor(core, Graphics.COLOR_BLACK);
+            dc.setPenWidth(mono ? 3 + (2 * flare).toNumber() : pen);
+            arcPair(dc, x, y, r, sweep);
+            var tipRadius = mono ? 3 + 2 * flare : pen * (0.55 + 0.45 * flare);
+            var tips = [ringPoint(x, y, r, 270 - sweep), ringPoint(x, y, r, 270 + sweep)];
+            for (var i = 0; i < tips.size(); i += 1) {
+                if (!mono && flare > 0) {
+                    // A ping leaves each tip on every beat, in time with the tick.
+                    dc.setColor(reset ? WARM_WHITE : AMBER_SOFT, Graphics.COLOR_BLACK);
+                    dc.setPenWidth(2);
+                    dc.drawCircle(tips[i][0], tips[i][1], pen * (0.9 + 1.4 * (1.0 - flare)));
+                }
+                dc.setColor(mono ? Graphics.COLOR_WHITE : WARM_WHITE, Graphics.COLOR_BLACK);
+                dc.fillCircle(tips[i][0], tips[i][1], tipRadius);
+            }
         }
+        smooth(dc, false);
+        dc.setPenWidth(1);
+    }
+
+    // Idle mark: a quiet open ring with the amber signal point at six o'clock.
+    function readyRing(dc) {
+        if (isCompact(dc)) { return; }
+        var g = ringGeometry(dc);
+        smooth(dc, true);
+        dc.setColor(TRACK, Graphics.COLOR_BLACK);
+        dc.setPenWidth(2);
+        dc.drawCircle(g[0], g[1], g[2]);
+        dc.setColor(AMBER, Graphics.COLOR_BLACK);
+        dc.fillCircle(g[0], g[1] + g[2], g[3] * 0.6);
+        smooth(dc, false);
+        dc.setPenWidth(1);
+    }
+
+    // Stored-signal ring after the hold. `burst` (1 → 0) flashes the closed
+    // ring once; `active` orbits a light while a request or Wi-Fi check runs.
+    // It is local request activity, never provider or recipient evidence.
+    function signalRing(dc, burst, active, blocked) {
+        if (isCompact(dc)) { return; }
+        var g = ringGeometry(dc);
+        var x = g[0]; var y = g[1]; var r = g[2]; var pen = g[3];
+        smooth(dc, true);
+        if (blocked) {
+            dc.setColor(ERROR_RED, Graphics.COLOR_BLACK);
+            dc.setPenWidth(pen / 2);
+            dc.drawCircle(x, y, r);
+            smooth(dc, false);
+            dc.setPenWidth(1);
+            return;
+        }
+        if (burst > 0) {
+            dc.setColor(AMBER_SOFT, Graphics.COLOR_BLACK);
+            dc.setPenWidth(pen + (pen * 1.8 * burst).toNumber());
+            dc.drawCircle(x, y, r);
+        }
+        dc.setColor(burst > 0.35 ? WARM_WHITE : AMBER_DIM, Graphics.COLOR_BLACK);
+        dc.setPenWidth(burst > 0.35 ? pen : pen / 2 + 1);
+        dc.drawCircle(x, y, r);
+        if (active && burst <= 0.35) {
+            var head = 90 - (System.getTimer() % SIGNAL_ORBIT_MS) * 360 / SIGNAL_ORBIT_MS;
+            var tail = head + 54;
+            if (head < 0) { head += 360; }
+            if (tail >= 360) { tail -= 360; }
+            if (tail < 0) { tail += 360; }
+            dc.setColor(AMBER, Graphics.COLOR_BLACK);
+            dc.setPenWidth(pen);
+            dc.drawArc(x, y, r, Graphics.ARC_CLOCKWISE, tail, head);
+            var point = ringPoint(x, y, r, head);
+            dc.setColor(WARM_WHITE, Graphics.COLOR_BLACK);
+            dc.fillCircle(point[0], point[1], pen * 0.6);
+        }
+        smooth(dc, false);
         dc.setPenWidth(1);
     }
     // Angles are projected from the SDK simulator's physical key centres.

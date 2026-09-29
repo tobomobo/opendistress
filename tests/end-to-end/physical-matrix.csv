@@ -22,6 +22,11 @@ phase,gate,route_or_condition,target,status,completed,last_run_utc,evidence_refe
 1,100-attempt matrix,relay timeout after durable commit,10,NOT_RUN,0,,,
 1,100-attempt matrix,provider transient or ambiguous error,10,NOT_RUN,0,,,
 1,100-attempt matrix,provider definite rejection then corrected retry,10,NOT_RUN,0,,,
+1,hold cues,fēnix 8 47mm press pulse three accelerating beat ticks and one longer stored cue are perceptible on the wrist and not audible to a nearby person in a quiet room,repeated,NOT_RUN,0,,,25% maximum duty cycle chosen in source; perceptibility and noise are physical facts
+1,blind hold,wearer completes the 2.5-second START hold without looking by counting ticks and releasing after the longer cue; early release still cancels,10,NOT_RUN,0,,,
+1,pending TEST retry,phone Bluetooth off during hold; watch shows retry countdown; restoring Bluetooth or short START delivers the same TEST once to each route,10,NOT_RUN,0,,,Pushover has no idempotency key; ambiguous results can still duplicate
+1,offline GPS retry,after acceptance phone Bluetooth off for several minutes while stationary; on reconnect the retained fix reaches every accepted route with its real age,10,NOT_RUN,0,,,
+1,TEST reset confirmation,reset hold ends on TEST RESET with watch GPS stopped and provider alarm warning; alarms continue until acknowledged in the provider app,repeated,NOT_RUN,0,,,
 3,deliberate activation,app list,200,NOT_RUN,0,,,
 3,deliberate activation,glance,200,NOT_RUN,0,,,
 3,deliberate activation,stock or Face It complication,200,NOT_RUN,0,,,

@@ -4,12 +4,10 @@ import Toybox.Application;
 import Toybox.Application.Properties;
 import Toybox.Application.Storage;
 import Toybox.Activity;
-import Toybox.Attention;
 import Toybox.Communications;
 import Toybox.Complications;
 import Toybox.Graphics;
 import Toybox.Lang;
-import Toybox.Math;
 import Toybox.PersistedContent;
 import Toybox.Position;
 import Toybox.System;
@@ -148,13 +146,30 @@ class OpenDistressView extends WatchUi.View {
     const MAX_INITIAL_RETRIES = 2;
     const ALERT_ARM_HOLD_MS = 2500;
     const ALERT_ARM_FRAME_MS = 50;
-    const ALERT_ARM_START_DEGREES = 270;
     const ACCEPTED_ACTION_FEEDBACK_MS = 180;
     const COVER_REFRESH_MS = 60000;
     const LOCATION_ACQUIRE_REFRESH_MS = 10000;
     const LOCATION_ACQUIRE_FAST_SECONDS = 300;
+    // Re-request continuous positioning only after this long without a
+    // callback, so a working acquisition is never restarted.
+    const LOCATION_REENABLE_AFTER_MS = 60000;
     const RETRY_DELAY_MS = 5000;
+    // After the fast retries, keep retrying while the app is open. Only a
+    // request Garmin reports as never sent may repeat until the event expires;
+    // an ambiguous direct-provider result stops at MAX_AMBIGUOUS_RETRIES
+    // because Pushover has no idempotency key.
+    const RETRY_SLOW_DELAYS_MS = [15000, 30000, 60000];
+    const MAX_AMBIGUOUS_RETRIES = 5;
+    const OFFLINE_LOCATION_RETRY_MS = [10000, 20000, 30000, 60000];
     const WIFI_CHECK_TIMEOUT_MS = 10000;
+    // A Grafana alert still pending after Pushover accepted is retried on the
+    // cover refresh; Grafana groups repeats on the same alert_uid.
+    const GRAFANA_ALERT_RETRY_MS = 60000;
+    const MAX_GRAFANA_ALERT_RETRIES = 10;
+    const READY_REFRESH_MS = 15000;
+    const SIGNAL_FRAME_MS = 80;
+    const SIGNAL_BURST_MS = 450;
+    const RESET_DONE_MS = 3500;
     const PROVIDER_REFERENCE_ALPHABET =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
     const MATERIAL_MOVE_E7 = 5000;
@@ -260,6 +275,23 @@ class OpenDistressView extends WatchUi.View {
     var _resetHolding = false;
     var _resetStartedAtMs = 0;
     var _statusInteractionAtMs = 0;
+    var _armBeat = 0;
+    var _resetBeat = 0;
+    var _signalStored = false;
+    var _signalStoredAtMs = 0;
+    var _resetDone = false;
+    var _resetDoneAtMs = 0;
+    var _ambientPeriodMs = 0;
+    var _retryScheduled = false;
+    var _nextRetryAtMs = 0;
+    var _wifiFallbackUnsent = false;
+    var _directRetryScheduled = false;
+    var _offlineRetryCount = 0;
+    var _locationEventsActive = false;
+    var _lastLocationEnableMs = 0;
+    var _lastPositionCallbackMs = 0;
+    var _grafanaAlertRetries = 0;
+    var _grafanaAlertAttemptMs = 0;
 
     function initialize() {
         View.initialize();
@@ -274,6 +306,9 @@ class OpenDistressView extends WatchUi.View {
         _visible = true;
         _directLocationRetryBlocked = false;
         _directGrafanaRetryBlocked = false;
+        _directRetryScheduled = false;
+        _retryScheduled = false;
+        _offlineRetryCount = 0;
         if (_queue.size() > 0) {
             sendPending();
         }
@@ -288,6 +323,7 @@ class OpenDistressView extends WatchUi.View {
             resumeLocations();
         }
         scheduleIdleCoverRefresh();
+        scheduleAmbient();
     }
 
     function onHide() {
@@ -297,13 +333,137 @@ class OpenDistressView extends WatchUi.View {
         _acceptedStatusVisible = false;
         _acceptedActionFeedback = null;
         _pressedButton = null;
+        _signalStored = false;
+        _resetDone = false;
         cancelAlertArm();
         stopLocations();
         try {
             _retryTimer.stop();
         } catch (error) {
         }
+        _retryScheduled = false;
+        _directRetryScheduled = false;
         _wifiCheckPending = false;
+    }
+
+    // Before acceptance (and outside LIVE) the shared status timer paces the
+    // idle ready refresh, the stored-signal burst and the sending indicator.
+    // An accepted TEST or LIVE incident owns the timer instead; every owner
+    // stops and restarts it, so this never interrupts their schedule.
+    function scheduleAmbient() {
+        if (!_visible || _directResult != null || _activeIncident != null) {
+            return;
+        }
+        var period = ambientPeriodMs();
+        try {
+            _statusTimer.stop();
+        } catch (error) {
+        }
+        _ambientPeriodMs = period;
+        if (period <= 0) {
+            return;
+        }
+        try {
+            _statusTimer.start(method(:advanceAmbient), period, true);
+        } catch (error) {
+            // A static screen is safer than failing the action it describes.
+            _ambientPeriodMs = 0;
+        }
+    }
+
+    function ambientPeriodMs() {
+        if (_queue.size() > 0) {
+            if (_inFlight || _wifiCheckPending || signalBurst() > 0) {
+                return SIGNAL_FRAME_MS;
+            }
+            return _retryScheduled ? 1000 : 0;
+        }
+        return _resetDone ? RESET_DONE_MS : READY_REFRESH_MS;
+    }
+
+    function advanceAmbient() {
+        if (!_visible || _directResult != null || _activeIncident != null) {
+            try {
+                _statusTimer.stop();
+            } catch (error) {
+            }
+            _ambientPeriodMs = 0;
+            return;
+        }
+        if (_resetDone && System.getTimer() - _resetDoneAtMs >= RESET_DONE_MS - 50) {
+            _resetDone = false;
+        }
+        WatchUi.requestUpdate();
+        if (ambientPeriodMs() != _ambientPeriodMs) {
+            scheduleAmbient();
+        }
+    }
+
+    // 1.0 immediately after the TEST is stored, decaying to 0.
+    function signalBurst() {
+        if (!_signalStored) {
+            return 0.0;
+        }
+        var elapsed = System.getTimer() - _signalStoredAtMs;
+        if (elapsed < 0 || elapsed >= SIGNAL_BURST_MS) {
+            _signalStored = false;
+            return 0.0;
+        }
+        return 1.0 - elapsed.toFloat() / SIGNAL_BURST_MS;
+    }
+
+    // A TEST that is stored but not yet accepted by any provider.
+    function isTestSignalPhase() {
+        return _queue.size() > 0
+            && _queue[0]["v"] == 1
+            && _activeIncident == null
+            && _directResult == null;
+    }
+
+    function canRetryPendingNow() {
+        return _visible
+            && _queue.size() > 0
+            && !_inFlight
+            && !_wifiCheckPending
+            && !_armingAlert
+            && _directResult == null;
+    }
+
+    // Short START on a pending event resends the same immutable event now.
+    function retryPendingNow() {
+        if (!canRetryPendingNow()) {
+            return true;
+        }
+        _retryCount = 0;
+        _wifiFallbackEventId = null;
+        WatchFeedback.input();
+        sendPending();
+        return true;
+    }
+
+    function retryCountdownSeconds() {
+        if (!_retryScheduled || _inFlight || _wifiCheckPending) {
+            return 0;
+        }
+        var remaining = _nextRetryAtMs - System.getTimer();
+        return remaining <= 0 ? 0 : (remaining + 999) / 1000;
+    }
+
+    // Diagnostic only: Garmin chooses the actual route for each request.
+    function phoneLinkWarning() {
+        try {
+            var settings = System.getDeviceSettings();
+            if (settings.phoneConnected) {
+                return null;
+            }
+            var wifi = settings.connectionInfo[:wifi];
+            if (wifi != null && wifi.state == System.CONNECTION_STATE_CONNECTED) {
+                return null;
+            }
+            return "Phone not connected";
+        } catch (error) {
+            return null;
+        }
     }
 
     function shouldShowCover() {
@@ -364,8 +524,24 @@ class OpenDistressView extends WatchUi.View {
             _acceptedStatusVisible = false; _resetConfirmation = false;
         }
         WatchUi.requestUpdate();
+        retryPendingGrafanaAlert();
         pollDirectFallbackLocation();
         scheduleIdleCoverRefresh();
+    }
+
+    function retryPendingGrafanaAlert() {
+        if (_directResult == null
+            || _directResult["grafana_alert_pending"] != true
+            || !_directGrafanaRetryBlocked
+            || _inFlight
+            || _grafanaAlertRetries >= MAX_GRAFANA_ALERT_RETRIES
+            || System.getTimer() - _grafanaAlertAttemptMs < GRAFANA_ALERT_RETRY_MS
+            || !hasDirectGrafanaConfiguration()) {
+            return;
+        }
+        _grafanaAlertRetries += 1;
+        _directGrafanaRetryBlocked = false;
+        sendDirectGrafanaAlert();
     }
 
     function drawClockCover(dc) {
@@ -378,24 +554,34 @@ class OpenDistressView extends WatchUi.View {
 
     function drawAcceptedStatus(dc) {
         if (_resetConfirmation) {
+            var resetElapsed = System.getTimer() - _resetStartedAtMs;
             if (WatchPresentation.isCompact(dc)) {
                 WatchPresentation.compactLine(dc, "RESET?", 16, true);
                 var resetLines = ["Stops watch GPS", "Provider alarms", "may continue",
-                    "Hold START 2.5s", "BACK cancels"];
+                    _resetHolding ? "Keep holding" : "Hold START 2.5s",
+                    _resetHolding ? "Release cancels" : "BACK cancels"];
                 for (var i = 0; i < resetLines.size(); i += 1) {
                     WatchPresentation.compactLine(dc, resetLines[i], 40 + i * 10.5, false);
                 }
             } else {
-            WatchPresentation.text(dc, "RESET TEST?", 15, 14);
-            WatchPresentation.text(dc, "Stops watch GPS\nProvider alarms may continue", 38, 27);
-            WatchPresentation.text(dc, "Hold START 2.5 sec\nBACK cancels", 69, 19);
+                // Title and last line stay narrow: the ring tips pass beside them.
+                WatchPresentation.lineFit(dc, "RESET TEST?", 26, true, Graphics.COLOR_WHITE, 0.6);
+                WatchPresentation.text(dc, "Stops watch GPS\nProvider alarms may continue", 35, 27);
+                WatchPresentation.lineColor(dc, _resetHolding ? "Keep holding" : "Hold START 2.5s",
+                    67, false, WatchPresentation.WARM_WHITE);
+                WatchPresentation.lineFit(dc, _resetHolding ? "Release cancels" : "BACK cancels", 76, false,
+                    Graphics.COLOR_LT_GRAY, 0.55);
             }
-            WatchPresentation.button(dc, "START", "", _resetHolding ? 1.0
+            if (_resetHolding) {
+                WatchPresentation.holdRing(dc, resetElapsed, ALERT_ARM_HOLD_MS, true);
+            } else if (OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "RESET")) {
+                // Closed ring for the brief commit feedback before the reset runs.
+                WatchPresentation.holdRing(dc, ALERT_ARM_HOLD_MS, ALERT_ARM_HOLD_MS, true);
+            }
+            WatchPresentation.button(dc, "START", "", _resetHolding
+                ? 0.4 + 0.6 * WatchPresentation.holdFlare(resetElapsed, ALERT_ARM_HOLD_MS)
                 : (OpenDistressProtocol.stringEquals(_acceptedActionFeedback, "RESET") ? acceptedActionPulse() : 0));
             WatchPresentation.button(dc, "BACK", "", 0);
-            if (_resetHolding) {
-                WatchPresentation.progress(dc, System.getTimer() - _resetStartedAtMs, ALERT_ARM_HOLD_MS);
-            }
             return;
         }
         if (WatchPresentation.isCompact(dc)) {
@@ -577,6 +763,7 @@ class OpenDistressView extends WatchUi.View {
         _detail = "Hold top button 2.5 seconds";
         selectStartupMode();
         WatchUi.requestUpdate();
+        scheduleAmbient();
     }
 
     function hasRelayTestConfiguration() {
@@ -1021,8 +1208,13 @@ class OpenDistressView extends WatchUi.View {
         });
         title.draw(dc);
 
+        var signalPhase = isTestSignalPhase();
+        var retryNow = signalPhase && canRetryPendingNow()
+            && !OpenDistressProtocol.stringEquals(_state, "TEST EXPIRED");
+        // Compact text slots hold two lines; the next step goes in the bottom slot.
+        var hint = signalPhase ? signalHint(compactRound, retryNow) : null;
         var detail = new WatchUi.TextArea({
-            :text => _detail,
+            :text => signalPhase && !compactRound ? signalDetail() : _detail,
             :color => Graphics.COLOR_LT_GRAY,
             :backgroundColor => Graphics.COLOR_BLACK,
             :font => [Graphics.FONT_SMALL, Graphics.FONT_TINY,
@@ -1034,10 +1226,10 @@ class OpenDistressView extends WatchUi.View {
             :height => (height * (compactRound ? 30 : 29)) / 100
         });
         detail.draw(dc);
-        if (_displayEventId != null) {
+        if ((_displayEventId != null && !(signalPhase && !compactRound)) || (compactRound && hint != null)) {
             var tracking = new WatchUi.TextArea({
-                :text => compactDisplayId(_displayEventId),
-                :color => Graphics.COLOR_DK_GRAY,
+                :text => hint != null ? hint : compactDisplayId(_displayEventId),
+                :color => hint != null ? Graphics.COLOR_LT_GRAY : Graphics.COLOR_DK_GRAY,
                 :backgroundColor => Graphics.COLOR_BLACK,
                 :font => [Graphics.FONT_TINY, Graphics.FONT_XTINY],
                 :justification => Graphics.TEXT_JUSTIFY_CENTER,
@@ -1048,6 +1240,15 @@ class OpenDistressView extends WatchUi.View {
             });
             tracking.draw(dc);
         }
+        if (signalPhase) {
+            WatchPresentation.signalRing(dc, signalBurst(), _inFlight || _wifiCheckPending,
+                OpenDistressProtocol.stringEquals(_state, "TEST CONFIG ERROR")
+                    || OpenDistressProtocol.stringEquals(_state, "TEST EXPIRED")
+                    || OpenDistressProtocol.stringEquals(_state, "CONFIGURATION FAILURE"));
+            if (!compactRound && hint != null) {
+                WatchPresentation.lineFit(dc, hint, 79, false, Graphics.COLOR_LT_GRAY, 0.55);
+            }
+        }
         if (_armingAlert) {
             drawAlertArmProgress(dc);
         }
@@ -1057,6 +1258,30 @@ class OpenDistressView extends WatchUi.View {
         if (_queue.size() > 0 && !_inFlight && _queue[0]["v"] == 1) {
             WatchPresentation.button(dc, "MENU", "Hold: clear", 0);
         }
+    }
+
+    // Pending TEST detail plus what happens next. Request activity is not
+    // provider acceptance; the wording stays on the watch side of that fact.
+    function signalDetail() {
+        var seconds = retryCountdownSeconds();
+        if (seconds > 0) {
+            return _detail + "\nRetry in " + seconds.format("%d") + " s";
+        }
+        return _detail;
+    }
+
+    function signalHint(compact, retryNow) {
+        if (_inFlight || _wifiCheckPending) {
+            return "Keep app open";
+        }
+        if (!compact) {
+            return retryNow ? "START: retry now" : null;
+        }
+        var seconds = retryCountdownSeconds();
+        if (seconds > 0) {
+            return "Retry in " + seconds.format("%d") + "s";
+        }
+        return retryNow ? "START retries" : null;
     }
 
     function compactDisplayId(value) {
@@ -1073,13 +1298,18 @@ class OpenDistressView extends WatchUi.View {
 
     // One action, generous round-screen margins. The accepted dial stays text-free.
     function drawReadyScreen(dc) {
+        if (_resetDone && !_armingAlert) {
+            drawResetDone(dc);
+            return;
+        }
+        var warning = _armingAlert ? null : phoneLinkWarning();
         if (WatchPresentation.isCompact(dc)) {
             WatchPresentation.compactLine(dc, "TEST", 16, true);
             WatchPresentation.compactLine(dc, _armingAlert ? "Holding" : "Ready", 36, false);
             WatchPresentation.compactLine(dc, "Hold START 2.5s", 50, false);
             WatchPresentation.compactLine(dc, "Release cancels", 64, false);
             if (!_armingAlert) {
-                WatchPresentation.compactLine(dc, "MENU: practice", 78, false);
+                WatchPresentation.compactLine(dc, warning != null ? "No phone link" : "MENU: practice", 78, false);
                 WatchPresentation.button(dc, "MENU", "", 0);
             } else { drawAlertArmProgress(dc); }
             WatchPresentation.button(dc, "START", "", _armingAlert ? 1.0 : 0);
@@ -1088,27 +1318,50 @@ class OpenDistressView extends WatchUi.View {
             }
             return;
         }
+        if (!_armingAlert) {
+            WatchPresentation.readyRing(dc);
+        }
         WatchPresentation.line(dc, "TEST MODE", 23, false);
         WatchPresentation.line(dc, _armingAlert ? "Keep holding" : "Ready", 44, true);
-        WatchPresentation.line(dc, _armingAlert ? "Release to cancel" : "Hold START 2.5s", 61, false);
+        WatchPresentation.lineColor(dc, _armingAlert ? "Release to cancel" : "Hold START 2.5s", 61, false,
+            _armingAlert ? Graphics.COLOR_LT_GRAY : WatchPresentation.AMBER);
         if (_armingAlert) {
             drawAlertArmProgress(dc);
         }
-        // The hold ring measures real elapsed time; the local key pulse only
-        // confirms input and never represents provider acceptance.
+        // The hold ring measures real elapsed time; the key pulse flares on the
+        // same beats as the haptic ticks and never represents provider acceptance.
         var pulse = _armingAlert
-            ? 0.4 + 0.6 * Math.sin(Math.PI * (alertArmElapsedMs() % 700) / 700.0)
+            ? 0.4 + 0.6 * WatchPresentation.holdFlare(alertArmElapsedMs(), ALERT_ARM_HOLD_MS)
             : 0;
         WatchPresentation.button(dc, "START", "", pulse);
         if (!_armingAlert) {
-            if (WatchPresentation.hasMenuButton()) {
+            if (warning != null) {
+                // Diagnostic only; the hold still stores and attempts the TEST.
+                WatchPresentation.lineColor(dc, warning, 78, false, WatchPresentation.AMBER);
+            } else if (WatchPresentation.hasMenuButton()) {
                 WatchPresentation.line(dc, "Hold MENU: practice", 78, false);
-                WatchPresentation.button(dc, "MENU", "", 0);
             } else { WatchPresentation.line(dc, "Tap: practice", 78, false); }
+            if (WatchPresentation.hasMenuButton()) { WatchPresentation.button(dc, "MENU", "", 0); }
         }
         if (_pressedButton != null && !_armingAlert) {
             WatchPresentation.button(dc, _pressedButton, "", 1.0);
         }
+    }
+
+    // Shown briefly after a confirmed TEST reset. Reset is local only.
+    function drawResetDone(dc) {
+        if (WatchPresentation.isCompact(dc)) {
+            WatchPresentation.compactLine(dc, "RESET", 16, true);
+            var lines = ["Watch GPS stopped", "Provider alarms", "may continue", "Ack in provider"];
+            for (var i = 0; i < lines.size(); i += 1) {
+                WatchPresentation.compactLine(dc, lines[i], 40 + i * 12, false);
+            }
+            return;
+        }
+        WatchPresentation.readyRing(dc);
+        WatchPresentation.lineFit(dc, "TEST RESET", 29, true, Graphics.COLOR_WHITE, 0.6);
+        WatchPresentation.text(dc, "GPS stopped on watch.\nAlarms may continue:\nacknowledge in app.", 40, 28);
+        WatchPresentation.lineFit(dc, "Ready for next drill", 75, false, Graphics.COLOR_LT_GRAY, 0.6);
     }
 
     function alertArmElapsedMs() {
@@ -1128,60 +1381,8 @@ class OpenDistressView extends WatchUi.View {
         if (elapsed < 0) {
             return;
         }
-        if (elapsed > ALERT_ARM_HOLD_MS) {
-            elapsed = ALERT_ARM_HOLD_MS;
-        }
-        if (WatchPresentation.isCompact(dc)) {
-            WatchPresentation.progress(dc, elapsed, ALERT_ARM_HOLD_MS);
-            return;
-        }
-
-        var width = dc.getWidth();
-        var height = dc.getHeight();
-        var minSize = width < height ? width : height;
-        var compactRound = width == height && minSize < 220;
-        var inset = minSize / 24;
-        if (inset < 6) {
-            inset = 6;
-        }
-        var radius = minSize / 2 - inset - (compactRound ? minSize / 12 : 0);
-        var centerX = compactRound ? (width * 43) / 100 : width / 2;
-        var centerY = compactRound ? (height * 57) / 100 : height / 2;
-        var penWidth = minSize >= 400 ? 6 : (minSize >= 260 ? 4 : 3);
-
-        dc.setPenWidth(penWidth);
-        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_BLACK);
-        dc.drawCircle(centerX, centerY, radius);
-
-        var sweep = (elapsed * 180) / ALERT_ARM_HOLD_MS;
-        if (sweep > 0) {
-            var clockwiseEnd = ALERT_ARM_START_DEGREES - sweep;
-            var counterClockwiseEnd = ALERT_ARM_START_DEGREES + sweep;
-            if (clockwiseEnd < 0) {
-                clockwiseEnd += 360;
-            }
-            if (counterClockwiseEnd >= 360) {
-                counterClockwiseEnd -= 360;
-            }
-            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
-            dc.drawArc(
-                centerX,
-                centerY,
-                radius,
-                Graphics.ARC_CLOCKWISE,
-                ALERT_ARM_START_DEGREES,
-                clockwiseEnd
-            );
-            dc.drawArc(
-                centerX,
-                centerY,
-                radius,
-                Graphics.ARC_COUNTER_CLOCKWISE,
-                ALERT_ARM_START_DEGREES,
-                counterClockwiseEnd
-            );
-        }
-        dc.setPenWidth(1);
+        // Elapsed real time alone decides the sweep; see WatchPresentation.holdRing.
+        WatchPresentation.holdRing(dc, elapsed, ALERT_ARM_HOLD_MS, false);
     }
 
     function activate() {
@@ -1228,6 +1429,8 @@ class OpenDistressView extends WatchUi.View {
         }
         _armingAlert = true;
         _armStartedAtMs = System.getTimer();
+        _armBeat = 0;
+        _resetDone = false;
         WatchFeedback.input();
         try {
             _retryTimer.stop();
@@ -1251,7 +1454,7 @@ class OpenDistressView extends WatchUi.View {
 
     function startResetHold() {
         if (_inFlight || _resetHolding || _acceptedActionFeedback != null) { return true; }
-        _resetHolding = true; _resetStartedAtMs = System.getTimer();
+        _resetHolding = true; _resetStartedAtMs = System.getTimer(); _resetBeat = 0;
         WatchFeedback.input();
         try { _statusTimer.stop(); _statusTimer.start(method(:advanceResetHold), ALERT_ARM_FRAME_MS, true); }
         catch (error) { _resetHolding = false; scheduleIdleCoverRefresh(); }
@@ -1272,7 +1475,11 @@ class OpenDistressView extends WatchUi.View {
         if (_resetHolding && elapsed >= ALERT_ARM_HOLD_MS) {
             _resetHolding = false;
             beginAcceptedActionFeedback("RESET");
-        } else { WatchUi.requestUpdate(); }
+        } else {
+            var beat = WatchPresentation.holdBeat(elapsed, ALERT_ARM_HOLD_MS);
+            if (beat > _resetBeat) { _resetBeat = beat; WatchFeedback.tick(); }
+            WatchUi.requestUpdate();
+        }
     }
 
     function advanceAlertArm() {
@@ -1287,6 +1494,12 @@ class OpenDistressView extends WatchUi.View {
         if (elapsed >= ALERT_ARM_HOLD_MS) {
             commitArmedAlert();
             return;
+        }
+        // Accelerating light ticks let a hold be counted without looking.
+        var beat = WatchPresentation.holdBeat(elapsed, ALERT_ARM_HOLD_MS);
+        if (beat > _armBeat) {
+            _armBeat = beat;
+            WatchFeedback.tick();
         }
         WatchUi.requestUpdate();
     }
@@ -1381,9 +1594,17 @@ class OpenDistressView extends WatchUi.View {
             return "GPS status unknown";
         }
         if (_directResult["pending_location_hex"].length() > 0) {
+            // A queued fix is retried; say why it is waiting, not that it failed.
+            if (phoneLinkWarning() != null) {
+                return "GPS: phone offline";
+            }
             return "GPS update pending";
         }
         if (_directResult["last_location_hex"].length() > 0) {
+            var sequence = _directResult["next_location_sequence"];
+            if (sequence instanceof Lang.Number && sequence > 2) {
+                return (sequence - 1).format("%d") + " GPS updates sent";
+            }
             return "GPS update sent";
         }
         return _directResult["capture_stage"] == 3
@@ -1466,6 +1687,9 @@ class OpenDistressView extends WatchUi.View {
     }
 
     function backAction() {
+        if (_resetDone && _directResult == null) {
+            _resetDone = false; WatchUi.requestUpdate(); scheduleAmbient(); return true;
+        }
         if (_resetConfirmation) {
             cancelResetHold(); _resetConfirmation = false; WatchUi.requestUpdate(); return true;
         }
@@ -1524,6 +1748,11 @@ class OpenDistressView extends WatchUi.View {
         }
         _displayEventId = event["event_id"];
         _retryCount = 0;
+        _wifiFallbackEventId = null;
+        // Same cue as LIVE: the TEST is stored locally; nothing is accepted yet.
+        _signalStored = true;
+        _signalStoredAtMs = System.getTimer();
+        confirmDurableTrigger();
         sendPending();
     }
 
@@ -1587,14 +1816,8 @@ class OpenDistressView extends WatchUi.View {
     }
 
     function confirmDurableTrigger() {
-        try {
-            if (!DirectAlertSettings.hapticsEnabled()) { return; }
-            if (Attention has :vibrate) {
-                Attention.vibrate([new Attention.VibeProfile(25, 120)]);
-            }
-        } catch (error) {
-            // Haptic feedback is best-effort and never changes durable state.
-        }
+        // Best-effort and optional; it never changes durable state.
+        WatchFeedback.committed();
     }
 
     function captureLocations() {
@@ -1736,6 +1959,7 @@ class OpenDistressView extends WatchUi.View {
             Position.enableLocationEvents(Position.LOCATION_DISABLE, null);
         } catch (error) {
         }
+        _locationEventsActive = false;
     }
 
     function expireLocations() {
@@ -1885,10 +2109,23 @@ class OpenDistressView extends WatchUi.View {
             || _directResult["capture_stage"] == 3) {
             return;
         }
+        // Re-issuing the request might restart an acquisition that is still
+        // converging. Repeat it only after a failed start or a silent minute.
+        var nowMs = System.getTimer();
+        var lastSign = _lastPositionCallbackMs - _lastLocationEnableMs > 0
+            ? _lastPositionCallbackMs : _lastLocationEnableMs;
+        if (_locationEventsActive
+            && nowMs - lastSign >= 0
+            && nowMs - lastSign < LOCATION_REENABLE_AFTER_MS) {
+            return;
+        }
         try {
             enableBestContinuousLocation();
+            _locationEventsActive = true;
+            _lastLocationEnableMs = nowMs;
         } catch (error) {
-            // The accepted alert remains valid; reopening retries real GPS acquisition.
+            // The accepted alert remains valid; the next cover refresh retries.
+            _locationEventsActive = false;
         }
     }
 
@@ -2280,6 +2517,7 @@ class OpenDistressView extends WatchUi.View {
         if (!_visible) {
             return;
         }
+        _lastPositionCallbackMs = System.getTimer();
         if (_directResult != null) {
             onDirectPosition(info);
             return;
@@ -2320,7 +2558,9 @@ class OpenDistressView extends WatchUi.View {
             return;
         }
         if (_directResult["pending_location_hex"].length() > 0) {
-            if (!_inFlight) {
+            // A 1 Hz callback must not bypass the retry backoff: that used to
+            // spend the whole retry budget within seconds of losing the phone.
+            if (!_inFlight && !_directRetryScheduled) {
                 sendDirectLocation();
             }
             return;
@@ -2757,6 +2997,7 @@ class OpenDistressView extends WatchUi.View {
             _retryTimer.stop();
         } catch (error) {
         }
+        _retryScheduled = false;
         var event = _queue[0];
         var baseUrl = Properties.getValue("relayBaseUrl");
         var deviceId = Properties.getValue("deviceId");
@@ -2830,7 +3071,7 @@ class OpenDistressView extends WatchUi.View {
             _inFlight = false;
             _activeKeyHex = null;
             _requestEventId = null;
-            handleFailure("retryable_failure", "Request could not be queued");
+            handleFailureWith("retryable_failure", "Request could not be queued", true);
         }
     }
 
@@ -2868,7 +3109,7 @@ class OpenDistressView extends WatchUi.View {
             if (hasDirectGrafanaConfiguration() && !_directGrafanaRetryBlocked) {
                 sendDirectGrafanaInitial(event);
             } else {
-                handleFailure("retryable_failure", "Pushover request could not be queued");
+                handleFailureWith("retryable_failure", "Pushover request could not be queued", true);
             }
         }
     }
@@ -2900,6 +3141,9 @@ class OpenDistressView extends WatchUi.View {
             return;
         }
         var requestContext = eventId + "-grafana-alert";
+        if (_directResult != null) {
+            _grafanaAlertAttemptMs = System.getTimer();
+        }
         _requestEventId = requestContext;
         _requestProviderFingerprint = providerFingerprint;
         _inFlight = true;
@@ -2930,7 +3174,7 @@ class OpenDistressView extends WatchUi.View {
                     sendDirectPushover(_queue[0], now);
                 }
             } else {
-                handleFailure("retryable_failure", "Grafana request could not be queued");
+                handleFailureWith("retryable_failure", "Grafana request could not be queued", true);
             }
         }
     }
@@ -3016,12 +3260,13 @@ class OpenDistressView extends WatchUi.View {
                 return;
             }
         }
-        handleFailure(responseCode >= 400 && responseCode < 500 && responseCode != 429
+        handleFailureWith(responseCode >= 400 && responseCode < 500 && responseCode != 429
                 ? "configuration_failure"
                 : (responseCode < 0
                     ? transportFailure(responseCode)
                     : (responseCode == 429 ? "retryable_failure" : "result_unknown")),
-            "Grafana result unknown; pending TEST retained");
+            "Grafana result unknown; pending TEST retained",
+            isUnsentTransport(responseCode));
     }
 
     function beginAcceptedDirectTracking(
@@ -3035,6 +3280,7 @@ class OpenDistressView extends WatchUi.View {
         grafanaAlertPending
     ) {
         _deferredCompanionLocation = null;
+        _grafanaAlertRetries = 0;
         var acceptedAt = currentTime();
         var trackingExpiresAt = 0;
         var captureStage = 3;
@@ -3153,10 +3399,11 @@ class OpenDistressView extends WatchUi.View {
         } else if (responseCode >= 400 && responseCode < 500) {
             handleFailure("configuration_failure", "Pushover rejected TEST request");
         } else {
-            handleFailure(responseCode < 0
+            handleFailureWith(responseCode < 0
                     ? transportFailure(responseCode)
                     : "result_unknown",
-                "Pushover result unknown; pending TEST retained");
+                "Pushover result unknown; pending TEST retained",
+                isUnsentTransport(responseCode));
         }
     }
 
@@ -3239,6 +3486,13 @@ class OpenDistressView extends WatchUi.View {
             + "-location-" + sequence.format("%d");
         var mapUrl = "https://maps.google.com/?q="
             + latitudeText + "," + longitudeText;
+        if (_directRetryScheduled) {
+            try {
+                _retryTimer.stop();
+            } catch (error) {
+            }
+            _directRetryScheduled = false;
+        }
         _requestEventId = requestContext;
         _inFlight = true;
         if (sendPushover) {
@@ -3345,6 +3599,10 @@ class OpenDistressView extends WatchUi.View {
             rejectDirectLocationProvider(true);
             return;
         }
+        if (isUnsentTransport(responseCode)) {
+            scheduleDirectLocationOfflineRetry();
+            return;
+        }
         scheduleDirectLocationRetry(true);
     }
 
@@ -3370,6 +3628,8 @@ class OpenDistressView extends WatchUi.View {
             scheduleDirectLocationRetry(false);
         } else if (responseCode >= 400 && responseCode < 500) {
             rejectDirectLocationProvider(false);
+        } else if (isUnsentTransport(responseCode)) {
+            scheduleDirectLocationOfflineRetry();
         } else {
             scheduleDirectLocationRetry(false);
         }
@@ -3427,6 +3687,7 @@ class OpenDistressView extends WatchUi.View {
             return;
         }
         _retryCount = 0;
+        _offlineRetryCount = 0;
         _directLocationRetryBlocked = false;
         flushDeferredCompanionLocation();
         scheduleIdleCoverRefresh();
@@ -3457,6 +3718,28 @@ class OpenDistressView extends WatchUi.View {
             return;
         }
         _retryCount += 1;
+        startDirectLocationRetryTimer(RETRY_DELAY_MS);
+    }
+
+    // Garmin reported that the fix never left the watch. Every accepted route
+    // shares that link, so keep the fix and back off instead of spending the
+    // per-route budget; reconnecting the phone delivers it with its real age.
+    function scheduleDirectLocationOfflineRetry() {
+        if (!_visible
+            || _directResult == null
+            || _directResult["capture_stage"] == 3
+            || _directResult["pending_location_hex"].length() == 0) {
+            return;
+        }
+        var index = _offlineRetryCount < OFFLINE_LOCATION_RETRY_MS.size()
+            ? _offlineRetryCount
+            : OFFLINE_LOCATION_RETRY_MS.size() - 1;
+        _offlineRetryCount += 1;
+        startDirectLocationRetryTimer(OFFLINE_LOCATION_RETRY_MS[index]);
+        WatchUi.requestUpdate();
+    }
+
+    function startDirectLocationRetryTimer(delayMs) {
         try {
             _retryTimer.stop();
         } catch (error) {
@@ -3464,15 +3747,18 @@ class OpenDistressView extends WatchUi.View {
         try {
             _retryTimer.start(
                 method(:retryDirectLocation),
-                RETRY_DELAY_MS,
+                delayMs,
                 false
             );
+            _directRetryScheduled = true;
         } catch (error) {
             // The durable pending fix is retried when the app is reopened.
+            _directRetryScheduled = false;
         }
     }
 
     function retryDirectLocation() {
+        _directRetryScheduled = false;
         if (!_inFlight
             && _directResult != null
             && _directResult["pending_location_hex"].length() > 0) {
@@ -3533,7 +3819,7 @@ class OpenDistressView extends WatchUi.View {
         if (responseCode < 0 && beginWifiFallback(event, responseCode)) {
             return;
         }
-        handleFailure(result, "Pending event retained");
+        handleFailureWith(result, "Pending event retained", isUnsentTransport(responseCode));
     }
 
     function beginWifiFallback(event, responseCode) {
@@ -3545,7 +3831,9 @@ class OpenDistressView extends WatchUi.View {
             return false;
         }
         _wifiFallbackEventId = event["event_id"];
+        _wifiFallbackUnsent = isUnsentTransport(responseCode);
         _wifiCheckPending = true;
+        _retryScheduled = false;
         setState("TRYING WI-FI", "Phone unavailable; pending event retained");
         try {
             _retryTimer.stop();
@@ -3598,7 +3886,8 @@ class OpenDistressView extends WatchUi.View {
                 : "Pending until signed relay acceptance");
             sendPending();
         } else {
-            handleFailure("retryable_failure", "Wi-Fi unavailable; pending event retained");
+            handleFailureWith("retryable_failure", "Wi-Fi unavailable; pending event retained",
+                _wifiFallbackUnsent);
         }
     }
 
@@ -3607,40 +3896,89 @@ class OpenDistressView extends WatchUi.View {
             return;
         }
         _wifiCheckPending = false;
-        handleFailure("retryable_failure", "Wi-Fi check timed out; pending event retained");
+        handleFailureWith("retryable_failure", "Wi-Fi check timed out; pending event retained",
+            _wifiFallbackUnsent);
     }
 
     function handleFailure(result, detail) {
+        handleFailureWith(result, detail, false);
+    }
+
+    // `unsent` means Garmin reported that the request never left the watch
+    // (no phone link or a full BLE queue), so repeating it cannot duplicate
+    // a provider alert.
+    function handleFailureWith(result, detail, unsent) {
         var testPending = _queue.size() > 0 && _queue[0]["v"] == 1;
+        _retryScheduled = false;
         if (OpenDistressProtocol.stringEquals(result, "configuration_failure")) {
             setState(testPending ? "TEST CONFIG ERROR" : "CONFIGURATION FAILURE", detail);
             return;
         }
         if (testPending) {
-            setState("TEST PENDING", detail);
+            setState("TEST PENDING", unsent && phoneLinkWarning() != null
+                ? "No phone link; TEST not sent yet" : detail);
         } else if (OpenDistressProtocol.stringEquals(result, "retryable_failure")) {
             setState("RETRYABLE FAILURE", detail);
         } else {
             setState("RESULT UNKNOWN", detail);
         }
-        if (_retryCount < MAX_INITIAL_RETRIES && _queue.size() > 0) {
-            _retryCount += 1;
-            try {
-                _retryTimer.stop();
-            } catch (error) {
-            }
-            try {
-                _retryTimer.start(method(:retryPending), RETRY_DELAY_MS, false);
-            } catch (error) {
-                setState(testPending ? "TEST PENDING" : "RETRYABLE FAILURE",
-                    testPending
-                        ? "Automatic retry unavailable; press top button"
-                        : "Top button retries immutable event");
-            }
+        if (_queue.size() == 0) {
+            return;
         }
+        var delay = retryDelayMs(_retryCount,
+            unsent || !testPending || !hasDirectAlertConfiguration());
+        if (delay <= 0) {
+            setState(testPending ? "TEST PENDING" : "RETRYABLE FAILURE",
+                testPending
+                    ? "Automatic retries paused; press START"
+                    : "Top button retries immutable event");
+            return;
+        }
+        _retryCount += 1;
+        if (_retryCount > MAX_INITIAL_RETRIES) {
+            // A later slow retry may find a saved Wi-Fi network again.
+            _wifiFallbackEventId = null;
+        }
+        try {
+            _retryTimer.stop();
+        } catch (error) {
+        }
+        try {
+            _retryTimer.start(method(:retryPending), delay, false);
+            _retryScheduled = true;
+            _nextRetryAtMs = System.getTimer() + delay;
+        } catch (error) {
+            setState(testPending ? "TEST PENDING" : "RETRYABLE FAILURE",
+                testPending
+                    ? "Automatic retry unavailable; press top button"
+                    : "Top button retries immutable event");
+        }
+        scheduleAmbient();
+    }
+
+    // Two fast retries, then 15 s, 30 s and every 60 s while the app is open.
+    // `repeatable` is false only for an ambiguous direct-provider result.
+    function retryDelayMs(attempt, repeatable) {
+        if (attempt < MAX_INITIAL_RETRIES) {
+            return RETRY_DELAY_MS;
+        }
+        if (!repeatable && attempt >= MAX_AMBIGUOUS_RETRIES) {
+            return 0;
+        }
+        var index = attempt - MAX_INITIAL_RETRIES;
+        if (index >= RETRY_SLOW_DELAYS_MS.size()) {
+            index = RETRY_SLOW_DELAYS_MS.size() - 1;
+        }
+        return RETRY_SLOW_DELAYS_MS[index];
+    }
+
+    function isUnsentTransport(responseCode) {
+        return responseCode == Communications.BLE_CONNECTION_UNAVAILABLE
+            || responseCode == Communications.BLE_QUEUE_FULL;
     }
 
     function retryPending() {
+        _retryScheduled = false;
         if (!_inFlight && _queue.size() > 0) {
             sendPending();
         }
@@ -3739,10 +4077,16 @@ class OpenDistressView extends WatchUi.View {
         if (persistStateWithDirect([], _activeIncident, null)) {
             _acceptedStatusVisible = false;
             _acceptedActionFeedback = null;
+            _grafanaAlertRetries = 0;
             _state = "READY — TEST";
             _detail = "Hold top button 2.5 seconds";
             selectStartupMode();
+            // Local reset only: provider alarms are not cancelled by the watch.
+            _resetDone = true;
+            _resetDoneAtMs = System.getTimer();
+            WatchFeedback.committed();
             WatchUi.requestUpdate();
+            scheduleAmbient();
         } else {
             _acceptedStatusVisible = false;
             _acceptedActionFeedback = null;
@@ -3802,11 +4146,17 @@ class OpenDistressView extends WatchUi.View {
                 }
                 return true;
             }
+            try {
+                _retryTimer.stop();
+            } catch (error) {
+            }
+            _retryScheduled = false;
             if (persistState([], _activeIncident)) {
                 _state = "READY — TEST";
                 _detail = "Pending TEST abandoned explicitly";
                 selectStartupMode();
                 WatchUi.requestUpdate();
+                scheduleAmbient();
             } else {
                 setState("CONFIGURATION FAILURE", "Cannot abandon pending TEST");
             }
@@ -3829,12 +4179,14 @@ class OpenDistressView extends WatchUi.View {
         _state = state;
         _detail = detail;
         WatchUi.requestUpdate();
+        scheduleAmbient();
     }
 }
 
 class OpenDistressDelegate extends WatchUi.BehaviorDelegate {
     var _view;
     var _startWasAccepted = false;
+    var _startWasPending = false;
 
     function initialize(view) {
         BehaviorDelegate.initialize();
@@ -3856,6 +4208,9 @@ class OpenDistressDelegate extends WatchUi.BehaviorDelegate {
         _view.showButtonPress(buttonName(key), true);
         if (key == WatchUi.KEY_START || key == WatchUi.KEY_ENTER) {
             _startWasAccepted = _view._directResult != null;
+            // Decided at press time, so releasing the hold that just stored a
+            // TEST can never count as a manual retry of that same TEST.
+            _startWasPending = _view.canRetryPendingNow();
             return _view.startActionPressed();
         }
         return false;
@@ -3886,6 +4241,10 @@ class OpenDistressDelegate extends WatchUi.BehaviorDelegate {
             // Releasing the hold that just sent the alert must not immediately
             // uncover the clock. A later press can return revealed status to it.
             if (_startWasAccepted) { return _view.selectAction(); }
+            if (_startWasPending) {
+                _startWasPending = false;
+                return _view.retryPendingNow();
+            }
             return true;
         }
         return false;
@@ -4127,8 +4486,10 @@ function directValidRestartStateRoundTrips(logger) {
     var storedAfterReset = Storage.getValue("event_state_v2");
     var reset = reloaded._directResult == null
         && !reloaded._acceptedStatusVisible
+        && reloaded._resetDone
         && OpenDistressProtocol.hasExactKeys(storedAfterReset, ["queue", "active", "direct_result"])
         && (storedAfterReset as Lang.Dictionary)["direct_result"] == null;
+    reloaded.onHide();
     Storage.deleteValue("event_state_v2");
     if (!survived) {
         logger.error("Valid Grafana direct state did not survive storage roundtrip");
@@ -4193,4 +4554,130 @@ function directInvalidQueuedStateFailsClosed(logger) {
         return false;
     }
     return true;
+}
+
+(:test)
+function holdBeatsAccelerateAndFlareStaysBounded(logger) {
+    var hold = 2500;
+    if (WatchPresentation.holdBeat(0, hold) != 0 || WatchPresentation.holdBeat(999, hold) != 0
+        || WatchPresentation.holdBeat(1000, hold) != 1 || WatchPresentation.holdBeat(1700, hold) != 2
+        || WatchPresentation.holdBeat(2200, hold) != 3 || WatchPresentation.holdBeat(2499, hold) != 3
+        || WatchPresentation.holdBeat(-5, hold) != 0) {
+        logger.error("Hold beats moved or no longer accelerate"); return false;
+    }
+    for (var t = -100; t <= hold + 100; t += 50) {
+        var flare = WatchPresentation.holdFlare(t, hold);
+        if (flare < 0 || flare > 1) { logger.error("Beat flare out of range"); return false; }
+    }
+    return WatchPresentation.holdFlare(0, hold) == 1.0
+        && WatchPresentation.holdFlare(600, hold) == 0.0
+        && WatchPresentation.holdFlare(1000, hold) == 1.0;
+}
+
+(:test)
+function holdTicksOncePerBeatAndStillCommitsOnce(logger) {
+    var view = new HoldDecisionProbe();
+    view.startActionPressed();
+    view._armStartedAtMs = System.getTimer() - 1100;
+    view.advanceAlertArm(); view.advanceAlertArm();
+    if (view._armBeat != 1 || view.activations != 0) { return false; }
+    view._armStartedAtMs = System.getTimer() - 2300;
+    view.advanceAlertArm();
+    if (view._armBeat != 3 || view.activations != 0) { return false; }
+    view._armStartedAtMs = System.getTimer() - 2500;
+    view.advanceAlertArm(); view.advanceAlertArm();
+    var committedOnce = view.activations == 1 && !view._armingAlert;
+    view.startActionPressed();
+    var beatReset = view._armBeat == 0;
+    view.onHide();
+    return committedOnce && beatReset;
+}
+
+(:test)
+function pendingRetriesBackOffAndStopOnlyForAmbiguousDirectResults(logger) {
+    var view = new HoldDecisionProbe();
+    var ambiguous = [5000, 5000, 15000, 30000, 60000, 0];
+    for (var i = 0; i < ambiguous.size(); i += 1) {
+        if (view.retryDelayMs(i, false) != ambiguous[i]) {
+            logger.error("Ambiguous retry schedule changed at attempt " + i.format("%d")); return false;
+        }
+    }
+    // A request Garmin reports as never sent keeps retrying until expiry.
+    return view.retryDelayMs(5, true) == 60000 && view.retryDelayMs(40, true) == 60000
+        && view.isUnsentTransport(Communications.BLE_CONNECTION_UNAVAILABLE)
+        && view.isUnsentTransport(Communications.BLE_QUEUE_FULL)
+        && !view.isUnsentTransport(Communications.BLE_HOST_TIMEOUT)
+        && !view.isUnsentTransport(200);
+}
+
+(:test)
+function shortStartRetriesOnlyAnAlreadyPendingEvent(logger) {
+    var view = new OfflineReplayProbe();
+    view._visible = true; view._queue = []; view._directResult = null; view._activeIncident = null;
+    var delegate = new OpenDistressDelegate(view);
+    var key = new WatchInputProbeEvent(0, 0);
+    // The release of the hold that stored a TEST is not a manual retry.
+    delegate.onKeyPressed(key);
+    view._queue = [OpenDistressProtocol.newTestEvent("AAECAwQFBgcICQoLDA0ODw",
+        "EBESExQVFhcYGRobHB0eHw", Time.now().value())];
+    delegate.onKeyReleased(key); delegate.onKey(key);
+    if (view.attempts != 0) { logger.error("Activation release retried"); return false; }
+    delegate.onKeyPressed(key); delegate.onKeyReleased(key); delegate.onKey(key);
+    if (view.attempts != 1) { logger.error("Short START did not retry"); return false; }
+    view._inFlight = true;
+    delegate.onKeyPressed(key); delegate.onKeyReleased(key); delegate.onKey(key);
+    var inFlightIgnored = view.attempts == 1;
+    view._inFlight = false; view.onHide();
+    return inFlightIgnored;
+}
+
+(:test)
+class DirectRetryProbe extends OpenDistressView {
+    var sends = 0;
+    var enables = 0;
+    function initialize() {
+        OpenDistressView.initialize();
+        _queue = []; _activeIncident = null; _visible = true;
+        _directResult = {"capture_stage" => 1, "pending_location_hex" => "0102",
+            "tracking_expires_at" => Time.now().value() + 3600};
+    }
+    function sendDirectLocation() { sends += 1; }
+    function enableBestContinuousLocation() { enables += 1; }
+}
+
+(:test)
+function offlineFixWaitsForBackoffWithoutSpendingRouteBudget(logger) {
+    var view = new DirectRetryProbe();
+    view._retryCount = 1;
+    view.scheduleDirectLocationOfflineRetry();
+    if (!view._directRetryScheduled || view._retryCount != 1 || view._offlineRetryCount != 1) {
+        view.onHide(); return false;
+    }
+    // A 1 Hz position callback must not bypass the backoff.
+    view.onDirectPosition(null);
+    if (view.sends != 0) { logger.error("Position callback bypassed retry backoff"); view.onHide(); return false; }
+    view.retryDirectLocation();
+    var resumed = view.sends == 1 && !view._directRetryScheduled;
+    view.onHide();
+    return resumed;
+}
+
+(:test)
+function continuousGpsIsReissuedOnlyWhenSilentOrStopped(logger) {
+    var view = new DirectRetryProbe();
+    view.startDirectContinuousLocations();
+    view.startDirectContinuousLocations();
+    if (view.enables != 1) { view.onHide(); return false; }
+    view._lastLocationEnableMs = System.getTimer() - 61000;
+    view._lastPositionCallbackMs = System.getTimer();
+    view.startDirectContinuousLocations();
+    if (view.enables != 1) { logger.error("Restarted a GPS request that is delivering"); view.onHide(); return false; }
+    view._lastPositionCallbackMs = System.getTimer() - 61000;
+    view.startDirectContinuousLocations();
+    if (view.enables != 2) { logger.error("Silent GPS request was not re-issued"); view.onHide(); return false; }
+    view.stopLocations();
+    view.startDirectContinuousLocations();
+    var restarted = view.enables == 3;
+    view.onHide();
+    return restarted;
 }
