@@ -10,7 +10,9 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.text.InputFilter
 import android.text.InputType
 import android.text.Editable
@@ -145,6 +147,14 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     override fun onStart() {
         super.onStart()
         refreshPreparationEvidence()
+        if (::garminLink.isInitialized && ::locationAssist.isInitialized) {
+            // Permission may have been revoked in system settings meanwhile.
+            val enabled = garminLink.locationAssistEnabled() && hasFineLocation()
+            if (!enabled && garminLink.locationAssistEnabled()) garminLink.setLocationAssistEnabled(false)
+            changingLocationSwitch = true
+            locationAssist.isChecked = enabled
+            changingLocationSwitch = false
+        }
         if (::coordinator.isInitialized) {
             if (isPixel) {
                 Wearable.getDataClient(this).addListener(this)
@@ -216,7 +226,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     }
 
     private fun showSetupError(message: String) {
-        if (isGarmin) showGarminStatus(GarminLinkStatus.Attention(message)) else showWearStatus(message)
+        // A draft problem is not watch state: the last saved setup is unchanged.
         MaterialAlertDialogBuilder(this).setTitle("Setup not sent").setMessage(message)
             .setPositiveButton("OK", null).show()
     }
@@ -1005,7 +1015,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private fun showGarminStatus(linkStatus: GarminLinkStatus) {
         runOnUiThread {
             val ready = linkStatus is GarminLinkStatus.Ready
-            val waiting = linkStatus is GarminLinkStatus.Waiting || linkStatus is GarminLinkStatus.Unavailable
+            val sent = linkStatus is GarminLinkStatus.Waiting && linkStatus.sent
+            val unavailable = linkStatus is GarminLinkStatus.Unavailable
+            val waiting = linkStatus is GarminLinkStatus.Waiting || unavailable
             val background: Int
             val foreground: Int
             when {
@@ -1016,7 +1028,12 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     foreground = color(com.google.android.material.R.attr.colorOnTertiaryContainer, Color.rgb(37, 26, 0))
                 }
                 waiting -> {
-                    garminStatusTitle.text = if (garminLink.connectedWatchName != null) "Connected · Sync pending" else "Connection pending"
+                    garminStatusTitle.text = when {
+                        sent -> "Sent · confirm on watch"
+                        unavailable -> "Garmin link unavailable"
+                        garminLink.connectedWatchName != null -> "Connected · Sync pending"
+                        else -> "Connection pending"
+                    }
                     garminStatusIndicator.text = "…"
                     background = color(com.google.android.material.R.attr.colorSecondaryContainer, Color.rgb(255, 218, 217))
                     foreground = color(com.google.android.material.R.attr.colorOnSecondaryContainer, Color.rgb(46, 21, 22))
@@ -1128,7 +1145,27 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         changingLocationSwitch = true
         locationAssist.isChecked = granted
         changingLocationSwitch = false
-        if (!granted) showGarminStatus(GarminLinkStatus.Attention("Phone location assist is off — location permission was not granted"))
+        if (granted) return
+        val approximateOnly = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val message = if (approximateOnly) {
+            "Phone location assist needs precise location. Approximate location cannot guide responders."
+        } else {
+            "Phone location assist is off because location permission was not granted."
+        }
+        if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            MaterialAlertDialogBuilder(this).setTitle("Location assist is off").setMessage(message)
+                .setPositiveButton("OK", null).show()
+        } else {
+            // Android no longer shows the prompt; offer the system setting instead.
+            MaterialAlertDialogBuilder(this).setTitle("Location assist is off")
+                .setMessage("$message Allow precise location for OpenDistress Setup in Android settings.")
+                .setPositiveButton("Open settings") { _, _ ->
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", packageName, null)))
+                }
+                .setNegativeButton("Not now", null).show()
+        }
     }
 
     private fun hasFineLocation(): Boolean =

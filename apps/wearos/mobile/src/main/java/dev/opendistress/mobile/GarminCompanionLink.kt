@@ -31,7 +31,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
     private var ready = false
     var connectedWatchName: String? = null
         private set
-    private var observedDeviceId: Long? = null
+    private val observedDevices = mutableSetOf<Long>()
     private var currentStatus: GarminLinkStatus =
         GarminLinkStatus.Unavailable("Starting Garmin connection…")
     private var pendingConfig: DirectConfig? = null
@@ -90,7 +90,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
             override fun onSdkShutDown() {
                 ready = false
                 initialized = false
-                observedDeviceId = null
+                synchronized(observedDevices) { observedDevices.clear() }
                 pendingTransfer = null
                 confirmedTransfer = null
                 update(GarminLinkStatus.Unavailable("Garmin connection stopped"))
@@ -159,20 +159,32 @@ internal class GarminCompanionLink private constructor(context: Context) {
     }
 
     private fun connectedDevices(): List<IQDevice> = runCatching {
-        connectIQ.knownDevices.filter { connectIQ.getDeviceStatus(it) == IQDevice.IQDeviceStatus.CONNECTED }
+        val known = connectIQ.knownDevices
+        // Watch every paired watch, not only the one connected now: a watch
+        // that reconnects later must re-register app events, or its
+        // post-acceptance location request would go unheard.
+        known.forEach(::observeDevice)
+        known.filter { connectIQ.getDeviceStatus(it) == IQDevice.IQDeviceStatus.CONNECTED }
             .also { connectedWatchName = it.singleOrNull()?.friendlyName }
     }.getOrElse {
         update(GarminLinkStatus.Unavailable("Garmin device list is unavailable"))
         emptyList()
     }
 
+    private fun observeDevice(device: IQDevice) {
+        val added = synchronized(observedDevices) { observedDevices.add(device.deviceIdentifier) }
+        if (!added) return
+        runCatching {
+            connectIQ.registerForDeviceEvents(device) { _, status ->
+                // A setup saved while the watch was away is sent once it is back.
+                val unsent = pendingConfig.takeIf { pendingTransfer == null }
+                if (status == IQDevice.IQDeviceStatus.CONNECTED && unsent != null) sync(unsent) else refresh()
+            }
+        }.onFailure { synchronized(observedDevices) { observedDevices.remove(device.deviceIdentifier) } }
+    }
+
     private fun checkApplication(device: IQDevice, config: DirectConfig?) {
-        if (observedDeviceId != device.deviceIdentifier) {
-            observedDeviceId = device.deviceIdentifier
-            runCatching {
-                connectIQ.registerForDeviceEvents(device) { _, _ -> refresh() }
-            }.onFailure { observedDeviceId = null }
-        }
+        observeDevice(device)
         findInstalledApplication(device, 0, config)
     }
 
@@ -227,7 +239,10 @@ internal class GarminCompanionLink private constructor(context: Context) {
                 if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
                     update(
                         GarminLinkStatus.Waiting(
-                            "Sent to ${device.friendlyName} — open OpenDistress there and check READY TEST",
+                            "Sent to ${device.friendlyName}. On the watch, open OpenDistress and check it " +
+                                "shows TEST MODE · Ready. Garmin Connect may not return the watch's " +
+                                "confirmation (Garmin issue CIQQA-4631); the watch screen is the check.",
+                            sent = true,
                         ),
                     )
                 } else {
@@ -368,7 +383,8 @@ internal class GarminCompanionLink private constructor(context: Context) {
 internal sealed interface GarminLinkStatus {
     val description: String
     data class Ready(override val description: String, val confirmedAt: Long? = null) : GarminLinkStatus
-    data class Waiting(override val description: String) : GarminLinkStatus
+    /** [sent] means Garmin reported transport success; the watch has not confirmed storage. */
+    data class Waiting(override val description: String, val sent: Boolean = false) : GarminLinkStatus
     data class Attention(override val description: String) : GarminLinkStatus
     data class Unavailable(override val description: String) : GarminLinkStatus
 }
