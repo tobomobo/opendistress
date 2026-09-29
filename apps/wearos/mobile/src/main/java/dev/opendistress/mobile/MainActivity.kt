@@ -738,6 +738,27 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             "Connection" -> {
                 dashboard.addView(wizardCopy("Connection & sync", true))
                 dashboard.addView(wizardCopy(if (isGarmin) garminStatus.text.toString() else status.text.toString()))
+                if (isGarmin) {
+                    dashboard.addView(wizardCopy(garminLink.watchApp?.summary()
+                        ?: "Watch app version appears once the watch is connected."))
+                    dashboard.addView(wizardCopy("Garmin installs updates through the Connect IQ Store. " +
+                        "This phone cannot see the Store's latest version; after an update it re-sends " +
+                        "your saved setup and you check TEST MODE · Ready on the watch."))
+                    action("Check for watch app update") {
+                        if (!garminLink.openStorePage()) {
+                            showGarminStatus(GarminLinkStatus.Attention(
+                                "Connect IQ Store could not be opened — update OpenDistress in the Connect IQ app"))
+                        }
+                    }
+                    action("Open OpenDistress on the watch") {
+                        garminLink.openOnWatch { message ->
+                            runOnUiThread {
+                                MaterialAlertDialogBuilder(this).setTitle("Watch app").setMessage(message)
+                                    .setPositiveButton("OK", null).show()
+                            }
+                        }
+                    }
+                }
                 refreshPreparationEvidence()
                 dashboard.addView(wizardCopy(preparationEvidence.text.toString()))
                 action("Refresh") { showDashboard("Connection") }
@@ -1079,7 +1100,8 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 "Watch confirmed saved setup: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(it * 1000))}"
             }
             garminStatus.text = listOfNotNull(garminLink.connectedWatchName, linkStatus.description,
-                confirmation, "Connection and setup confirmation do not prove alert delivery.").joinToString("\n\n")
+                confirmation, garminLink.watchApp?.summary(),
+                "Connection and setup confirmation do not prove alert delivery.").joinToString("\n\n")
             refreshPreparationEvidence()
             updateHomeStatus()
         }

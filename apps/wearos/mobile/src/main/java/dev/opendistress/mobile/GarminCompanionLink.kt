@@ -31,6 +31,11 @@ internal class GarminCompanionLink private constructor(context: Context) {
     private var ready = false
     var connectedWatchName: String? = null
         private set
+    /** Last OpenDistress app reported on the connected watch, for display and Store links. */
+    @Volatile var watchApp: GarminWatchApp? = null
+        private set
+    @Volatile private var watchDevice: IQDevice? = null
+    @Volatile private var watchIQApp: IQApp? = null
     private val observedDevices = mutableSetOf<Long>()
     private var currentStatus: GarminLinkStatus =
         GarminLinkStatus.Unavailable("Starting Garmin connection…")
@@ -155,6 +160,46 @@ internal class GarminCompanionLink private constructor(context: Context) {
         }
     }
 
+    /** Records the installed app; true when its version changed since last seen. */
+    private fun recordWatchApp(device: IQDevice, installed: IQApp): Boolean {
+        val version = runCatching { installed.version() }.getOrDefault(0)
+        watchApp = GarminWatchApp(device.friendlyName.orEmpty(), installed.applicationId,
+            installed.displayName.orEmpty(), version)
+        watchDevice = device
+        watchIQApp = installed
+        val key = KEY_WATCH_APP_VERSION + installed.applicationId
+        val previous = if (preferences.contains(key)) preferences.getInt(key, 0) else null
+        if (version > 0) preferences.edit().putInt(key, version).apply()
+        return GarminWatchApp.changed(previous, version)
+    }
+
+    /** Opens this app's Connect IQ Store page, where Garmin offers any update. */
+    fun openStorePage(): Boolean {
+        if (!ready) return false
+        val id = watchApp?.applicationId ?: GarminCompanionProtocol.GARMIN_APP_IDS.first()
+        return runCatching { connectIQ.openStore(id) }.getOrDefault(false)
+    }
+
+    /** Asks Garmin Connect to open OpenDistress on the watch; the user confirms there. */
+    fun openOnWatch(result: (String) -> Unit) {
+        val device = watchDevice
+        val app = watchIQApp
+        if (!ready || device == null || app == null) {
+            result("Connect the watch and open this screen again")
+            return
+        }
+        runCatching {
+            connectIQ.openApplication(device, app) { _, _, status ->
+                result(when (status) {
+                    ConnectIQ.IQOpenApplicationStatus.PROMPT_SHOWN_ON_DEVICE -> "Confirm on the watch to open OpenDistress"
+                    ConnectIQ.IQOpenApplicationStatus.APP_IS_ALREADY_RUNNING -> "OpenDistress is already open on the watch"
+                    ConnectIQ.IQOpenApplicationStatus.APP_IS_NOT_INSTALLED -> "OpenDistress is not installed on the watch"
+                    else -> "The watch did not show the prompt; open OpenDistress there by hand"
+                })
+            }
+        }.onFailure { result("Garmin Connect could not reach the watch") }
+    }
+
     fun locationAssistEnabled(): Boolean = preferences.getBoolean(KEY_LOCATION_ASSIST, false)
 
     fun setLocationAssistEnabled(enabled: Boolean) {
@@ -211,10 +256,14 @@ internal class GarminCompanionLink private constructor(context: Context) {
                             update(GarminLinkStatus.Attention("Garmin app message registration failed"))
                             return
                         }
-                        if (config == null) {
+                        val updated = recordWatchApp(device, installed)
+                        val resend = config ?: savedConfig().takeIf { updated }
+                        if (resend == null) {
                             update(readiness(device, installed))
                         } else {
-                            sendConfiguration(device, installed, config)
+                            // After a watch-app update, repeat the saved setup once so the
+                            // new build confirms the same revision; the watch accepts it idempotently.
+                            sendConfiguration(device, installed, resend)
                         }
                     }
 
@@ -387,6 +436,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
     companion object {
         private const val KEY_LOCATION_ASSIST = "location-assist"
         private const val KEY_GARMIN_ENABLED = "garmin-enabled"
+        private const val KEY_WATCH_APP_VERSION = "watch-app-version-"
         private const val ASSIST_REPEAT_WINDOW_MS = 5 * 60 * 1000L
         @Volatile private var instance: GarminCompanionLink? = null
 
