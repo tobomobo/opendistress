@@ -55,6 +55,24 @@ class NativeContractTests(unittest.TestCase):
             self.assertIn(component, source)
         self.assertNotIn("android.widget.Button", source)
 
+    def test_garmin_wake_receiver_only_starts_the_sdk_link(self):
+        android = "{http://schemas.android.com/apk/res/android}"
+        mobile = WEAR / "mobile/src/main"
+        manifest = ET.parse(mobile / "AndroidManifest.xml").getroot()
+        permissions = {item.attrib[android + "name"] for item in manifest.findall("uses-permission")}
+        self.assertIn("android.permission.ACCESS_BACKGROUND_LOCATION", permissions)
+        receivers = manifest.find("application").findall("receiver")
+        wake = next(r for r in receivers if r.attrib[android + "name"] == ".GarminWakeReceiver")
+        actions = {a.attrib[android + "name"] for a in wake.iter("action")}
+        self.assertEqual(actions, {"com.garmin.android.connectiq.INCOMING_MESSAGE"})
+        receiver = (mobile / "java/dev/opendistress/mobile/GarminWakeReceiver.kt").read_text()
+        self.assertIn("GarminCompanionLink.get(context).initialize()", receiver)
+        for forbidden in ("getExtra", "extras", "EXTRA_PAYLOAD", "requestPhoneLocation", "getCurrentLocation"):
+            self.assertNotIn(forbidden, receiver)
+        link = (mobile / "java/dev/opendistress/mobile/GarminCompanionLink.kt").read_text()
+        self.assertIn("incident.eventId == assistedEventId", link)
+        self.assertIn("incident.eventId == assistInFlightEventId", link)
+
     def test_android_metadata_and_public_defaults_are_safe(self):
         manifest = ET.parse(WEAR / "app/src/main/AndroidManifest.xml").getroot()
         ET.parse(WEAR / "app/src/main/res/values/styles.xml")

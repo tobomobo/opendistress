@@ -12,6 +12,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.InputFilter
 import android.text.InputType
@@ -53,6 +54,8 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private lateinit var garminStatusIndicator: MaterialTextView
     private lateinit var garminStatusCard: MaterialCardView
     private lateinit var locationAssist: MaterialSwitch
+    private lateinit var locationReadiness: MaterialTextView
+    private lateinit var locationFix: MaterialButton
     private lateinit var save: MaterialButton
     private lateinit var haptics: MaterialSwitch
     private lateinit var preparationEvidence: MaterialTextView
@@ -110,6 +113,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         if (coordinator.snapshot().config != null) showDashboard("Home")
         showWearStatus(coordinator.statusDescription())
         locationAssist.isChecked = garminLink.locationAssistEnabled() && hasFineLocation()
+        refreshLocationReadiness()
         save.setOnClickListener { saveConfiguration() }
         findViewById<MaterialButton>(SYNC_BUTTON_ID).setOnClickListener {
             if (isPixel) coordinator.synchronize(::showWearStatus, force = true)
@@ -154,6 +158,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
             changingLocationSwitch = true
             locationAssist.isChecked = enabled
             changingLocationSwitch = false
+            refreshLocationReadiness()
         }
         if (::coordinator.isInitialized) {
             if (isPixel) {
@@ -464,6 +469,26 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { marginStart = dp(12) })
         }
+        locationReadiness = MaterialTextView(this).apply {
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+            setTextColor(onSurfaceVariant)
+            setLineSpacing(0f, 1.1f)
+            setPadding(dp(18), 0, dp(18), dp(8))
+            visibility = View.GONE
+        }
+        locationFix = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            visibility = View.GONE
+            setOnClickListener { fixLocationAssist() }
+        }
+        val locationCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(locationRow, matchWidth())
+            addView(locationReadiness, matchWidth())
+            addView(locationFix, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = dp(18); bottomMargin = dp(14) })
+        }
         watchPage.addView(wizardCopy("How your watch helps", true))
         watchPage.addView(MaterialCardView(this).apply {
             visibility = if (isGarmin) View.VISIBLE else View.GONE
@@ -474,7 +499,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 com.google.android.material.R.attr.colorSurfaceContainerLow,
                 Color.WHITE,
             ))
-            addView(locationRow, matchWidth())
+            addView(locationCard, matchWidth())
         }, matchWidth(topMargin = dp(18)))
         haptics = MaterialSwitch(this).apply {
             text = "Watch vibration feedback"
@@ -1119,10 +1144,13 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         if (changingLocationSwitch || !::garminLink.isInitialized) return
         if (!enabled) {
             garminLink.setLocationAssistEnabled(false)
+            refreshLocationReadiness()
             return
         }
         if (hasFineLocation()) {
             garminLink.setLocationAssistEnabled(true)
+            refreshLocationReadiness()
+            if (!hasBackgroundLocation()) offerBackgroundLocation()
         } else {
             changingLocationSwitch = true
             locationAssist.isChecked = false
@@ -1136,6 +1164,10 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == BACKGROUND_LOCATION_REQUEST) {
+            refreshLocationReadiness()
+            return
+        }
         if (requestCode != LOCATION_PERMISSION_REQUEST) return
         val granted = permissions.indices.any {
             permissions[it] == Manifest.permission.ACCESS_FINE_LOCATION &&
@@ -1145,7 +1177,11 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         changingLocationSwitch = true
         locationAssist.isChecked = granted
         changingLocationSwitch = false
-        if (granted) return
+        refreshLocationReadiness()
+        if (granted) {
+            if (!hasBackgroundLocation()) offerBackgroundLocation()
+            return
+        }
         val approximateOnly = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
         val message = if (approximateOnly) {
@@ -1171,6 +1207,63 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private fun hasFineLocation(): Boolean =
         checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+    private fun hasBackgroundLocation(): Boolean =
+        checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private fun batteryUnrestricted(): Boolean =
+        getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(packageName) == true
+
+    // Each line is a separate Android condition; none proves the watch request arrives.
+    private fun refreshLocationReadiness() {
+        if (!::locationReadiness.isInitialized) return
+        val active = isGarmin && ::garminLink.isInitialized && garminLink.locationAssistEnabled()
+        locationReadiness.visibility = if (active) View.VISIBLE else View.GONE
+        if (!active) {
+            locationFix.visibility = View.GONE
+            return
+        }
+        val precise = hasFineLocation()
+        val background = hasBackgroundLocation()
+        val battery = batteryUnrestricted()
+        locationReadiness.text = listOf(
+            (if (precise) "✓ " else "✗ ") + "Precise location",
+            (if (background) "✓ " else "✗ ") + "Allow all the time — needed while this app is closed",
+            (if (battery) "✓ " else "✗ ") + "Battery unrestricted — Android may otherwise stop this app",
+            "Garmin Connect must still deliver the watch's request (CIQQA-4631).",
+        ).joinToString("\n")
+        locationFix.text = when {
+            !precise -> "Allow precise location"
+            !background -> "Allow all the time"
+            !battery -> "Open battery settings"
+            else -> ""
+        }
+        locationFix.visibility = if (precise && background && battery) View.GONE else View.VISIBLE
+    }
+
+    private fun fixLocationAssist() {
+        when {
+            !hasFineLocation() -> requestPermissions(
+                arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION),
+                LOCATION_PERMISSION_REQUEST,
+            )
+            !hasBackgroundLocation() -> offerBackgroundLocation()
+            !batteryUnrestricted() -> startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+    }
+
+    private fun offerBackgroundLocation() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Answer the watch while closed?")
+            .setMessage("Choose \"Allow all the time\" on the next screen so this phone can send one precise " +
+                "location after a provider accepts a Garmin TEST, even when OpenDistress Setup is closed. " +
+                "It is used only for that watch request. Watch GPS works without it.")
+            .setPositiveButton("Continue") { _, _ ->
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), BACKGROUND_LOCATION_REQUEST)
+            }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
+
     private fun circle(stroke: Int, fill: Int) = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         setColor(fill)
@@ -1190,5 +1283,6 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     private companion object {
         const val SYNC_BUTTON_ID = 0x0d150001
         const val LOCATION_PERMISSION_REQUEST = 0x0d15
+        const val BACKGROUND_LOCATION_REQUEST = 0x0d16
     }
 }

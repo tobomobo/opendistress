@@ -156,9 +156,14 @@ precise Android location permission. After the watch has already stored direct
 provider acceptance, it can ask for one zero-cache high-accuracy phone fix.
 The watch validates the incident/configuration binding, source, capture time,
 coordinate bounds, reported accuracy, and mock status before sending it through
-its own direct-provider queue. Android background limits or a missing phone can
-prevent the candidate; neither condition delays the alert or the watch's own
-GPS.
+its own direct-provider queue. To answer while OpenDistress Setup is closed, the
+card then offers **Allow all the time** and unrestricted battery use, and shows
+each condition. A manifest receiver for Garmin Connect's incoming-message
+broadcast only starts the process and the SDK link; it reads no payload. The
+watch repeats its request briefly, and the SDK parses and validates the repeat.
+Android background limits, a force-stopped app, CIQQA-4631, or a missing phone
+can still prevent the candidate; none of them delays the alert or the watch's
+own GPS.
 
 While the accepted TEST remains active, the service sends best-effort updates
 for up to 24 hours:

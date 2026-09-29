@@ -440,3 +440,18 @@ is still labelled last-known with its age. Warm-up stops ten minutes after the
 last input or when the view hides, bounding battery cost. Time-to-first-fix and
 battery impact remain physical gates.
 
+## 2026-09-29 — Let phone location assist answer a closed companion
+
+The 2026-09-04 decision deferred background location until evidence justified
+it. In practice assist only worked while OpenDistress Setup was on screen: the
+SDK's non-binder receiver exists only in a running process, and foreground-only
+location fails from the background. The companion now declares an exported
+receiver for Garmin Connect's incoming-message broadcast that only initializes
+the SDK link, offers "Allow all the time" and battery-unrestricted settings with
+a visible checklist, and answers each incident once. The watch repeats its
+request at acceptance, 30 and 90 seconds, within five minutes and until a
+candidate for the event arrives, so a repeat reaches the freshly started SDK
+receiver. The binder mode affected by CIQQA-4631 stays disabled, no always-on
+location service is added, and validation on both sides is unchanged. Whether
+Garmin Connect's broadcast reaches a stopped process is a physical gate.
+

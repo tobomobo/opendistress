@@ -172,6 +172,11 @@ class OpenDistressView extends WatchUi.View {
     // callbacks keep only fix quality in memory; no position is stored or
     // sent before provider acceptance. It stops after this long without input.
     const GPS_WARMUP_MS = 600000;
+    // The optional phone-location request is repeated a few times after
+    // acceptance: the first message may only wake a closed Android companion,
+    // and Garmin Connect can drop watch-to-phone messages (CIQQA-4631).
+    const COMPANION_REQUEST_AT_SECONDS = [0, 30, 90];
+    const COMPANION_REQUEST_WINDOW_SECONDS = 300;
     const SIGNAL_FRAME_MS = 80;
     const SIGNAL_BURST_MS = 450;
     const RESET_DONE_MS = 3500;
@@ -297,6 +302,8 @@ class OpenDistressView extends WatchUi.View {
     var _lastPositionCallbackMs = 0;
     var _grafanaAlertRetries = 0;
     var _grafanaAlertAttemptMs = 0;
+    var _companionRequests = 0;
+    var _companionAnswered = false;
     var _warmupActive = false;
     var _warmupStartedMs = 0;
     var _warmupQuality = -1;
@@ -592,6 +599,7 @@ class OpenDistressView extends WatchUi.View {
         }
         WatchUi.requestUpdate();
         retryPendingGrafanaAlert();
+        retryCompanionLocationRequest();
         pollDirectFallbackLocation();
         scheduleIdleCoverRefresh();
     }
@@ -2373,6 +2381,7 @@ class OpenDistressView extends WatchUi.View {
             longitude,
             accuracyMeters
         );
+        _companionAnswered = true;
         var nextStage = _directResult["capture_stage"] == 0
             ? 1
             : _directResult["capture_stage"];
@@ -3358,6 +3367,8 @@ class OpenDistressView extends WatchUi.View {
     ) {
         _deferredCompanionLocation = null;
         _grafanaAlertRetries = 0;
+        _companionRequests = 0;
+        _companionAnswered = false;
         // The warm receiver now belongs to accepted tracking; keep it running.
         _warmupActive = false;
         var acceptedAt = currentTime();
@@ -3405,10 +3416,34 @@ class OpenDistressView extends WatchUi.View {
         return true;
     }
 
+    // Bounded repeats of the same request until a candidate for this event
+    // arrives; the phone ignores repeats for an event it already answered.
+    function retryCompanionLocationRequest() {
+        if (_directResult == null
+            || _companionAnswered
+            || _companionRequests >= COMPANION_REQUEST_AT_SECONDS.size()
+            || _directResult["capture_stage"] == 3
+            || !(_directResult["accepted_at"] instanceof Lang.Number)
+            || _directResult["accepted_at"] <= 0) {
+            return;
+        }
+        var now = currentTime();
+        if (now == null) {
+            return;
+        }
+        var since = now - _directResult["accepted_at"];
+        if (since < COMPANION_REQUEST_AT_SECONDS[_companionRequests]
+            || since >= COMPANION_REQUEST_WINDOW_SECONDS) {
+            return;
+        }
+        requestCompanionLocation();
+    }
+
     function requestCompanionLocation() {
         if (_directResult == null || _directResult["accepted_at"] <= 0) {
             return;
         }
+        _companionRequests += 1;
         var digest = DirectAlertSettings.companionDigest();
         if (!OpenDistressProtocol.isCanonicalDigest(digest)) {
             return;
@@ -4792,4 +4827,26 @@ function gpsWarmupKeepsOnlyQualityAndHandsOverAtAcceptance(logger) {
     var expires = view.warmupExpired();
     view.onHide();
     return handedOver && expires && !view._warmupActive;
+}
+
+(:test)
+function companionLocationRequestRepeatsBoundedUntilAnswered(logger) {
+    var view = new DirectRetryProbe();
+    var now = Time.now().value();
+    view._directResult = {"capture_stage" => 1, "pending_location_hex" => "",
+        "accepted_at" => now - 40, "tracking_expires_at" => now + 3600, "event_id" => "AAECAwQFBgcICQoLDA0ODw"};
+    // Two slots are due 40 s after acceptance; the third waits for 90 s.
+    view.retryCompanionLocationRequest(); view.retryCompanionLocationRequest(); view.retryCompanionLocationRequest();
+    if (view._companionRequests != 2) { view.onHide(); return false; }
+    view._directResult["accepted_at"] = now - 100;
+    view.retryCompanionLocationRequest(); view.retryCompanionLocationRequest();
+    var bounded = view._companionRequests == 3;
+    view._companionRequests = 0; view._companionAnswered = true;
+    view.retryCompanionLocationRequest();
+    var answeredStops = view._companionRequests == 0;
+    view._companionAnswered = false; view._directResult["accepted_at"] = now - 400;
+    view.retryCompanionLocationRequest();
+    var windowCloses = view._companionRequests == 0;
+    view.onHide();
+    return bounded && answeredStops && windowCloses;
 }

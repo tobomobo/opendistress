@@ -38,6 +38,9 @@ internal class GarminCompanionLink private constructor(context: Context) {
     private var pendingTransfer: GarminSetupBinding? = null
     private var confirmedTransfer: GarminSetupBinding? = null
     private var confirmedAt: Long? = null
+    private var assistedEventId: String? = null
+    private var assistedAtMillis = 0L
+    @Volatile private var assistInFlightEventId: String? = null
 
     private val applicationEvents = ConnectIQ.IQApplicationEventListener { device, installedApp, messages, status ->
         if (installedApp.applicationId !in GarminCompanionProtocol.GARMIN_APP_IDS) {
@@ -288,6 +291,11 @@ internal class GarminCompanionLink private constructor(context: Context) {
                 GarminCompanionProtocol.digest(config).toByteArray(),
             ) || !locationAssistEnabled()
         ) return
+        // The watch repeats its request a few times; answer each event once,
+        // but let a repeat retry after a failed attempt.
+        val nowMillis = System.currentTimeMillis()
+        if (incident.eventId == assistedEventId && nowMillis - assistedAtMillis in 0 until ASSIST_REPEAT_WINDOW_MS) return
+        if (incident.eventId == assistInFlightEventId) return
         if (appContext.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             update(GarminLinkStatus.Attention("Alert accepted, but phone location permission is missing"))
             return
@@ -298,8 +306,10 @@ internal class GarminCompanionLink private constructor(context: Context) {
             .setMaxUpdateAgeMillis(0)
             .build()
         val cancellation = CancellationTokenSource()
+        assistInFlightEventId = incident.eventId
         locationClient.getCurrentLocation(request, cancellation.token)
             .addOnSuccessListener { location ->
+                assistInFlightEventId = null
                 if (location == null || isMock(location)) {
                     update(GarminLinkStatus.Attention("Alert accepted; phone could not obtain a real location fix"))
                     return@addOnSuccessListener
@@ -307,6 +317,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
                 sendLocationCandidate(device, installedApp, incident, location)
             }
             .addOnFailureListener {
+                assistInFlightEventId = null
                 update(GarminLinkStatus.Attention("Alert accepted; phone location request failed"))
             }
     }
@@ -336,6 +347,10 @@ internal class GarminCompanionLink private constructor(context: Context) {
         }.getOrNull() ?: return
         runCatching {
             connectIQ.sendMessage(device, installedApp, payload) { _, _, status ->
+                if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
+                    assistedEventId = incident.eventId
+                    assistedAtMillis = System.currentTimeMillis()
+                }
                 update(
                     if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
                         // Transport completion is not a configuration ACK.
@@ -372,6 +387,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
     companion object {
         private const val KEY_LOCATION_ASSIST = "location-assist"
         private const val KEY_GARMIN_ENABLED = "garmin-enabled"
+        private const val ASSIST_REPEAT_WINDOW_MS = 5 * 60 * 1000L
         @Volatile private var instance: GarminCompanionLink? = null
 
         fun get(context: Context): GarminCompanionLink = instance ?: synchronized(this) {

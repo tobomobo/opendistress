@@ -65,7 +65,9 @@ may supply its current fix without being modified; the latter has no Garmin fix
 timestamp and is explicitly marked with unknown age. Age is diagnostic metadata, not proof that a
 coordinate is current.
 When the owner enables Garmin phone location assist, the Android companion may
-also request one fresh fused fix after provider acceptance. Android and Google
+also request one fresh fused fix after provider acceptance. If the owner also
+chooses Android's "Allow all the time", it can do so while the companion is
+closed; that background permission is used only for this one-fix watch request. Android and Google
 Play services can process that request; Garmin Connect transfers the candidate
 to the watch. The watch rejects mock, pre-acceptance, expired,
 configuration-mismatched, out-of-range, and excessively inaccurate values, then
