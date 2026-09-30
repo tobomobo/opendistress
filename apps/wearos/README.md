@@ -151,6 +151,13 @@ requests a zero-cache high-accuracy current fix. Wear OS' fused provider may
 select the watch or paired Android phone; the app cannot force or manually
 merge both sources.
 
+For Garmin, **Connection details** shows the watch-app version Garmin Connect
+reports and links to the app's Connect IQ Store page, where Garmin offers any
+update; the phone cannot install watch apps itself or see the Store's latest
+version. When the reported version changes, the saved setup is re-sent once so
+the updated build confirms it; check `TEST MODE · Ready` on the watch.
+**Open OpenDistress on the watch** asks Garmin Connect to show the launch prompt.
+
 For Garmin, the optional **Garmin phone location assist** switch requests
 precise Android location permission. After the watch has already stored direct
 provider acceptance, it can ask for one zero-cache high-accuracy phone fix.

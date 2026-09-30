@@ -29,6 +29,7 @@ phase,gate,route_or_condition,target,status,completed,last_run_utc,evidence_refe
 1,TEST reset confirmation,reset hold ends on TEST RESET with watch GPS stopped and provider alarm warning; alarms continue until acknowledged in the provider app,repeated,NOT_RUN,0,,,
 1,GPS warm-up,fēnix 8 shows GPS ready on the idle app outdoors; after acceptance the first live GPS update arrives faster than from a cold start; warm-up stops after ten idle minutes,10,NOT_RUN,0,,,Measure time-to-first-fix and battery drain against the previous cold-start build
 1,background phone location assist,OpenDistress Setup swiped away with Allow all the time and unrestricted battery; accepted Garmin TEST wakes it and one phone-labelled candidate reaches every accepted route,10,NOT_RUN,0,,,Depends on Garmin Connect broadcasting to a stopped process and on CIQQA-4631; record the Garmin Connect version
+1,watch app update route,"Check for watch app update opens the OpenDistress TEST Store page in Connect IQ; after a Store update the reported version changes, setup is re-sent and the watch shows TEST MODE · Ready",1,NOT_RUN,0,,,openStore uses the manifest application ID; confirm it resolves to the beta listing
 3,deliberate activation,app list,200,NOT_RUN,0,,,
 3,deliberate activation,glance,200,NOT_RUN,0,,,
 3,deliberate activation,stock or Face It complication,200,NOT_RUN,0,,,
