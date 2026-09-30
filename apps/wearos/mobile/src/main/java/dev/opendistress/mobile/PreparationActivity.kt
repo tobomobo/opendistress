@@ -10,9 +10,8 @@ import android.widget.ScrollView
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.checkbox.MaterialCheckBox
-import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.MaterialColors
-import com.google.android.material.textview.MaterialTextView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.opendistress.shared.DirectConfig
 import java.text.DateFormat
 import java.util.Date
@@ -21,13 +20,13 @@ import java.util.Date
 class PreparationActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var store: SecureProvisioningStore
+    private val ui by lazy { CompanionUi(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        DynamicColors.applyToActivityIfAvailable(this)
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(32))
+            setPadding(dp(20), dp(24), dp(20), dp(40))
         }
         setContentView(ScrollView(this).apply {
             setBackgroundColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface))
@@ -99,7 +98,7 @@ class PreparationActivity : Activity() {
     private fun preview(config: DirectConfig) {
         newPage()
         heading("Saved emergency profile")
-        text("TEST ONLY — no emergency action required. This is a profile preview; provider formatting and notification truncation differ. Verify the actual message during a drill.")
+        note("TEST ONLY — no emergency action required. This is a profile preview; provider formatting and notification truncation differ. Verify the actual message during a drill.")
         card("Response instructions", config.responseInstructions)
         card("Prepared message", config.customAlertMessage)
         card("Person wearing the watch", config.protectedPersonName)
@@ -115,7 +114,7 @@ class PreparationActivity : Activity() {
     private fun drill(config: DirectConfig, watch: String, provider: String) {
         newPage()
         heading("$watch → $provider drill")
-        text("Arrange this with ALL intended recipients first. TEST alerts can be loud and repeat. Use only a test route. Do not call emergency services for this exercise.")
+        warn("Arrange this with ALL intended recipients first. TEST alerts can be loud and repeat. Use only a test route. Do not call emergency services for this exercise.")
         if (config.grafanaWebhookUrl != null && config.pushoverUserKey != null) {
             text("Garmin attempts both saved providers independently. Wear OS tries Grafana first, with Pushover as fallback. Retries can reach both, so warn both recipient groups. Only record the provider you actually observed. To isolate a route, save only that provider and sync again.")
         }
@@ -127,7 +126,7 @@ class PreparationActivity : Activity() {
             "Recipients received a real GPS update, checked its age and accuracy, and verified the map against my actual position.",
             "I reset the TEST explicitly on the watch and checked that provider alarm repetitions have stopped.",
         )
-        text("If any step fails, leave it unchecked and fix that part before repeating. An unavailable or stale GPS fix is useful information, but does not pass this fresh-location drill.")
+        note("If any step fails, leave it unchecked and fix that part before repeating. An unavailable or stale GPS fix is useful information, but does not pass this fresh-location drill.")
         val boxes = checks.map { label ->
             MaterialCheckBox(this).apply {
                 text = label
@@ -158,10 +157,12 @@ class PreparationActivity : Activity() {
         newPage()
         heading("Learn your Garmin controls")
         text("Choose the matching layout and check it against your own watch. This is a schematic, not automatic device detection. Nothing on this phone screen sends an alert or changes watch settings.")
-        content.addView(GarminControlDiagram(this, layout), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(230)))
+        content.addView(ui.card(padding = 12).apply {
+            (getChildAt(0) as LinearLayout).addView(GarminControlDiagram(this@PreparationActivity, layout),
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230)))
+        }, params())
         button("Layout: ${layout.title}") {
-            android.app.AlertDialog.Builder(this).setTitle("Watch control layout")
+            MaterialAlertDialogBuilder(this).setTitle("Watch control layout")
                 .setItems(GarminControlLayout.entries.map { it.title }.toTypedArray()) { _, index ->
                     controls(GarminControlLayout.entries[index])
                 }.show()
@@ -189,7 +190,7 @@ class PreparationActivity : Activity() {
         card("1 · Enter Practice on the watch", "Open OpenDistress while no TEST or incident is pending. ${if (layout.hasMenu) "Hold middle-left MENU." else "Tap the idle screen."} Verify the PRACTICE screen and its no-sending message before proceeding. Practice never starts automatically and cannot send notifications.")
         card("2 · Learn the hold", "Follow the watch: release a short press early, then hold START for 2.5 seconds. Repeat the hold looking away, in a safe setting. BACK leaves Practice; the ordinary app can send again after you exit.")
         card("3 · Learn the cues", "A short pulse when you press, then three lighter ticks that come faster as the ring fills. One longer buzz means the TEST was stored on the watch and sending has started—release then. Two short pulses mean a provider accepted the request (Practice simulates them). They do not mean a phone received it or someone is helping. If vibration is disabled, no pulse is expected. Change it in Watch behavior, then save and sync.")
-        text("Check that vibration is perceptible but acceptably quiet on your actual wrist. The simulator cannot establish either. Do not restrain yourself for this exercise.")
+        note("Check that vibration is perceptible but acceptably quiet on your actual wrist. The simulator cannot establish either. Do not restrain yourself for this exercise.")
         button("Next · access during sport") { accessPractice() }
         button("Back to controls") { controls(layout) }
     }
@@ -199,14 +200,14 @@ class PreparationActivity : Activity() {
         card("From the normal watch face", "Find the installed OpenDistress app. Put its app-list entry or glance somewhere easy to reach. If your firmware offers it as a shortcut target, assign and test that shortcut. The app cannot install a global button listener.")
         card("On fēnix 8", "From the ordinary watch face, hold middle-left MENU, then Watch Settings → System → Shortcuts. Only choose options the watch actually offers. If OpenDistress is absent, a watch-face shortcut plus a pinned app/glance may shorten the route; it is not a one-button trigger.")
         card("During a safe practice activity", "With no alert active, rehearse getting to OpenDistress without stopping or discarding the recording. Enter Practice, repeat the hold, then return and verify the activity is still recording. Do not assume the simulator or another watch model proves this route works.")
-        text("Once an alert is active, leaving OpenDistress can stop its foreground GPS acquisition. A system shortcut, screen lock, firmware behavior, or app exit can still interrupt it. Agree on a backup route with your recipients.")
+        note("Once an alert is active, leaving OpenDistress can stop its foreground GPS acquisition. A system shortcut, screen lock, firmware behavior, or app exit can still interrupt it. Agree on a backup route with your recipients.")
         button("Next · separate delivery test") { overview() }
         button("Failure checklist · no sending") { failureChecklist() }
     }
 
     private fun failureChecklist() {
         newPage(); heading("When something fails")
-        text("Use only an isolated TEST route with all recipients warned. These checks do not run automatically and do not record success. Never disable connectivity or GPS during a real incident.")
+        warn("Use only an isolated TEST route with all recipients warned. These checks do not run automatically and do not record success. Never disable connectivity or GPS during a real incident.")
         card("No phone / no network", "A locally retained event is not delivery. With the app open, the watch keeps retrying and shows the next attempt; a short START press retries at once. Observe pending state, restore the connection, and check the actual receiver. Retries can duplicate notifications. Do not reset pending work to make an error disappear.")
         card("No GPS / old GPS", "The initial TEST must not wait for GPS. Check that no fresh location is claimed without a real fix; if a last-known fix exists, verify its age warning. Move to open sky and check a later real update with the recipient.")
         card("App closed / reopened", "A pending event must retain its identity. An accepted event must reopen covered, without sending a new trigger. Garmin foreground GPS needs the app open. Reopening or a compile success is not proof that updates reached anyone.")
@@ -214,37 +215,48 @@ class PreparationActivity : Activity() {
         button("Back to preparation") { overview() }
     }
 
-    private fun heading(value: String) = text(value, true)
-
-    private fun text(value: String, heading: Boolean = false) {
-        content.addView(MaterialTextView(this).apply {
-            text = value
-            setTextAppearance(if (heading) com.google.android.material.R.style.TextAppearance_Material3_HeadlineMedium
-                else com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
-            setPadding(0, dp(8), 0, dp(12))
-        }, params())
+    private fun heading(value: String) {
+        content.addView(ui.eyebrow("Preparation · nothing is sent"), params(0))
+        content.addView(ui.heading(value), params(CompanionUi.Space.S))
     }
 
+    private fun text(value: String) {
+        content.addView(ui.body(value), params())
+    }
+
+    private fun note(value: String) = content.addView(ui.callout(value), params())
+    private fun warn(value: String) = content.addView(ui.callout(value, CompanionUi.Tone.WARNING), params())
+
+    /** "3 · Title" becomes a numbered step card; other titles are plain cards. */
     private fun card(title: String, body: String) {
-        content.addView(MaterialCardView(this).apply {
-            radius = dp(24).toFloat()
-            cardElevation = 0f
-            addView(MaterialTextView(this@PreparationActivity).apply {
-                text = "$title\n\n${body.ifBlank { "Not provided" }}"
-                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
-                setPadding(dp(18), dp(18), dp(18), dp(18))
-            })
-        }, params())
+        val numbered = Regex("^(\\d+) · (.+)$").matchEntire(title)
+        val card = if (numbered != null) {
+            ui.infoCard(numbered.groupValues[2], body.ifBlank { "Not provided" }, numbered.groupValues[1])
+        } else ui.infoCard(title, body.ifBlank { "Not provided" })
+        content.addView(card, params())
     }
 
-    private fun button(label: String, action: () -> Unit): MaterialButton = MaterialButton(this).apply {
-        text = label
-        minHeight = dp(56)
-        setOnClickListener { action() }
-        content.addView(this, params())
+    /** Forward steps are primary, leaving is quiet, everything else is tonal. */
+    private fun button(label: String, action: () -> Unit): MaterialButton {
+        val button = when {
+            label.startsWith("Next") || label.startsWith("Record") || label.startsWith("Rehearse") ||
+                label.startsWith("Learn Garmin controls") -> ui.primaryButton(label, action)
+            label.startsWith("Back") || label.startsWith("Leave") -> ui.textButton(label, action)
+            else -> ui.tonalButton(label, action)
+        }
+        // A run of buttons sits 16 dp below content and 8 dp apart.
+        val previous = content.getChildAt(content.childCount - 1)
+        content.addView(button, params(0).apply {
+            topMargin = dp(if (previous is MaterialButton) CompanionUi.Space.S else CompanionUi.Space.XS)
+        })
+        return button
     }
 
-    private fun params() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) }
+    private fun params(bottom: Int = CompanionUi.Space.M) = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        bottomMargin = dp(bottom)
+        // Content that follows a button run starts 16 dp below it.
+        if (content.childCount > 0 && content.getChildAt(content.childCount - 1) is MaterialButton) topMargin = dp(CompanionUi.Space.L)
+    }
     private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 }

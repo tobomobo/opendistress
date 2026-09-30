@@ -16,13 +16,19 @@
         <item name="colorOnSurface">@color/opendistress_on_surface</item>
         <item name="colorOnSurfaceVariant">@color/opendistress_on_surface_variant</item>
         <item name="colorSurfaceVariant">@color/opendistress_surface_variant</item>
+        <item name="colorSurfaceContainerLowest">@color/opendistress_surface_container_lowest</item>
         <item name="colorSurfaceContainerLow">@color/opendistress_surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/opendistress_surface_container</item>
         <item name="colorSurfaceContainerHigh">@color/opendistress_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/opendistress_surface_container_highest</item>
+        <item name="android:colorBackground">@color/opendistress_surface</item>
+        <item name="colorError">@color/opendistress_error</item>
         <item name="colorOutline">@color/opendistress_outline</item>
         <item name="colorOutlineVariant">@color/opendistress_outline_variant</item>
         <item name="colorErrorContainer">@color/opendistress_error_container</item>
         <item name="colorOnErrorContainer">@color/opendistress_on_error_container</item>
         <item name="textInputStyle">@style/Widget.OpenDistress.TextInputLayout</item>
+        <item name="materialSwitchStyle">@style/Widget.Material3.CompoundButton.MaterialSwitch</item>
         <item name="android:navigationBarColor">@color/opendistress_surface</item>
         <item name="android:statusBarColor">@color/opendistress_surface</item>
         <item name="android:windowActionModeOverlay">true</item>
@@ -36,10 +42,14 @@
     <style name="AppTheme.Starting" parent="AppTheme" />
 
     <style name="Widget.OpenDistress.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
-        <item name="boxCornerRadiusTopStart">16dp</item>
-        <item name="boxCornerRadiusTopEnd">16dp</item>
-        <item name="boxCornerRadiusBottomStart">16dp</item>
-        <item name="boxCornerRadiusBottomEnd">16dp</item>
+        <item name="boxCornerRadiusTopStart">14dp</item>
+        <item name="boxCornerRadiusTopEnd">14dp</item>
+        <item name="boxCornerRadiusBottomStart">14dp</item>
+        <item name="boxCornerRadiusBottomEnd">14dp</item>
+        <item name="boxStrokeColor">@color/opendistress_amber_deep</item>
+        <item name="boxBackgroundColor">@color/opendistress_surface_container_low</item>
+        <item name="boxBackgroundMode">outline</item>
+        <item name="hintTextColor">@color/opendistress_amber_deep</item>
     </style>
 
     <style name="TextAppearance.OpenDistress.Brand" parent="TextAppearance.Material3.TitleLarge">
@@ -54,8 +64,13 @@
     </style>
 
     <style name="TextAppearance.OpenDistress.Hero" parent="TextAppearance.Material3.HeadlineMedium">
-        <item name="fontFamily">sans-serif</item>
-        <item name="android:fontFamily">sans-serif</item>
+        <item name="fontFamily">sans-serif-medium</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">-0.01</item>
+    </style>
+
+    <style name="TextAppearance.OpenDistress.Body" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:lineSpacingMultiplier">1.2</item>
     </style>
 
     <style name="TextAppearance.OpenDistress.Section" parent="TextAppearance.Material3.TitleLarge">
