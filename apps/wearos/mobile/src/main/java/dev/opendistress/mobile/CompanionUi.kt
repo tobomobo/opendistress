@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
 
 /**
@@ -20,6 +21,9 @@ import com.google.android.material.textview.MaterialTextView
  */
 internal class CompanionUi(private val context: Context) {
     enum class Tone { NOTE, WARNING, OK }
+
+    /** Spacing scale in dp. Every gap on these screens is one of these steps. */
+    object Space { const val XS = 4; const val S = 8; const val M = 12; const val L = 16; const val XL = 24; const val XXL = 32 }
 
     fun dp(value: Int): Int = (value * context.resources.displayMetrics.density + 0.5f).toInt()
     fun attr(attribute: Int, fallback: Int = Color.GRAY): Int = MaterialColors.getColor(context, attribute, fallback)
@@ -33,17 +37,17 @@ internal class CompanionUi(private val context: Context) {
 
     fun eyebrow(value: String) = text(value, R.style.TextAppearance_OpenDistress_Eyebrow, accent).apply {
         isAllCaps = true
-        setPadding(0, dp(4), 0, dp(2))
+        setPadding(0, 0, 0, dp(Space.XS))
     }
 
     fun heading(value: String) = text(value, R.style.TextAppearance_OpenDistress_Hero, onSurface).apply {
-        setPadding(0, dp(2), 0, dp(8))
+        setPadding(0, 0, 0, dp(Space.M))
     }
 
     fun title(value: String) = text(value, R.style.TextAppearance_OpenDistress_Section, onSurface)
 
     fun body(value: String, color: Int = muted) =
-        text(value, R.style.TextAppearance_OpenDistress_Body, color).apply { setPadding(0, dp(2), 0, dp(10)) }
+        text(value, R.style.TextAppearance_OpenDistress_Body, color).apply { setPadding(0, 0, 0, dp(Space.M)) }
 
     fun caption(value: String) =
         text(value, com.google.android.material.R.style.TextAppearance_Material3_BodyMedium, muted).apply {
@@ -63,7 +67,7 @@ internal class CompanionUi(private val context: Context) {
         strokeWidth = dp(1)
         strokeColor = hairline
         setCardBackgroundColor(cardColor)
-        addView(column(*children).apply { setPadding(dp(padding), dp(padding - 2), dp(padding), dp(padding - 2)) })
+        addView(column(*children).apply { setPadding(dp(padding), dp(padding), dp(padding), dp(padding)) })
     }
 
     fun column(vararg children: View) = LinearLayout(context).apply {
@@ -73,11 +77,12 @@ internal class CompanionUi(private val context: Context) {
 
     /** Title and body kept apart; an optional badge (step number) leads the row. */
     fun infoCard(title: String, body: String, badge: String? = null): MaterialCardView {
-        val copy = column(this.title(title), caption(body).apply { setPadding(0, dp(6), 0, 0) })
+        val copy = column(this.title(title), caption(body).apply { setPadding(0, dp(Space.XS + 2), 0, 0) })
         if (badge == null) return card(copy)
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(badge(badge), LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(14) })
+            // Centre the badge on the first title line.
+            addView(badge(badge), LinearLayout.LayoutParams(dp(28), dp(28)).apply { marginEnd = dp(Space.M + 2); topMargin = dp(1) })
             addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         return card(row)
@@ -137,8 +142,8 @@ internal class CompanionUi(private val context: Context) {
         setIconResource(R.drawable.ic_chevron_right)
         iconGravity = MaterialButton.ICON_GRAVITY_END
         iconTint = ColorStateList.valueOf(muted)
-        setPadding(dp(20), 0, dp(14), 0)
-        minHeight = dp(60)
+        setPadding(dp(20), 0, dp(Space.M), 0)
+        minHeight = dp(56)
         backgroundTintList = ColorStateList.valueOf(cardColor)
         strokeWidth = dp(1)
         strokeColor = ColorStateList.valueOf(hairline)
@@ -160,6 +165,31 @@ internal class CompanionUi(private val context: Context) {
         button.isAllCaps = false
         button.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge)
         button.textSize = 15f
+    }
+
+    /**
+     * Vertical rhythm for stacked content: a run of buttons starts 16 dp below
+     * text and keeps 8 dp between buttons; stacked cards and callouts keep 12 dp.
+     * Only fills gaps that were left at zero, so explicit margins still win.
+     */
+    fun rhythm(container: ViewGroup) {
+        var previous: View? = null
+        for (i in 0 until container.childCount) {
+            val child = container.getChildAt(i)
+            if (child is ViewGroup && child !is MaterialButton && child !is TextInputLayout) rhythm(child)
+            val params = child.layoutParams as? LinearLayout.LayoutParams
+            val vertical = (container as? LinearLayout)?.orientation == LinearLayout.VERTICAL
+            if (params != null && vertical && previous != null && params.topMargin == 0) {
+                params.topMargin = when {
+                    child is MaterialButton -> dp(if (previous is MaterialButton) Space.S else Space.L)
+                    child is MaterialCardView -> dp(Space.M)
+                    previous is MaterialButton || previous is MaterialCardView -> dp(Space.L)
+                    else -> 0
+                }
+                child.layoutParams = params
+            }
+            if (child.visibility != View.GONE) previous = child
+        }
     }
 
     fun fill(topMargin: Int = 0) = LinearLayout.LayoutParams(

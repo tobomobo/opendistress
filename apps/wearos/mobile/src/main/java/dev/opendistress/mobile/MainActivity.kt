@@ -560,7 +560,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         })
         wizardTitle = ui.heading("").apply { setPadding(dp(20), dp(18), dp(20), dp(4)) }
         page.addView(wizardTitle, matchWidth())
-        wizardPages.forEach { content.addView(it, matchWidth()) }
+        wizardPages.forEach { content.addView(it, matchWidth()); ui.rhythm(it) }
         wizardScroll = ScrollView(this).apply {
             isFillViewport = true
             addView(content)
@@ -656,9 +656,11 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         homeRing = null
         fun action(label: String, primary: Boolean = false, onClick: () -> Unit) {
             dashboard.addView(if (primary) ui.primaryButton(label, onClick) else ui.rowButton(label, onClick),
-                matchWidth(topMargin = dp(if (primary) 14 else 8)))
+                matchWidth(topMargin = dp(if (primary) CompanionUi.Space.L else CompanionUi.Space.S)))
         }
-        fun section(label: String) = dashboard.addView(ui.eyebrow(label).apply { setPadding(dp(2), dp(22), 0, dp(2)) })
+        fun section(label: String) = dashboard.addView(ui.eyebrow(label).apply {
+            setPadding(0, dp(CompanionUi.Space.XL + 4), 0, dp(CompanionUi.Space.XS))
+        })
         fun fact(label: String, value: String) = ui.column(
             ui.eyebrow(label).apply { setTextColor(ui.muted) },
             ui.text(value, R.style.TextAppearance_OpenDistress_Body, ui.onSurface).apply { setPadding(0, dp(2), 0, dp(14)) },
@@ -792,6 +794,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                 action("Refresh") { showDashboard("Connection") }
             }
         }
+        ui.rhythm(dashboard)
         dashboardScroll.post { dashboardScroll.scrollTo(0, 0) }
     }
 
@@ -825,10 +828,10 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         setTextAppearance(if (heading) R.style.TextAppearance_OpenDistress_Section
             else R.style.TextAppearance_OpenDistress_Body)
         setTextColor(if (heading) ui.onSurface else ui.muted)
-        setPadding(dp(2), dp(if (heading) 18 else 2), dp(2), dp(if (heading) 6 else 12))
+        setPadding(0, dp(if (heading) CompanionUi.Space.XL + 4 else 0), 0, dp(if (heading) CompanionUi.Space.S else CompanionUi.Space.M))
     }
 
-    private fun pageHeading(copy: String) = ui.heading(copy).apply { setPadding(dp(2), dp(14), dp(2), dp(8)) }
+    private fun pageHeading(copy: String) = ui.heading(copy).apply { setPadding(0, dp(CompanionUi.Space.L), 0, dp(CompanionUi.Space.M)) }
 
     private fun addSection(parent: LinearLayout, label: Int, explanation: Int): LinearLayout {
         val body = LinearLayout(this).apply {

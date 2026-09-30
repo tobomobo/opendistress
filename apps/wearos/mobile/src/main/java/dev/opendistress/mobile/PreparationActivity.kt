@@ -217,7 +217,7 @@ class PreparationActivity : Activity() {
 
     private fun heading(value: String) {
         content.addView(ui.eyebrow("Preparation · nothing is sent"), params(0))
-        content.addView(ui.heading(value), params())
+        content.addView(ui.heading(value), params(CompanionUi.Space.S))
     }
 
     private fun text(value: String) {
@@ -244,11 +244,19 @@ class PreparationActivity : Activity() {
             label.startsWith("Back") || label.startsWith("Leave") -> ui.textButton(label, action)
             else -> ui.tonalButton(label, action)
         }
-        content.addView(button, params())
+        // A run of buttons sits 16 dp below content and 8 dp apart.
+        val previous = content.getChildAt(content.childCount - 1)
+        content.addView(button, params(0).apply {
+            topMargin = dp(if (previous is MaterialButton) CompanionUi.Space.S else CompanionUi.Space.XS)
+        })
         return button
     }
 
-    private fun params(bottom: Int = 12) = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(bottom) }
+    private fun params(bottom: Int = CompanionUi.Space.M) = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        bottomMargin = dp(bottom)
+        // Content that follows a button run starts 16 dp below it.
+        if (content.childCount > 0 && content.getChildAt(content.childCount - 1) is MaterialButton) topMargin = dp(CompanionUi.Space.L)
+    }
     private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
