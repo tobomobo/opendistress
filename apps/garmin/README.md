@@ -26,17 +26,27 @@ description, background, responder instructions, and an HTTPS photo URL.
 Omitting any or all of it never blocks activation.
 DOWN is consumed without triggering. A fully provisioned personal build with
 no direct TEST settings remains LIVE-only and uses the same 2.5-second hardware
-hold. While the button remains down, a thin progress ring grows from six
-o'clock in both directions and closes at the trigger threshold. It is driven
-by elapsed time, disappears immediately on release, and contains no numeric
-countdown. There is no on-watch TEST/LIVE switch.
+hold. The idle ready screen shows a quiet open ring with the amber signal point
+at six o'clock. While the button remains down, the whole ring lights up and a
+thick amber progress ring grows from six o'clock in both directions and closes
+at the trigger threshold. It is driven by elapsed time only, disappears
+immediately on release, and contains no numeric countdown. Three beats at
+40%, 68% and 88% of the hold (1.0, 1.7 and 2.2 seconds) accelerate towards the
+threshold: each flares the ring's glow, sends a ping from both leading tips and
+pulses the START edge indicator, in time with one light haptic tick. The beats
+are decoration and cues; they never shorten or extend the hold. There is no
+on-watch TEST/LIVE switch.
 
-At the hold threshold, the personal build persists the encrypted LIVE event,
-attempts one short haptic confirmation, and starts submission immediately.
-The haptic proves only that local persistence completed; it does not prove the
-relay or a recipient received anything. LIVE events cannot be abandoned, and
-reopening an active incident keeps the same incident rather than creating
-another logical alarm.
+At the hold threshold, the watch persists the TEST or encrypted LIVE event,
+attempts one longer, still low-intensity "signal stored" haptic, and starts
+submission immediately. A TEST also flashes the closed ring once and then shows
+a light orbiting the ring while a request or Wi-Fi check runs. The haptic and
+animation prove only local persistence and request activity; they do not prove
+that the relay, a provider or a recipient received anything. All cues stay at
+or below a 25% duty cycle so they are felt more than heard. If the phone link
+is not reported, the idle screen says so in amber; this is diagnostic only and
+never blocks the hold. LIVE events cannot be abandoned, and reopening an active
+incident keeps the same incident rather than creating another logical alarm.
 
 Connect IQ cannot install a global third-party button listener. On fēnix 8,
 DOWN reaches the app only after Garmin has opened an allowed foreground
@@ -62,16 +72,21 @@ controls at rest: short START, DOWN, BACK and ordinary taps leave it covered.
 Hold middle-left MENU, or hold the touchscreen, to deliberately reveal a separate
 provider-evidence page without stopping GPS or clearing anything. START, DOWN,
 BACK or a normal tap returns to the cover; 15 seconds without interaction also
-re-covers it. The page names the accepting provider and
-states that phone delivery is unconfirmed. Edge indicators point to the actual
-buttons, with short contextual labels on the readiness/status pages. An action
-widens and brightens its indicator; START also pulses while the deliberate hold
-progresses. Holding middle-left (`MENU`) on the detail page opens reset options.
+re-covers it. The page names the accepting provider, states that phone delivery
+is unconfirmed, and reports the GPS stage, the number of GPS updates sent, or
+`GPS: phone offline` while a fix waits for the phone link. Edge indicators point
+to the actual buttons, with short contextual labels on the readiness/status
+pages. An action widens and brightens its indicator; START also pulses on the
+hold beats. Holding middle-left (`MENU`) on the detail page opens reset options.
 Venu models have no middle-left key: tap **Reset options** on the revealed page.
-Both routes then require a separate 2.5-second START hold; release cancels that
-hold and BACK cancels the confirmation. Reset stops local TEST GPS and clears
-accepted TEST evidence, but does **not** stop provider alarm repetitions or
-resolve an incident. A request in flight prevents reset.
+Both routes then require a separate 2.5-second START hold with the same beats
+and ticks, drawn as a warm-white ring so it cannot be mistaken for sending;
+release cancels that hold and BACK cancels the confirmation. A completed reset
+gives the "stored" haptic and shows **TEST RESET** for a few seconds: watch GPS
+stopped, provider alarms may continue until acknowledged there. BACK or START
+dismisses it early. Reset stops local TEST GPS and clears accepted TEST
+evidence, but does **not** stop provider alarm repetitions or resolve an
+incident. A request in flight prevents reset.
 
 ### Send-free practice
 
@@ -81,9 +96,11 @@ then another hold without looking. Each hold requires a separate press/release.
 BACK returns to the app; practice never becomes the persistent startup mode.
 This separate view has no provider, queue, GPS or alert delegate and cannot
 record delivery/readiness evidence. Pending or active work blocks entry.
-One light input cue and the simulated double acceptance cue use the same
-optional haptic setting as normal operation. Only a physical watch can prove
-whether these cues are noticeable or quiet. See [preparation](../../docs/preparation.md)
+Practice plays the real cue order with the same optional haptic setting: the
+press cue, the three beat ticks, the longer "stored" cue at 2.5 seconds, then
+1.5 seconds later a clearly simulated double acceptance cue. The blind hold is
+learned by counting those ticks. Only a physical watch can prove whether these
+cues are noticeable or quiet. See [preparation](../../docs/preparation.md)
 for companion control diagrams, sport-access rehearsal and separate delivery drills.
 
 The clock uses original seven-segment artwork, weekday/date, and the watch's
@@ -94,21 +111,37 @@ does not target watch faces and exits the current application. Keeping this
 cover inside OpenDistress preserves its foreground location path. This is not
 a claim that Garmin will keep the app running indefinitely.
 
-After that stored acceptance, and never before it, the beta requests a real
-watch position for up to 24 hours. Every provider that accepted the trigger is
+After that stored acceptance, and never before it, the beta records and sends a
+real watch position for up to 24 hours. Before acceptance the app only warms up
+the receiver: while it is open and idle, or while a TEST is stored, it requests
+the same best-available continuous positioning so that the first fix after
+acceptance is quick. Warm-up callbacks keep only the fix quality in memory to
+show `GPS searching` or `GPS ready` (and a hollow or filled signal point) on the
+ready screen; they never store, queue or send coordinates. Warm-up stops ten
+minutes after the last button input, when the view is hidden, or when accepted
+tracking takes over the running request. Every provider that accepted the trigger is
 targeted sequentially for each fix. Pushover gets a separate high-priority
 first map-link message and normal-priority later moves. Grafana gets updates on
 the same alert UID, including the map link. The immediate fallback may be the
 watch's pre-acceptance last-known position; its source and age are explicit.
 During an already-running Garmin sport, the app can read the activity's current
-location without creating, stopping, or modifying its recording. Because that
+location without creating, stopping, or modifying its recording; it cannot
+change native activity, workout or interval settings. Because that
 API exposes no fix timestamp, the update is conservatively marked possibly
 stale and its age unknown. Position
 acquisition and updates run only while the app is foreground. No synthetic
 unavailable record is sent, and simulator/mock fixes are not evidence that real
 GPS works. A pending fix
 and its remaining provider targets are stored before network calls, retried a
-bounded number of times, and resumed when the app is reopened. Confirmed TEST
+bounded number of times, and resumed when the app is reopened. When Garmin
+reports that the fix never left the watch (no phone link or a full BLE queue),
+the fix is kept and retried after 10, 20, 30 and then every 60 seconds without
+spending the per-route budget; every accepted route shares that link, so waiting
+cannot starve another route. Position callbacks no longer bypass that backoff,
+which previously could exhaust the budget within seconds of losing the phone
+and drop the fix. A Grafana alert still pending after Pushover accepted is
+retried on the cover refresh at most once a minute, ten times per session;
+Grafana groups repeats on the same `alert_uid`. Confirmed TEST
 reset or the 24-hour expiry stops positioning and scrubs local coordinates.
 Expiry retains the provider-acceptance cover until a deliberate reset.
 
@@ -120,11 +153,16 @@ in-range, and within the enforced accuracy bound. It is never averaged with
 watch GPS: it is sent as a separately labelled source with age and rounded
 metre accuracy through the same watch-owned sequence. If another location is
 being delivered, the candidate waits in memory for that slot; phone failure or
-absence never blocks watch GPS.
+absence never blocks watch GPS. The watch repeats the request at acceptance, 30
+and 90 seconds later (within five minutes, until a candidate for that event
+arrives): the first message may only wake a closed companion, and Garmin Connect
+can drop watch-to-phone messages. The companion answers each event once.
 
 If neither an activity location nor a last-known snapshot exists at acceptance,
-the cover retries both the synchronous snapshot and the continuous positioning
-request every 10 seconds for the first five minutes, then once per minute. A
+the cover retries the synchronous snapshot every 10 seconds for the first five
+minutes, then once per minute. The continuous positioning request is re-issued
+only when its start failed or no position callback has arrived for a minute,
+so a working acquisition is never restarted while it converges. A
 snapshot discovered during that wait remains labeled last-known and does not
 complete the fresh-fix stage, so a later fresh callback at the same coordinates
 still produces an update. A deliberate MENU/touch hold opens status and reports
@@ -176,7 +214,7 @@ SHA-256 digest.
 Garmin has acknowledged Connect IQ issue `CIQQA-4631` against Garmin Connect
 5.27.3: phone-to-watch messages work, but watch-to-phone app messages may be
 dropped. OpenDistress therefore does not enable the SDK's affected binder mode.
-After sending setup, confirm `READY TEST` on the watch itself; the companion ACK
+After sending setup, confirm `TEST MODE · Ready` on the watch itself; the companion ACK
 and phone-location callback remain best effort until the Garmin regression is
 fixed and physically retested.
 
@@ -415,9 +453,14 @@ this is acceptable only for the bounded personal POC, not production LIVE
 enrollment.
 
 Grafana rate limiting (`429`) remains retryable/pending rather than becoming a
-configuration failure. The watch performs only bounded immediate retries and
-otherwise retains state for reopen; it does not claim an offline delivery
-queue at the provider boundary.
+configuration failure. While the app is open, a stored TEST that no provider
+accepted is retried after 5, 5, 15, 30 and then every 60 seconds; the screen
+shows the countdown, and a short START press retries the same immutable event
+immediately. Only a request Garmin reports as never sent repeats until the
+event expires. An ambiguous direct-provider result stops after five automatic
+retries because Pushover has no idempotency key; START can still retry it by
+hand. Each slow retry may run one more best-effort Wi-Fi check. It does not
+claim an offline delivery queue at the provider boundary.
 
 The older relay-backed v1 TEST path remains available to build-time/private
 configurations, but its relay URL, device ID, and HMAC key are no longer exposed
@@ -581,7 +624,8 @@ monkeydo bin/OpenDistress-ui-preview.prg fenix847mm
 ```
 
 UP cycles synthetic ready, partial-hold, sending, accepted clock, revealed
-status, and reset-confirmation states. On two-button Venu the fixture starts
+status, reset-confirmation, dual-provider, practice, pending-retry and
+TEST RESET states. On two-button Venu the fixture starts
 with revealed synthetic status so its reset-options target can be checked.
 Normal START/DOWN/touch navigation uses the production delegate. This fixture
 never proves provider acceptance, delivery, GPS, or a physical 2.5-second hold.
@@ -682,7 +726,13 @@ non-production keys; none proved relay acceptance or delivery.
 
 The earlier Linux headless process still exits 139 for both this app and
 Garmin's bundled `Menu2Sample`, so that remains a shared environment
-limitation. GPS, BLE, Wi-Fi, battery, haptic, glance, complication, long-hold,
+limitation. On 2026-09-29 the pinned image ran the structured tests headless on
+Linux under Xvfb with `+extension GLX` and `LIBGL_ALWAYS_SOFTWARE=1`:
+`PASSED (passed=23, failed=0, errors=0)` on `fenix847mm`, `instinct3solar45mm`
+and `venux1`. Interactive rendering in that image still stalls at the loading
+icon for this app, the unmodified previous build and Garmin's `Timer` sample,
+because the image carries no Garmin device fonts; screenshots still need a
+full SDK Manager install. GPS, BLE, Wi-Fi, battery, haptic, glance, complication, long-hold,
 and real network callbacks remain unverified interactively. Mock simulator GPS
 must not be promoted to a PASS for any physical location row. Strict `-l 3`
 still fails on the broadly untyped legacy Monkey C boundaries and remains a

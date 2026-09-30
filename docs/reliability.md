@@ -83,7 +83,7 @@ Garmin Connect, BLE, Android background, or real fused-location reliability.
 Garmin's acknowledged `CIQQA-4631` regression on Garmin Connect 5.27.3 can drop
 the watch-returned ACK and location request while phone-to-watch setup still
 succeeds. Until a later Garmin Connect version passes the physical rows, the
-owner must confirm `READY TEST` on the watch and phone-assisted location remains
+owner must confirm `TEST MODE · Ready` on the watch and phone-assisted location remains
 unverified best effort.
 
 While an incident is active in the foreground, the client uses the existing

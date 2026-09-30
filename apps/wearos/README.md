@@ -83,7 +83,7 @@ RSA-wrapped Wear OS channel: Garmin Connect remains trusted with the plaintext
 TEST setup, matching the existing Connect IQ settings privacy boundary.
 Garmin's acknowledged Android issue `CIQQA-4631` can currently drop the reverse
 watch-to-phone message on Garmin Connect 5.27.3. The screen therefore tells the
-owner to verify `READY TEST` on the watch after a successful phone-to-watch send;
+owner to verify `TEST MODE · Ready` on the watch after a successful phone-to-watch send;
 ACK-backed readiness and phone-assisted location remain best effort until a
 physical retest proves the Garmin fix.
 
@@ -151,14 +151,26 @@ requests a zero-cache high-accuracy current fix. Wear OS' fused provider may
 select the watch or paired Android phone; the app cannot force or manually
 merge both sources.
 
+For Garmin, **Connection details** shows the watch-app version Garmin Connect
+reports and links to the app's Connect IQ Store page, where Garmin offers any
+update; the phone cannot install watch apps itself or see the Store's latest
+version. When the reported version changes, the saved setup is re-sent once so
+the updated build confirms it; check `TEST MODE · Ready` on the watch.
+**Open OpenDistress on the watch** asks Garmin Connect to show the launch prompt.
+
 For Garmin, the optional **Garmin phone location assist** switch requests
 precise Android location permission. After the watch has already stored direct
 provider acceptance, it can ask for one zero-cache high-accuracy phone fix.
 The watch validates the incident/configuration binding, source, capture time,
 coordinate bounds, reported accuracy, and mock status before sending it through
-its own direct-provider queue. Android background limits or a missing phone can
-prevent the candidate; neither condition delays the alert or the watch's own
-GPS.
+its own direct-provider queue. To answer while OpenDistress Setup is closed, the
+card then offers **Allow all the time** and unrestricted battery use, and shows
+each condition. A manifest receiver for Garmin Connect's incoming-message
+broadcast only starts the process and the SDK link; it reads no payload. The
+watch repeats its request briefly, and the SDK parses and validates the repeat.
+Android background limits, a force-stopped app, CIQQA-4631, or a missing phone
+can still prevent the candidate; none of them delays the alert or the watch's
+own GPS.
 
 While the accepted TEST remains active, the service sends best-effort updates
 for up to 24 hours:

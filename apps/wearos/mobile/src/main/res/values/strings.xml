@@ -9,7 +9,7 @@
     <string name="setup_title">Prepare quietly.</string>
     <string name="setup_explanation">Configure this once in calm conditions. Saving setup never triggers an alert.</string>
     <string name="delivery_title">Alert delivery</string>
-    <string name="delivery_explanation">Configure Grafana, Pushover, or both. The watch uses the first provider that accepts the TEST.</string>
+    <string name="delivery_explanation">Configure Grafana, Pushover, or both. Garmin sends to every saved provider; Wear OS tries Grafana first, then Pushover. Retries can reach both.</string>
     <string name="grafana_webhook">Grafana webhook URL</string>
     <string name="pushover_user_key">Pushover user/group key</string>
     <string name="pushover_api_token">Pushover application API token</string>
@@ -29,7 +29,7 @@
     <string name="pixel_watch_label">PIXEL WATCH / WEAR OS</string>
     <string name="garmin_watch_label">GARMIN</string>
     <string name="phone_location_assist">Garmin phone location assist</string>
-    <string name="phone_location_explanation">After a confirmed Garmin TEST alert, the phone may return one fresh fused-location candidate when Garmin Connect supports watch-to-phone messages. Watch GPS stays independent.</string>
+    <string name="phone_location_explanation">After a provider accepts a Garmin TEST, the watch can ask this phone for one precise location. Best effort: it needs precise location, \"Allow all the time\" to answer while this app is closed, unrestricted battery use, and Garmin Connect watch-to-phone messages (currently unreliable, Garmin issue CIQQA-4631). The watch repeats its request briefly so a closed app can wake up. Watch GPS always continues on its own.</string>
     <string name="watch_ready">Ready for a TEST</string>
     <string name="watch_waiting">Waiting for your watch</string>
     <string name="watch_attention">Setup needs attention</string>
