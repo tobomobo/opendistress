@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Toolbar mark: the open readiness ring with its amber signal point. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#101820"
+        android:pathData="M54,6 A48,48 0,1 1 54,102 A48,48 0,1 1 54,6" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M26,66 C19,40 32,22 54,22 C76,22 89,40 82,66"
+        android:strokeColor="#F4F0E6"
+        android:strokeLineCap="round"
+        android:strokeWidth="9" />
+    <path
+        android:fillColor="#F5A623"
+        android:pathData="M54,70 A8,8 0,1 1 54,86 A8,8 0,1 1 54,70" />
+</vector>

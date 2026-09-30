@@ -31,13 +31,21 @@ internal class GarminCompanionLink private constructor(context: Context) {
     private var ready = false
     var connectedWatchName: String? = null
         private set
-    private var observedDeviceId: Long? = null
+    /** Last OpenDistress app reported on the connected watch, for display and Store links. */
+    @Volatile var watchApp: GarminWatchApp? = null
+        private set
+    @Volatile private var watchDevice: IQDevice? = null
+    @Volatile private var watchIQApp: IQApp? = null
+    private val observedDevices = mutableSetOf<Long>()
     private var currentStatus: GarminLinkStatus =
         GarminLinkStatus.Unavailable("Starting Garmin connection…")
     private var pendingConfig: DirectConfig? = null
     private var pendingTransfer: GarminSetupBinding? = null
     private var confirmedTransfer: GarminSetupBinding? = null
     private var confirmedAt: Long? = null
+    private var assistedEventId: String? = null
+    private var assistedAtMillis = 0L
+    @Volatile private var assistInFlightEventId: String? = null
 
     private val applicationEvents = ConnectIQ.IQApplicationEventListener { device, installedApp, messages, status ->
         if (installedApp.applicationId !in GarminCompanionProtocol.GARMIN_APP_IDS) {
@@ -90,7 +98,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
             override fun onSdkShutDown() {
                 ready = false
                 initialized = false
-                observedDeviceId = null
+                synchronized(observedDevices) { observedDevices.clear() }
                 pendingTransfer = null
                 confirmedTransfer = null
                 update(GarminLinkStatus.Unavailable("Garmin connection stopped"))
@@ -152,6 +160,46 @@ internal class GarminCompanionLink private constructor(context: Context) {
         }
     }
 
+    /** Records the installed app; true when its version changed since last seen. */
+    private fun recordWatchApp(device: IQDevice, installed: IQApp): Boolean {
+        val version = runCatching { installed.version() }.getOrDefault(0)
+        watchApp = GarminWatchApp(device.friendlyName.orEmpty(), installed.applicationId,
+            installed.displayName.orEmpty(), version)
+        watchDevice = device
+        watchIQApp = installed
+        val key = KEY_WATCH_APP_VERSION + installed.applicationId
+        val previous = if (preferences.contains(key)) preferences.getInt(key, 0) else null
+        if (version > 0) preferences.edit().putInt(key, version).apply()
+        return GarminWatchApp.changed(previous, version)
+    }
+
+    /** Opens this app's Connect IQ Store page, where Garmin offers any update. */
+    fun openStorePage(): Boolean {
+        if (!ready) return false
+        val id = watchApp?.applicationId ?: GarminCompanionProtocol.GARMIN_APP_IDS.first()
+        return runCatching { connectIQ.openStore(id) }.getOrDefault(false)
+    }
+
+    /** Asks Garmin Connect to open OpenDistress on the watch; the user confirms there. */
+    fun openOnWatch(result: (String) -> Unit) {
+        val device = watchDevice
+        val app = watchIQApp
+        if (!ready || device == null || app == null) {
+            result("Connect the watch and open this screen again")
+            return
+        }
+        runCatching {
+            connectIQ.openApplication(device, app) { _, _, status ->
+                result(when (status) {
+                    ConnectIQ.IQOpenApplicationStatus.PROMPT_SHOWN_ON_DEVICE -> "Confirm on the watch to open OpenDistress"
+                    ConnectIQ.IQOpenApplicationStatus.APP_IS_ALREADY_RUNNING -> "OpenDistress is already open on the watch"
+                    ConnectIQ.IQOpenApplicationStatus.APP_IS_NOT_INSTALLED -> "OpenDistress is not installed on the watch"
+                    else -> "The watch did not show the prompt; open OpenDistress there by hand"
+                })
+            }
+        }.onFailure { result("Garmin Connect could not reach the watch") }
+    }
+
     fun locationAssistEnabled(): Boolean = preferences.getBoolean(KEY_LOCATION_ASSIST, false)
 
     fun setLocationAssistEnabled(enabled: Boolean) {
@@ -159,20 +207,32 @@ internal class GarminCompanionLink private constructor(context: Context) {
     }
 
     private fun connectedDevices(): List<IQDevice> = runCatching {
-        connectIQ.knownDevices.filter { connectIQ.getDeviceStatus(it) == IQDevice.IQDeviceStatus.CONNECTED }
+        val known = connectIQ.knownDevices
+        // Watch every paired watch, not only the one connected now: a watch
+        // that reconnects later must re-register app events, or its
+        // post-acceptance location request would go unheard.
+        known.forEach(::observeDevice)
+        known.filter { connectIQ.getDeviceStatus(it) == IQDevice.IQDeviceStatus.CONNECTED }
             .also { connectedWatchName = it.singleOrNull()?.friendlyName }
     }.getOrElse {
         update(GarminLinkStatus.Unavailable("Garmin device list is unavailable"))
         emptyList()
     }
 
+    private fun observeDevice(device: IQDevice) {
+        val added = synchronized(observedDevices) { observedDevices.add(device.deviceIdentifier) }
+        if (!added) return
+        runCatching {
+            connectIQ.registerForDeviceEvents(device) { _, status ->
+                // A setup saved while the watch was away is sent once it is back.
+                val unsent = pendingConfig.takeIf { pendingTransfer == null }
+                if (status == IQDevice.IQDeviceStatus.CONNECTED && unsent != null) sync(unsent) else refresh()
+            }
+        }.onFailure { synchronized(observedDevices) { observedDevices.remove(device.deviceIdentifier) } }
+    }
+
     private fun checkApplication(device: IQDevice, config: DirectConfig?) {
-        if (observedDeviceId != device.deviceIdentifier) {
-            observedDeviceId = device.deviceIdentifier
-            runCatching {
-                connectIQ.registerForDeviceEvents(device) { _, _ -> refresh() }
-            }.onFailure { observedDeviceId = null }
-        }
+        observeDevice(device)
         findInstalledApplication(device, 0, config)
     }
 
@@ -196,10 +256,14 @@ internal class GarminCompanionLink private constructor(context: Context) {
                             update(GarminLinkStatus.Attention("Garmin app message registration failed"))
                             return
                         }
-                        if (config == null) {
+                        val updated = recordWatchApp(device, installed)
+                        val resend = config ?: savedConfig().takeIf { updated }
+                        if (resend == null) {
                             update(readiness(device, installed))
                         } else {
-                            sendConfiguration(device, installed, config)
+                            // After a watch-app update, repeat the saved setup once so the
+                            // new build confirms the same revision; the watch accepts it idempotently.
+                            sendConfiguration(device, installed, resend)
                         }
                     }
 
@@ -227,7 +291,10 @@ internal class GarminCompanionLink private constructor(context: Context) {
                 if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
                     update(
                         GarminLinkStatus.Waiting(
-                            "Sent to ${device.friendlyName} — open OpenDistress there and check READY TEST",
+                            "Sent to ${device.friendlyName}. On the watch, open OpenDistress and check it " +
+                                "shows TEST MODE · Ready. Garmin Connect may not return the watch's " +
+                                "confirmation (Garmin issue CIQQA-4631); the watch screen is the check.",
+                            sent = true,
                         ),
                     )
                 } else {
@@ -273,6 +340,11 @@ internal class GarminCompanionLink private constructor(context: Context) {
                 GarminCompanionProtocol.digest(config).toByteArray(),
             ) || !locationAssistEnabled()
         ) return
+        // The watch repeats its request a few times; answer each event once,
+        // but let a repeat retry after a failed attempt.
+        val nowMillis = System.currentTimeMillis()
+        if (incident.eventId == assistedEventId && nowMillis - assistedAtMillis in 0 until ASSIST_REPEAT_WINDOW_MS) return
+        if (incident.eventId == assistInFlightEventId) return
         if (appContext.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             update(GarminLinkStatus.Attention("Alert accepted, but phone location permission is missing"))
             return
@@ -283,8 +355,10 @@ internal class GarminCompanionLink private constructor(context: Context) {
             .setMaxUpdateAgeMillis(0)
             .build()
         val cancellation = CancellationTokenSource()
+        assistInFlightEventId = incident.eventId
         locationClient.getCurrentLocation(request, cancellation.token)
             .addOnSuccessListener { location ->
+                assistInFlightEventId = null
                 if (location == null || isMock(location)) {
                     update(GarminLinkStatus.Attention("Alert accepted; phone could not obtain a real location fix"))
                     return@addOnSuccessListener
@@ -292,6 +366,7 @@ internal class GarminCompanionLink private constructor(context: Context) {
                 sendLocationCandidate(device, installedApp, incident, location)
             }
             .addOnFailureListener {
+                assistInFlightEventId = null
                 update(GarminLinkStatus.Attention("Alert accepted; phone location request failed"))
             }
     }
@@ -321,6 +396,10 @@ internal class GarminCompanionLink private constructor(context: Context) {
         }.getOrNull() ?: return
         runCatching {
             connectIQ.sendMessage(device, installedApp, payload) { _, _, status ->
+                if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
+                    assistedEventId = incident.eventId
+                    assistedAtMillis = System.currentTimeMillis()
+                }
                 update(
                     if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
                         // Transport completion is not a configuration ACK.
@@ -357,6 +436,8 @@ internal class GarminCompanionLink private constructor(context: Context) {
     companion object {
         private const val KEY_LOCATION_ASSIST = "location-assist"
         private const val KEY_GARMIN_ENABLED = "garmin-enabled"
+        private const val KEY_WATCH_APP_VERSION = "watch-app-version-"
+        private const val ASSIST_REPEAT_WINDOW_MS = 5 * 60 * 1000L
         @Volatile private var instance: GarminCompanionLink? = null
 
         fun get(context: Context): GarminCompanionLink = instance ?: synchronized(this) {
@@ -368,7 +449,8 @@ internal class GarminCompanionLink private constructor(context: Context) {
 internal sealed interface GarminLinkStatus {
     val description: String
     data class Ready(override val description: String, val confirmedAt: Long? = null) : GarminLinkStatus
-    data class Waiting(override val description: String) : GarminLinkStatus
+    /** [sent] means Garmin reported transport success; the watch has not confirmed storage. */
+    data class Waiting(override val description: String, val sent: Boolean = false) : GarminLinkStatus
     data class Attention(override val description: String) : GarminLinkStatus
     data class Unavailable(override val description: String) : GarminLinkStatus
 }

@@ -9,21 +9,30 @@ import Toybox.WatchUi;
 // Practice never sets readiness or creates provider-acceptance evidence.
 class WatchPracticeView extends WatchUi.View {
     const HOLD_MS = 2500;
+    // Practice plays the real cue order: ticks, stored signal, then a clearly
+    // simulated provider double pulse after a typical sending delay.
+    const SIMULATED_ACCEPT_MS = 1500;
     var _step = 0; // intro, short press, visible hold, eyes-away hold, done
     var _pressedStep = -1;
     var _pressedAt = 0;
     var _held = false;
     var _visible = false;
+    var _beat = 0;
+    var _acceptCueAt = 0;
+    var _acceptCuePending = false;
     var _timer;
     function initialize() { View.initialize(); _timer = new Timer.Timer(); }
     function onShow() { _visible = true; }
-    function onHide() { _visible = false; _held = false; _pressedStep = -1; _timer.stop(); }
+    function onHide() {
+        _visible = false; _held = false; _pressedStep = -1; _acceptCuePending = false; _timer.stop();
+    }
     function press() {
         if (!_visible || _pressedStep >= 0) { return true; }
-        _pressedStep = _step; _pressedAt = System.getTimer(); _held = true;
+        _pressedStep = _step; _pressedAt = System.getTimer(); _held = true; _beat = 0;
         if (_step > 0 && _step < 4) {
             WatchFeedback.input();
-            try { _timer.start(method(:advance), 50, true); }
+            // Stop first: a simulated acceptance cue may still own the timer.
+            try { _timer.stop(); _timer.start(method(:advance), 50, true); }
             catch (error) { _held = false; _pressedStep = -1; }
         }
         WatchUi.requestUpdate(); return true;
@@ -33,17 +42,28 @@ class WatchPracticeView extends WatchUi.View {
         if (_visible && _held && _pressedStep == _step) {
             if (_step == 0 || (_step == 1 && elapsed >= 0 && elapsed < HOLD_MS)) { _step += 1; }
         }
-        _held = false; _pressedStep = -1; _timer.stop();
+        _held = false; _pressedStep = -1;
+        if (!_acceptCuePending) { _timer.stop(); }
         WatchUi.requestUpdate(); return true;
     }
     function advance() {
+        if (_acceptCuePending && System.getTimer() - _acceptCueAt >= 0) {
+            _acceptCuePending = false;
+            // This is explicitly a simulated provider cue, not a sent event.
+            WatchFeedback.accepted();
+            if (!_held) { _timer.stop(); }
+        }
         if (!_visible || !_held || _pressedStep != _step) { return; }
         var elapsed = System.getTimer() - _pressedAt;
         if (elapsed < 0) { release(); return; }
         if (_step >= 2 && _step <= 3 && elapsed >= HOLD_MS) {
-            _step += 1; _held = false; _timer.stop();
-            // This is explicitly a simulated provider cue, not a sent event.
-            WatchFeedback.accepted();
+            _step += 1; _held = false;
+            WatchFeedback.committed();
+            _acceptCuePending = true;
+            _acceptCueAt = System.getTimer() + SIMULATED_ACCEPT_MS;
+        } else if (_step >= 2 && _step <= 3) {
+            var beat = WatchPresentation.holdBeat(elapsed, HOLD_MS);
+            if (beat > _beat) { _beat = beat; WatchFeedback.tick(); }
         }
         WatchUi.requestUpdate();
     }
@@ -55,7 +75,7 @@ class WatchPracticeView extends WatchUi.View {
                 ["No sending", "START to begin", "BACK exits"],
                 ["Short press", "Press START", "Release early"],
                 ["Hold 2.5 sec", "Hold START", "Release cancels"],
-                ["Look away", "Hold START 2.5s", "without looking"],
+                ["Look away", "Hold START 2.5s", "long buzz = done"],
                 ["Practice done", "Nothing was sent", "BACK to app"]
             ];
             for (var i = 0; i < 3; i += 1) {
@@ -66,18 +86,18 @@ class WatchPracticeView extends WatchUi.View {
         var titles = ["No sending", "Short press", "Hold 2.5 sec", "Look away", "Practice done"];
         var descriptions = ["START to begin\nBACK exits",
             "Press START\nRelease early",
-            "Hold START\nRelease cancels",
-            "Now repeat the hold\nwithout looking",
+            _held ? "Keep holding\nRelease cancels" : "Hold START\nRelease cancels",
+            "Repeat without looking\nTicks, then a long buzz",
             "Nothing was sent\nBACK returns to app"];
         WatchPresentation.text(dc, titles[_step], 38, 18);
         WatchPresentation.text(dc, descriptions[_step], 58, 26);
         }
-        WatchPresentation.button(dc, "START", "", _held ? 1.0 : 0);
-        WatchPresentation.button(dc, "BACK", "", 0);
         // The blind rehearsal intentionally supplies no visual progress.
         if (_held && _step == 2) {
-            WatchPresentation.progress(dc, System.getTimer() - _pressedAt, HOLD_MS);
+            WatchPresentation.holdRing(dc, System.getTimer() - _pressedAt, HOLD_MS, false);
         }
+        WatchPresentation.button(dc, "START", "", _held ? 1.0 : 0);
+        WatchPresentation.button(dc, "BACK", "", 0);
     }
 }
 

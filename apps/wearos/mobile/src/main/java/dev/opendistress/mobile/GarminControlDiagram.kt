@@ -28,7 +28,7 @@ internal class GarminControlDiagram(context: Context, private val layout: Garmin
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val ink = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface)
-        val primary = MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary)
+        val primary = context.getColor(R.color.opendistress_amber)
         val size = minOf(width, height).toFloat()
         val cx = width / 2f; val cy = height / 2f; val r = size * .34f
         paint.color = ink; paint.style = Paint.Style.STROKE; paint.strokeWidth = size * .012f
