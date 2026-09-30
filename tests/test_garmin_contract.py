@@ -198,7 +198,7 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("compactRound ? 86 : 80", update)
         self.assertEqual(update.count("new WatchUi.TextArea"), 3)
         ready = update[update.index("function drawReadyScreen(dc)"):]
-        self.assertIn('WatchPresentation.line(dc, "TEST MODE", 23, false)', ready)
+        self.assertIn('WatchPresentation.line(dc, "TEST MODE", 25, false)', ready)
         self.assertIn('"Hold START 2.5s", 61, false', ready)
         self.assertIn('WatchPresentation.button(dc, "START", "", pulse)', ready)
         self.assertNotIn('"Practice", 0', ready)
@@ -1111,6 +1111,24 @@ class GarminContractTests(unittest.TestCase):
         self.assertNotIn("newTestEvent", retry_now)
         self.assertIn("function shortStartRetriesOnlyAnAlreadyPendingEvent(logger)", source)
         self.assertIn("function pendingRetriesBackOffAndStopOnlyForAmbiguousDirectResults(logger)", source)
+
+    def test_gps_warmup_never_records_or_sends_before_acceptance(self):
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        warm = source[source.index("function onWarmupQuality(") : source.index("function gpsWarm()")]
+        on_position = source[source.index("function onPosition(") : source.index("function onDirectPosition(")]
+        stop = source[source.index("function stopGpsWarmup()") : source.index("function warmupExpired()")]
+        accepted = source[
+            source.index("function beginAcceptedDirectTracking(")
+            : source.index("function onPushoverResponse(")
+        ]
+
+        self.assertIn("GPS_WARMUP_MS = 600000", source)
+        for forbidden in ("locationRecord", "persist", "Storage.", "makeWebRequest", "transmit"):
+            self.assertNotIn(forbidden, warm)
+        self.assertLess(on_position.index("onDirectPosition(info)"), on_position.index("onWarmupQuality("))
+        self.assertIn("if (_directResult != null || _activeIncident != null) {", stop)
+        self.assertIn("_warmupActive = false;", accepted)
+        self.assertIn("function gpsWarmupKeepsOnlyQualityAndHandsOverAtAcceptance(logger)", source)
 
     def test_offline_gps_fix_is_kept_and_callbacks_respect_backoff(self):
         source = (GARMIN / "source/OpenDistressApp.mc").read_text()

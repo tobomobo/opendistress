@@ -110,8 +110,11 @@ not a stable update channel.
 
 ## Location and privacy
 
-The direct beta sends the initial TEST without waiting for GPS. Location
-acquisition starts **after provider acceptance**. Garmin requests its best
+The direct beta sends the initial TEST without waiting for GPS. Location is
+recorded and sent only **after provider acceptance**. While the Garmin app is
+open, its GPS receiver warms up (for up to ten minutes without input) so the
+first post-acceptance fix arrives sooner; warm-up keeps only fix quality for the
+"GPS ready" hint and stores or sends no position. Garmin requests its best
 available positioning mode, can report a last-known fix with an age warning,
 and attempts updates while the app remains open, for up to 24 hours. Wear OS
 uses a visible location foreground service with the same maximum duration;

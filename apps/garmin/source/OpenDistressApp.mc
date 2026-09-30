@@ -167,6 +167,11 @@ class OpenDistressView extends WatchUi.View {
     const GRAFANA_ALERT_RETRY_MS = 60000;
     const MAX_GRAFANA_ALERT_RETRIES = 10;
     const READY_REFRESH_MS = 15000;
+    // While the app is open and idle (or a TEST is stored), the GPS receiver
+    // is kept warm so the first post-acceptance fix arrives sooner. Warm-up
+    // callbacks keep only fix quality in memory; no position is stored or
+    // sent before provider acceptance. It stops after this long without input.
+    const GPS_WARMUP_MS = 600000;
     const SIGNAL_FRAME_MS = 80;
     const SIGNAL_BURST_MS = 450;
     const RESET_DONE_MS = 3500;
@@ -292,6 +297,9 @@ class OpenDistressView extends WatchUi.View {
     var _lastPositionCallbackMs = 0;
     var _grafanaAlertRetries = 0;
     var _grafanaAlertAttemptMs = 0;
+    var _warmupActive = false;
+    var _warmupStartedMs = 0;
+    var _warmupQuality = -1;
 
     function initialize() {
         View.initialize();
@@ -323,6 +331,7 @@ class OpenDistressView extends WatchUi.View {
             resumeLocations();
         }
         scheduleIdleCoverRefresh();
+        startGpsWarmup();
         scheduleAmbient();
     }
 
@@ -376,9 +385,64 @@ class OpenDistressView extends WatchUi.View {
             if (_inFlight || _wifiCheckPending || signalBurst() > 0) {
                 return SIGNAL_FRAME_MS;
             }
-            return _retryScheduled ? 1000 : 0;
+            return _retryScheduled ? 1000 : (_warmupActive ? READY_REFRESH_MS : 0);
         }
         return _resetDone ? RESET_DONE_MS : READY_REFRESH_MS;
+    }
+
+    function startGpsWarmup() {
+        _warmupStartedMs = System.getTimer();
+        if (_warmupActive
+            || !_visible
+            || _directResult != null
+            || _activeIncident != null
+            || OpenDistressProtocol.stringEquals(_state, "SETUP REQUIRED")) {
+            return;
+        }
+        try {
+            enableBestContinuousLocation();
+            _warmupActive = true;
+            _warmupQuality = -1;
+            _locationEventsActive = true;
+            _lastLocationEnableMs = System.getTimer();
+        } catch (error) {
+            // Warm-up is optional; acceptance still starts positioning itself.
+            _warmupActive = false;
+        }
+    }
+
+    // Never turns off positioning that accepted tracking or LIVE now owns.
+    function stopGpsWarmup() {
+        if (!_warmupActive) {
+            return;
+        }
+        _warmupActive = false;
+        _warmupQuality = -1;
+        if (_directResult != null || _activeIncident != null) {
+            return;
+        }
+        try {
+            Position.enableLocationEvents(Position.LOCATION_DISABLE, null);
+        } catch (error) {
+        }
+        _locationEventsActive = false;
+    }
+
+    function warmupExpired() {
+        var elapsed = System.getTimer() - _warmupStartedMs;
+        return elapsed < 0 || elapsed >= GPS_WARMUP_MS;
+    }
+
+    // Pre-acceptance warm-up: keep only fix quality, never coordinates.
+    function onWarmupQuality(quality) {
+        if (_warmupActive && quality != _warmupQuality) {
+            _warmupQuality = quality;
+            WatchUi.requestUpdate();
+        }
+    }
+
+    function gpsWarm() {
+        return _warmupActive && _warmupQuality >= Position.QUALITY_USABLE;
     }
 
     function advanceAmbient() {
@@ -392,6 +456,9 @@ class OpenDistressView extends WatchUi.View {
         }
         if (_resetDone && System.getTimer() - _resetDoneAtMs >= RESET_DONE_MS - 50) {
             _resetDone = false;
+        }
+        if (_warmupActive && warmupExpired()) {
+            stopGpsWarmup();
         }
         WatchUi.requestUpdate();
         if (ambientPeriodMs() != _ambientPeriodMs) {
@@ -763,6 +830,7 @@ class OpenDistressView extends WatchUi.View {
         _detail = "Hold top button 2.5 seconds";
         selectStartupMode();
         WatchUi.requestUpdate();
+        startGpsWarmup();
         scheduleAmbient();
     }
 
@@ -1319,9 +1387,14 @@ class OpenDistressView extends WatchUi.View {
             return;
         }
         if (!_armingAlert) {
-            WatchPresentation.readyRing(dc);
+            WatchPresentation.readyRingWithGps(dc, !_warmupActive || gpsWarm());
+            if (_warmupActive) {
+                // Local receiver state only; nothing is recorded before acceptance.
+                WatchPresentation.lineFit(dc, gpsWarm() ? "GPS ready" : "GPS searching", 12, false,
+                    gpsWarm() ? WatchPresentation.AMBER : Graphics.COLOR_LT_GRAY, 0.42);
+            }
         }
-        WatchPresentation.line(dc, "TEST MODE", 23, false);
+        WatchPresentation.line(dc, "TEST MODE", 25, false);
         WatchPresentation.line(dc, _armingAlert ? "Keep holding" : "Ready", 44, true);
         WatchPresentation.lineColor(dc, _armingAlert ? "Release to cancel" : "Hold START 2.5s", 61, false,
             _armingAlert ? Graphics.COLOR_LT_GRAY : WatchPresentation.AMBER);
@@ -1663,7 +1736,7 @@ class OpenDistressView extends WatchUi.View {
 
     function showButtonPress(key, pressed) {
         _pressedButton = pressed ? key : null;
-        if (pressed) { _lastButton = key; }
+        if (pressed) { _lastButton = key; startGpsWarmup(); }
         if (pressed && _acceptedStatusVisible) { _statusInteractionAtMs = System.getTimer(); }
         WatchUi.requestUpdate();
     }
@@ -1752,6 +1825,7 @@ class OpenDistressView extends WatchUi.View {
         // Same cue as LIVE: the TEST is stored locally; nothing is accepted yet.
         _signalStored = true;
         _signalStoredAtMs = System.getTimer();
+        _warmupStartedMs = _signalStoredAtMs;
         confirmDurableTrigger();
         sendPending();
     }
@@ -1960,6 +2034,8 @@ class OpenDistressView extends WatchUi.View {
         } catch (error) {
         }
         _locationEventsActive = false;
+        _warmupActive = false;
+        _warmupQuality = -1;
     }
 
     function expireLocations() {
@@ -2523,6 +2599,7 @@ class OpenDistressView extends WatchUi.View {
             return;
         }
         if (_activeIncident == null) {
+            onWarmupQuality(info == null || info.position == null ? -1 : info.accuracy);
             return;
         }
         var now = currentTime();
@@ -3281,6 +3358,8 @@ class OpenDistressView extends WatchUi.View {
     ) {
         _deferredCompanionLocation = null;
         _grafanaAlertRetries = 0;
+        // The warm receiver now belongs to accepted tracking; keep it running.
+        _warmupActive = false;
         var acceptedAt = currentTime();
         var trackingExpiresAt = 0;
         var captureStage = 3;
@@ -4086,6 +4165,7 @@ class OpenDistressView extends WatchUi.View {
             _resetDoneAtMs = System.getTimer();
             WatchFeedback.committed();
             WatchUi.requestUpdate();
+            startGpsWarmup();
             scheduleAmbient();
         } else {
             _acceptedStatusVisible = false;
@@ -4341,26 +4421,26 @@ function watchDelegatePreservesTouchAndFreshAcceptance(logger) {
     if (delegate.onSelect()) {
         logger.error("Behaviour select swallowed the coordinate-bearing touch event"); return false;
     }
-    delegate.onKeyPressed(event);
+    delegate.onKeyPressed(event as WatchUi.KeyEvent);
     view._directResult = {}; // Simulate acceptance while START remains held.
-    delegate.onKeyReleased(event);
-    delegate.onKey(event);
+    delegate.onKeyReleased(event as WatchUi.KeyEvent);
+    delegate.onKey(event as WatchUi.KeyEvent);
     if (view.selections != 0 || view.activations != 0) { return false; }
-    delegate.onKeyPressed(event);
-    delegate.onKeyReleased(event);
-    delegate.onKey(event);
+    delegate.onKeyPressed(event as WatchUi.KeyEvent);
+    delegate.onKeyReleased(event as WatchUi.KeyEvent);
+    delegate.onKey(event as WatchUi.KeyEvent);
     if (view.selections != 1) { return false; }
     view._acceptedStatusVisible = true;
     view._state = "PROVIDER ACCEPTED";
-    delegate.onTap(event);
+    delegate.onTap(event as WatchUi.ClickEvent);
     if (!WatchPresentation.hasMenuButton()) {
         if (view.resets != 1 || view.selections != 1) { return false; }
     } else if (view.resets != 0 || view.selections != 2) { return false; }
     // Outside the reset target, and on the covered clock, touch never resets.
     var resets = view.resets;
-    delegate.onTap(new WatchInputProbeEvent(0, 0));
+    delegate.onTap(new WatchInputProbeEvent(0, 0) as WatchUi.ClickEvent);
     view._acceptedStatusVisible = false;
-    delegate.onTap(event);
+    delegate.onTap(event as WatchUi.ClickEvent);
     return view.resets == resets;
 }
 
@@ -4680,4 +4760,36 @@ function continuousGpsIsReissuedOnlyWhenSilentOrStopped(logger) {
     var restarted = view.enables == 3;
     view.onHide();
     return restarted;
+}
+
+(:test)
+class WarmupProbe extends OpenDistressView {
+    var enables = 0;
+    function initialize() {
+        OpenDistressView.initialize();
+        _queue = []; _activeIncident = null; _directResult = null; _visible = true;
+        _state = "READY — TEST";
+    }
+    function enableBestContinuousLocation() { enables += 1; }
+}
+
+(:test)
+function gpsWarmupKeepsOnlyQualityAndHandsOverAtAcceptance(logger) {
+    var before = Storage.getValue("event_state_v2");
+    var view = new WarmupProbe();
+    view.startGpsWarmup(); view.startGpsWarmup();
+    if (!view._warmupActive || view.enables != 1) { view.onHide(); return false; }
+    view.onWarmupQuality(Position.QUALITY_GOOD);
+    var qualityOnly = view.gpsWarm() && view._queue.size() == 0 && view._directResult == null
+        && Storage.getValue("event_state_v2") == before;
+    if (!qualityOnly) { logger.error("Warm-up callback recorded more than fix quality"); view.onHide(); return false; }
+    // Accepted tracking owns the receiver: stopping warm-up must not disable it.
+    view._directResult = {"capture_stage" => 1};
+    view.stopGpsWarmup();
+    var handedOver = view._locationEventsActive && !view._warmupActive;
+    view._directResult = null;
+    view._warmupActive = true; view._warmupStartedMs = System.getTimer() - 600000;
+    var expires = view.warmupExpired();
+    view.onHide();
+    return handedOver && expires && !view._warmupActive;
 }
