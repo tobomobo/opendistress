@@ -153,7 +153,10 @@ in-range, and within the enforced accuracy bound. It is never averaged with
 watch GPS: it is sent as a separately labelled source with age and rounded
 metre accuracy through the same watch-owned sequence. If another location is
 being delivered, the candidate waits in memory for that slot; phone failure or
-absence never blocks watch GPS.
+absence never blocks watch GPS. The watch repeats the request at acceptance, 30
+and 90 seconds later (within five minutes, until a candidate for that event
+arrives): the first message may only wake a closed companion, and Garmin Connect
+can drop watch-to-phone messages. The companion answers each event once.
 
 If neither an activity location nor a last-known snapshot exists at acceptance,
 the cover retries the synchronous snapshot every 10 seconds for the first five

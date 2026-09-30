@@ -97,7 +97,10 @@
   Wi-Fi, mobile, and other Android signals, but the app cannot demand a specific
   source or guarantee a fresh indoor fix. Android background throttling,
   process death, permission state, Garmin Connect, and BLE can prevent the
-  response. The watch treats it as a separately labelled candidate and always
+  response. A manifest receiver can restart a closed companion when Garmin
+  Connect delivers a watch message, and the watch repeats its request twice, but
+  answering from the background also needs "Allow all the time"; a force-stopped
+  app is not woken. The watch treats it as a separately labelled candidate and always
   continues its independent GPS path.
   Garmin has acknowledged Android Connect IQ issue
   [`CIQQA-4631`](https://forums.garmin.com/developer/connect-iq/i/bug-reports/gcm-5-27-3-android-accepts-communications-transmit-messages-from-watch-app-but-never-delivers-them-to-the-companion-app)

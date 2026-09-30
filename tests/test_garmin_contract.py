@@ -1130,6 +1130,19 @@ class GarminContractTests(unittest.TestCase):
         self.assertIn("_warmupActive = false;", accepted)
         self.assertIn("function gpsWarmupKeepsOnlyQualityAndHandsOverAtAcceptance(logger)", source)
 
+    def test_companion_location_request_repeats_are_bounded(self):
+        source = (GARMIN / "source/OpenDistressApp.mc").read_text()
+        retry = source[
+            source.index("function retryCompanionLocationRequest()")
+            : source.index("function requestCompanionLocation()")
+        ]
+        self.assertIn("COMPANION_REQUEST_AT_SECONDS = [0, 30, 90]", source)
+        self.assertIn("COMPANION_REQUEST_WINDOW_SECONDS = 300", source)
+        self.assertIn("_companionAnswered", retry)
+        self.assertIn('_directResult["capture_stage"] == 3', retry)
+        self.assertIn("retryCompanionLocationRequest();", source[source.index("function refreshIdleCover()"):])
+        self.assertIn("function companionLocationRequestRepeatsBoundedUntilAnswered(logger)", source)
+
     def test_offline_gps_fix_is_kept_and_callbacks_respect_backoff(self):
         source = (GARMIN / "source/OpenDistressApp.mc").read_text()
         direct_position = source[source.index("function onDirectPosition(") : source.index("function shouldQueueCadenceLocation(")]

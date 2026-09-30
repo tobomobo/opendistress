@@ -3,6 +3,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Optional: lets phone location assist answer the watch while this app is closed. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <application
         android:name=".OpenDistressCompanionApplication"
@@ -24,6 +26,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Wakes the process for Garmin Connect messages; payloads are handled by the SDK. -->
+        <receiver
+            android:name=".GarminWakeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.garmin.android.connectiq.INCOMING_MESSAGE" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".ProvisioningListenerService"
