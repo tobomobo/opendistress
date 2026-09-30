@@ -105,7 +105,7 @@ class NativeContractTests(unittest.TestCase):
         self.assertIn('"https://invalid.example/v2/events"', build)
         self.assertGreaterEqual(build.count('"INVALID"'), 5)
         self.assertIn('setting("keyVersion", "0")', build)
-        self.assertIn('androidx.work:work-runtime:2.11.2', build)
+        self.assertIn('androidx.work:work-runtime:2.12.0', build)
         self.assertIn('androidx.wear:wear-remote-interactions:1.2.0', build)
         self.assertIn(
             "/opendistress.local.properties",
